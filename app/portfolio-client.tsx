@@ -88,7 +88,18 @@ function AppProvider({
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dataset.theme = theme;
-  }, [lang, theme]);
+    const tokens = initialProfile.designTokens;
+    const root = document.documentElement.style;
+    const keys = ["--accent", "--bg", "--surface", "--radius"] as const;
+    for (const k of keys) root.removeProperty(k);
+    if (tokens?.accent) root.setProperty("--accent", tokens.accent);
+    if (tokens?.bg) root.setProperty("--bg", tokens.bg);
+    if (tokens?.surface) root.setProperty("--surface", tokens.surface);
+    if (tokens?.radius) root.setProperty("--radius", tokens.radius);
+    return () => {
+      for (const k of keys) root.removeProperty(k);
+    };
+  }, [initialProfile.designTokens, lang, theme]);
 
   const setLang = (next: Lang) => {
     setLangState(next);

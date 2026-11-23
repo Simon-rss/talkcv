@@ -7,7 +7,7 @@ import {
 } from "./auth";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleGenerateRequest } from "./generate";
-import { handleGetProfileRequest, handlePublishRequest } from "./publish";
+import { handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
 import {
   buildLlmsTxtResponse,
   buildResumeJsonResponse,
@@ -58,6 +58,25 @@ const worker = {
     }
     if (url.pathname === "/resume.json") {
       return buildResumeJsonResponse();
+    }
+    if (url.pathname.startsWith("/u/") && request.method === "GET") {
+      const slug = decodeURIComponent(url.pathname.slice("/u/".length).split("/")[0] || "");
+      const record = slug ? await loadStoredRecord(slug, env) : null;
+      const rendered = await handler.fetch(request);
+      if (!record) {
+        return new Response(rendered.body, {
+          status: 404,
+          headers: rendered.headers,
+        });
+      }
+      const expTs = Date.parse(record.expiresAt);
+      if (Number.isFinite(expTs) && Date.now() > expTs) {
+        return new Response(rendered.body, {
+          status: 410,
+          headers: rendered.headers,
+        });
+      }
+      return rendered;
     }
     return handler.fetch(request);
   },

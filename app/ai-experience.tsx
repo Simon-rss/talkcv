@@ -154,7 +154,7 @@ export function PortfolioAIProvider({
       } else if (tool.name === "switch_language" && (tool.args.lang === "en" || tool.args.lang === "zh")) {
         setLang(tool.args.lang);
         showToast(tool.args.lang === "zh" ? "已切换为中文" : "Switched to English");
-      } else if (tool.name === "switch_theme" && isValidTheme(tool.args.theme)) {
+      } else if (tool.name === "switch_theme" && !profileSlug && isValidTheme(tool.args.theme)) {
         setTheme(tool.args.theme);
         showToast(lang === "zh" ? `已切换主题：${tool.args.theme}` : `Switched theme: ${tool.args.theme}`);
       } else if (tool.name === "copy_contact") {

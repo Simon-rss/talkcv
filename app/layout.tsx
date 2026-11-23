@@ -7,10 +7,10 @@ const siteUrl = getSiteUrl();
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: `${profile.basics.name.en} | ${profile.basics.role.en}`,
-    template: `%s | ${profile.basics.name.en}`,
+    default: "TalkCV — A resume website that talks back",
+    template: "%s | TalkCV",
   },
-  description: `${profile.basics.headline.en} ${profile.basics.intro.en}`,
+  description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
   alternates: {
     canonical: "/",
     types: {
@@ -19,15 +19,14 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    url: siteUrl,
-    siteName: `${profile.basics.name.en} — Portfolio`,
-    title: `${profile.basics.name.en} | ${profile.basics.role.en}`,
-    description: profile.basics.headline.en,
+    siteName: "TalkCV",
+    title: "TalkCV — Interactive AI Resume",
+    description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
   },
   twitter: {
     card: "summary_large_image",
-    title: `${profile.basics.name.en} | ${profile.basics.role.en}`,
-    description: profile.basics.headline.en,
+    title: "TalkCV — Interactive AI Resume",
+    description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
   },
 };
 

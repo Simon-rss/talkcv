@@ -1,5 +1,12 @@
+import { FREE_MODEL_IDS, getHostedModel } from "../lib/models";
 import { profile as sampleProfile } from "../lib/profile";
-import { isValidTheme, type PortfolioProfile, type ProjectAccent, type ThemeId } from "../lib/schema";
+import {
+  isValidTheme,
+  sanitizeDesignTokens,
+  type PortfolioProfile,
+  type ProjectAccent,
+  type ThemeId,
+} from "../lib/schema";
 import {
   buildUsageCookie,
   DAILY_GENERATE_LIMIT,
@@ -64,6 +71,7 @@ function normalizeGeneratedProfile(
   raw: Record<string, unknown>,
   theme: ThemeId,
   siteUrl: string,
+  stylePrompt?: string,
 ): PortfolioProfile {
   const basicsRaw = (raw.basics && typeof raw.basics === "object" ? raw.basics : {}) as Record<string, unknown>;
   const name = loc(basicsRaw.name, "Portfolio Owner");
@@ -160,9 +168,14 @@ function normalizeGeneratedProfile(
     return { title: loc(c.title, "Core Capability"), summary: loc(c.summary, "") };
   });
 
+  const cleanStylePrompt = stylePrompt?.trim().slice(0, 400) || undefined;
+  const designTokens = sanitizeDesignTokens(raw.designTokens);
+
   return {
     theme,
     siteUrl: siteUrl.replace(/\/+$/, ""),
+    ...(cleanStylePrompt ? { stylePrompt: cleanStylePrompt } : {}),
+    ...(designTokens ? { designTokens } : {}),
     basics: {
       name,
       initials,
@@ -185,6 +198,7 @@ function normalizeGeneratedProfile(
     projects: projects.length > 0 ? projects : sampleProfile.projects.slice(0, 1),
     ai: {
       enabled: true,
+      ...(cleanStylePrompt ? { stylePrompt: cleanStylePrompt } : {}),
       assistantName: {
         en: `${name.en.split(" ")[0]}'s AI Agent`,
         zh: `${name.zh} 的 AI 助手`,
@@ -227,6 +241,8 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
     resumeText?: unknown;
     theme?: unknown;
     siteUrl?: unknown;
+    stylePrompt?: unknown;
+    hostedModelId?: unknown;
     providerMode?: unknown;
     apiKey?: unknown;
     baseUrl?: unknown;
@@ -243,17 +259,17 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
     return jsonResponse(400, { error: "Please provide at least 30 characters of resume text." });
   }
 
+  const stylePrompt = typeof body.stylePrompt === "string" ? body.stylePrompt.trim().slice(0, 400) : "";
   const byokKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
   const mode =
+    body.providerMode === "hosted" ||
     body.providerMode === "hosted-deepseek" ||
     body.providerMode === "hosted-openai" ||
     body.providerMode === "byok"
       ? body.providerMode
       : byokKey
         ? "byok"
-        : env.DEEPSEEK_API_KEY?.trim()
-          ? "hosted-deepseek"
-          : "hosted-openai";
+        : "hosted";
 
   let apiKey = "";
   let baseUrl = "https://api.openai.com/v1";
@@ -287,19 +303,33 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
     }
     hostedUserEmail = user.email;
 
-    if (mode === "hosted-deepseek") {
+    const requestedId =
+      typeof body.hostedModelId === "string" && body.hostedModelId.trim()
+        ? body.hostedModelId.trim()
+        : mode === "hosted-openai"
+          ? "gpt-4o-mini"
+          : "deepseek-chat";
+
+    if (!FREE_MODEL_IDS.has(requestedId)) {
+      return jsonResponse(403, {
+        error: `Model "${requestedId}" requires TalkCV Pro (or use BYOK with your own API key).`,
+      });
+    }
+
+    const chosen = getHostedModel(requestedId === "auto" ? "deepseek-chat" : requestedId);
+    if (chosen.provider === "deepseek") {
       apiKey = env.DEEPSEEK_API_KEY?.trim() || "";
       baseUrl = "https://api.deepseek.com/v1";
-      model = "deepseek-chat";
+      model = chosen.apiModel || "deepseek-chat";
     } else {
       apiKey = env.OPENAI_API_KEY?.trim() || "";
       baseUrl = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
-      model = env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+      model = chosen.apiModel || env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
     }
 
     if (!apiKey) {
       return jsonResponse(503, {
-        error: `Hosted ${mode === "hosted-deepseek" ? "DeepSeek" : "OpenAI"} is not configured on this server.`,
+        error: `Hosted ${chosen.provider} is not configured on this server.`,
       });
     }
   }
@@ -310,12 +340,16 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
       ? body.siteUrl.trim()
       : "https://talkcv.example.dev";
 
+  const styleInstruction = stylePrompt
+    ? `\n- Custom style & tone preference from the user: "${stylePrompt}". Reflect this tone in headline, intro, project framing, AND optionally include a "designTokens" object with safe hex colors & radius matching the theme (${theme}), e.g. {"accent":"#0f766e","radius":"14px"} (only 6-digit hex colors #RRGGBB and radius 0px-28px; ensure high readability contrast with the ${theme} theme).`
+    : "";
+
   const systemPrompt = `You are a precise resume-to-portfolio compiler for TalkCV. Convert the resume into a valid JSON object matching this exact schema (output ONLY raw JSON, no markdown fences).
 Rules:
 - Populate BOTH "en" and "zh" for every localized field (translate faithfully if the resume is single-language).
 - Extract 2-5 featured projects with concrete metrics in facts[], crisp architecture sections[], and workflow[] steps.
 - NEVER invent metrics, companies, or skills not present in the resume.
-- Use lowercase ASCII kebab-case slugs.
+- Use lowercase ASCII kebab-case slugs.${styleInstruction}
 
 Reference example:
 ${JSON.stringify(sampleProfile)}`;
@@ -361,7 +395,7 @@ ${JSON.stringify(sampleProfile)}`;
     const content = payload.choices?.[0]?.message?.content?.trim() ?? "";
     const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl);
+    const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt);
     let quota: { usedToday: number; dailyLimit: number } | undefined;
     let extraHeaders: Record<string, string> | undefined;
     if (hostedUserEmail) {

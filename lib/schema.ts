@@ -58,9 +58,18 @@ export interface CapabilityItem {
   summary: LocalizedText;
 }
 
+export interface DesignTokens {
+  accent?: string;
+  bg?: string;
+  surface?: string;
+  radius?: string;
+}
+
 export interface PortfolioProfile {
   theme: ThemeId;
   siteUrl: string;
+  stylePrompt?: string;
+  designTokens?: DesignTokens;
   basics: {
     name: LocalizedText;
     initials: string;
@@ -87,8 +96,22 @@ export interface PortfolioProfile {
       en: string[];
       zh: string[];
     };
+    stylePrompt?: string;
     guardrails?: string[];
   };
+}
+
+export function sanitizeDesignTokens(raw: unknown): DesignTokens | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const hexRe = /^#[0-9a-fA-F]{6}$/;
+  const radiusRe = /^(?:0|[4-9]|1[0-9]|2[0-8])px$/;
+  const out: DesignTokens = {};
+  if (typeof obj.accent === "string" && hexRe.test(obj.accent.trim())) out.accent = obj.accent.trim();
+  if (typeof obj.bg === "string" && hexRe.test(obj.bg.trim())) out.bg = obj.bg.trim();
+  if (typeof obj.surface === "string" && hexRe.test(obj.surface.trim())) out.surface = obj.surface.trim();
+  if (typeof obj.radius === "string" && radiusRe.test(obj.radius.trim())) out.radius = obj.radius.trim();
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export const THEMES: ReadonlyArray<{

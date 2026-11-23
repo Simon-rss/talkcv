@@ -139,7 +139,46 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   assert.equal(getJson.profile?.basics?.name?.en, "Alex Chen");
 
   const uPageRes = await render("/u/demo-user");
-  assert.equal(uPageRes.status, 200);
+  assert.equal(uPageRes.status, 404); // fresh worker instance has empty memory store -> must return 404!
+  const uHtml = await uPageRes.text();
+  assert.doesNotMatch(uHtml, /Alex Chen/);
+
+  // Pro hosted model is blocked on free tier; BYOK key is encrypted & masked
+  const proBlockRes = await worker.fetch(
+    new Request("http://localhost/api/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug: "pro-test",
+        profile: demoProfile,
+        chatConfig: { mode: "hosted", hostedModelId: "gpt-6.2-sol" },
+      }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(proBlockRes.status, 403);
+
+  const byokPubRes = await worker.fetch(
+    new Request("http://localhost/api/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug: "byok-site",
+        profile: demoProfile,
+        chatConfig: {
+          mode: "byok",
+          byokApiKey: "sk-test-secret-key-998877",
+          byokBaseUrl: "https://api.deepseek.com/v1",
+          byokModel: "deepseek-v4.1-flash",
+        },
+      }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(byokPubRes.status, 200);
+  const byokPubJson = await byokPubRes.json();
+  assert.equal(byokPubJson.chatMeta?.hasByokKey, true);
+  assert.doesNotMatch(JSON.stringify(byokPubJson), /sk-test-secret-key-998877/);
 
   // Email auth flow (/api/auth/send-code -> /api/auth/verify -> /api/auth/me)
   const sendRes = await worker.fetch(

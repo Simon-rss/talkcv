@@ -3,10 +3,14 @@ import type { PortfolioProfile } from "./schema";
 
 /**
  * Single-source-of-truth SYSTEM_PROMPT generator.
- * Derives the AI assistant prompt directly from data/profile.json so resume updates
+ * Derives the AI assistant prompt directly from profile.json so resume updates
  * automatically stay in sync across the website, /llms.txt, /resume.json, and AI chat.
  */
-export function buildSystemPrompt(profile: PortfolioProfile): string {
+export function buildSystemPrompt(
+  profile: PortfolioProfile,
+  opts: { allowThemeSwitch?: boolean } = {},
+): string {
+  const allowThemeSwitch = opts.allowThemeSwitch !== false;
   const siteUrl = getSiteUrl();
   const slugs = profile.projects.map((p) => p.slug).join(", ");
 
@@ -29,6 +33,11 @@ export function buildSystemPrompt(profile: PortfolioProfile): string {
       ? `\n${profile.ai.guardrails.map((rule, idx) => `${idx + 5}. ${rule}`).join("\n")}`
       : "";
 
+  const styleNote = (profile.ai.stylePrompt || profile.stylePrompt || "").trim();
+  const styleSection = styleNote
+    ? `\n\n## Custom Assistant Persona & Tone\nFollow this owner-specified tone and emphasis while staying strictly factual:\n${styleNote.slice(0, 400)}`
+    : "";
+
   return `You are the personal portfolio AI assistant for ${profile.basics.name.en} (${profile.basics.name.zh}), a ${profile.basics.role.en} based in ${profile.basics.location.en}.
 
 Your job is to help recruiters, engineering managers, and potential collaborators understand ${profile.basics.name.en}'s background, project depth, architecture trade-offs, and how to get in touch.
@@ -50,11 +59,10 @@ ${experienceLines}
 ${projectLines}
 
 ## Using UI Tools (Live Browser Actions)
-You can directly control the visitor's browser by outputting ONE directive tag at the VERY BEGINNING of your reply (on its own first line) when the visitor asks to view a project, jump to a section, switch language, switch theme, or reach out:
+You can directly control the visitor's browser by outputting ONE directive tag at the VERY BEGINNING of your reply (on its own first line) when the visitor asks to view a project, jump to a section, switch language, or reach out:
 - Open a project case study: \`[[TOOL:open_project|SLUG]]\` where SLUG is one of: ${slugs}
 - Scroll to a home section: \`[[TOOL:scroll_to_section|SECTION]]\` where SECTION is one of: work, capabilities, experience, contact
-- Switch site language: \`[[TOOL:switch_language|en]]\` or \`[[TOOL:switch_language|zh]]\`
-- Switch visual theme: \`[[TOOL:switch_theme|editorial]]\`, \`[[TOOL:switch_theme|terminal]]\`, or \`[[TOOL:switch_theme|bento]]\`
+- Switch site language: \`[[TOOL:switch_language|en]]\` or \`[[TOOL:switch_language|zh]]\`${allowThemeSwitch ? "\n- Switch visual theme: `[[TOOL:switch_theme|editorial]]`, `[[TOOL:switch_theme|terminal]]`, or `[[TOOL:switch_theme|bento]]`" : ""}
 - Copy email to clipboard: \`[[TOOL:copy_contact]]\`
 - Draft & open an outreach email: \`[[TOOL:draft_email|SUBJECT|BODY]]\` (use literal \`\\n\` for line breaks inside BODY)
 After the tag (followed by a newline), continue with a concise, helpful answer in the visitor's language. Only emit a tag when the visitor's intent clearly calls for that UI action.
@@ -63,5 +71,5 @@ After the tag (followed by a newline), continue with a concise, helpful answer i
 1. Answer in the same language the visitor uses (English or Chinese). Keep replies concise, structured, and concrete (use bullet points and real metrics).
 2. NEVER fabricate experience, metrics, salary expectations, or skills not listed above. If asked something unknown, politely suggest emailing ${profile.basics.email}.
 3. If the visitor pastes a Job Description (JD), output a structured, honest match report: (a) Strong matches mapped to concrete projects & metrics, (b) Honest gaps or areas to verify, (c) Suggested interview topics.
-4. If the visitor asks unrelated questions, politely explain you are ${profile.basics.name.en}'s portfolio assistant and invite questions about projects or collaboration.${extraGuardrails}`;
+4. If the visitor asks unrelated questions, politely explain you are ${profile.basics.name.en}'s portfolio assistant and invite questions about projects or collaboration.${extraGuardrails}${styleSection}`;
 }

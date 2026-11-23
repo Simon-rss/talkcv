@@ -7,9 +7,20 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
+  const label = `${slug} · TalkCV`;
+  const desc = `Interactive AI resume & portfolio for @${slug}, hosted on TalkCV.`;
   return {
-    title: `${slug} · TalkCV`,
-    description: `Interactive AI resume & portfolio for ${slug}, powered by TalkCV.`,
+    title: { absolute: label },
+    description: desc,
+    openGraph: {
+      type: "profile",
+      title: label,
+      description: desc,
+    },
+    twitter: {
+      title: label,
+      description: desc,
+    },
   };
 }
 

@@ -14,7 +14,11 @@ export default function PreviewDraftPage() {
       try {
         const raw = window.localStorage.getItem("talkcv-draft-profile");
         if (raw) {
-          setDraft(JSON.parse(raw) as PortfolioProfile);
+          const parsed = JSON.parse(raw) as PortfolioProfile;
+          setDraft(parsed);
+          const name = parsed.basics?.name?.zh || parsed.basics?.name?.en || "Preview";
+          const role = parsed.basics?.role?.zh || parsed.basics?.role?.en || "TalkCV";
+          document.title = `${name} | ${role}`;
         }
       } catch {
         setDraft(null);

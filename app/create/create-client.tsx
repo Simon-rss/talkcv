@@ -9,16 +9,21 @@ import {
   FileUp,
   Globe,
   KeyRound,
+  Lock,
   LogIn,
   LogOut,
   Mail,
   Palette,
+  RotateCcw,
   Sparkles,
+  Trash2,
   User,
+  Wand2,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { HOSTED_MODELS } from "../../lib/models";
 import { profile as defaultProfile } from "../../lib/profile";
 import { localize, THEMES, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
 
@@ -29,13 +34,45 @@ interface AuthUser {
   sites: string[];
 }
 
-type ProviderMode = "hosted-deepseek" | "hosted-openai" | "byok";
+interface ChatMeta {
+  mode: "hosted" | "byok";
+  hostedModelId: string;
+  hasByokKey: boolean;
+  byokKeyMask: string;
+  byokBaseUrl: string;
+  byokModel: string;
+}
+
+const STYLE_PRESETS = [
+  {
+    id: "exec",
+    label: { en: "Global Tech Exec", zh: "外企技术总监风" },
+    prompt: "Crisp, executive engineering tone for global tech recruiters; deep slate blue accent (#1d4ed8), sharp metrics first.",
+  },
+  {
+    id: "hacker",
+    label: { en: "Hardcore Systems", zh: "极客硬核风" },
+    prompt: "Direct, no-fluff systems engineer voice focused on latency, locks, and reliability; neon emerald accent (#10b981).",
+  },
+  {
+    id: "editorial",
+    label: { en: "Warm Editorial", zh: "温润文艺杂志风" },
+    prompt: "Thoughtful, storytelling editorial tone highlighting product craft and user empathy; warm terracotta accent (#c2410c).",
+  },
+  {
+    id: "ocean",
+    label: { en: "Deep Ocean Tech", zh: "深海蓝科技感" },
+    prompt: "Modern AI product builder tone, structured and confident; deep ocean cyan accent (#0284c7), smooth 18px corners.",
+  },
+] as const;
 
 const BYOK_PRESETS = [
   { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-4o-mini" },
 ] as const;
+
+const STUDIO_DRAFT_KEY = "talkcv-studio-draft";
 
 export function CreateStudioClient() {
   const [lang, setLang] = useState<Lang>("zh");
@@ -49,28 +86,45 @@ export function CreateStudioClient() {
   const [authMsg, setAuthMsg] = useState<string | null>(null);
   const [authErr, setAuthErr] = useState<string | null>(null);
 
+  // Generation section state
   const [resumeText, setResumeText] = useState("");
+  const [stylePrompt, setStylePrompt] = useState("");
   const [theme, setTheme] = useState<ThemeId>("editorial");
   const [siteUrl, setSiteUrl] = useState("https://talkcv.renss.top");
-  const [providerMode, setProviderMode] = useState<ProviderMode>("hosted-deepseek");
-  const [byokPreset, setByokPreset] = useState<string>("deepseek");
-  const [baseUrl, setBaseUrl] = useState("https://api.deepseek.com/v1");
-  const [model, setModel] = useState("deepseek-chat");
-  const [apiKey, setApiKey] = useState("");
+  const [genMode, setGenMode] = useState<"hosted" | "byok">("hosted");
+  const [genModelId, setGenModelId] = useState<string>("deepseek-chat");
+  const [genByokPreset, setGenByokPreset] = useState<string>("deepseek");
+  const [genBaseUrl, setGenBaseUrl] = useState("https://api.deepseek.com/v1");
+  const [genModel, setGenModel] = useState("deepseek-chat");
+  const [genApiKey, setGenApiKey] = useState("");
 
+  // Generated profile & draft persistence
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<PortfolioProfile>(defaultProfile);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Visitor AI Chat config (independent from generation model!)
+  const [chatMode, setChatMode] = useState<"hosted" | "byok">("hosted");
+  const [chatHostedModelId, setChatHostedModelId] = useState<string>("auto");
+  const [chatByokBaseUrl, setChatByokBaseUrl] = useState("https://api.openai.com/v1");
+  const [chatByokModel, setChatByokModel] = useState("gpt-4o-mini");
+  const [chatByokApiKey, setChatByokApiKey] = useState("");
+  const [savedByokMask, setSavedByokMask] = useState("");
+  const [clearByokKey, setClearByokKey] = useState(false);
+
+  // Publishing state
   const [handle, setHandle] = useState("alex-chen");
   const [publishing, setPublishing] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishedExpires, setPublishedExpires] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [loadingSiteSlug, setLoadingSiteSlug] = useState<string | null>(null);
 
+  // Restore user session
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : { user: null }))
@@ -79,6 +133,107 @@ export function CreateStudioClient() {
       })
       .catch(() => {});
   }, []);
+
+  // Restore saved Studio draft on mount (fixes refresh losing draft!)
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        const raw = window.localStorage.getItem(STUDIO_DRAFT_KEY);
+        if (raw) {
+          const d = JSON.parse(raw) as {
+            resumeText?: string;
+            stylePrompt?: string;
+            theme?: ThemeId;
+            handle?: string;
+            generated?: PortfolioProfile;
+            hasGenerated?: boolean;
+          };
+          if (typeof d.resumeText === "string") setResumeText(d.resumeText);
+          if (typeof d.stylePrompt === "string") setStylePrompt(d.stylePrompt);
+          if (d.theme === "editorial" || d.theme === "terminal" || d.theme === "bento") setTheme(d.theme);
+          if (typeof d.handle === "string" && d.handle) setHandle(d.handle);
+          if (d.generated && d.hasGenerated) {
+            setGenerated(d.generated);
+            setHasGenerated(true);
+          }
+        }
+      } catch {
+        // ignore corrupted draft
+      } finally {
+        setDraftHydrated(true);
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, []);
+
+  // Persist Studio draft whenever key fields change
+  useEffect(() => {
+    if (!draftHydrated) return;
+    try {
+      window.localStorage.setItem(
+        STUDIO_DRAFT_KEY,
+        JSON.stringify({ resumeText, stylePrompt, theme, handle, generated, hasGenerated }),
+      );
+      if (hasGenerated) {
+        window.localStorage.setItem("talkcv-draft-profile", JSON.stringify({ ...generated, theme }));
+      }
+    } catch {
+      // ignore storage quota
+    }
+  }, [draftHydrated, resumeText, stylePrompt, theme, handle, generated, hasGenerated]);
+
+  const resetDraft = () => {
+    setResumeText("");
+    setStylePrompt("");
+    setGenerated(defaultProfile);
+    setHasGenerated(false);
+    setHandle("alex-chen");
+    setPublishedUrl(null);
+    setSavedByokMask("");
+    setChatByokApiKey("");
+    setClearByokKey(false);
+    try {
+      window.localStorage.removeItem(STUDIO_DRAFT_KEY);
+      window.localStorage.removeItem("talkcv-draft-profile");
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadExistingSite = async (slug: string) => {
+    setLoadingSiteSlug(slug);
+    setPublishError(null);
+    try {
+      const res = await fetch(`/api/profiles/${encodeURIComponent(slug)}`);
+      const data = (await res.json()) as {
+        profile?: PortfolioProfile;
+        expiresAt?: string;
+        chatMeta?: ChatMeta;
+        error?: string;
+      };
+      if (!res.ok || !data.profile) throw new Error(data.error || "Could not load site.");
+      setGenerated(data.profile);
+      setHasGenerated(true);
+      setTheme(data.profile.theme || "editorial");
+      setStylePrompt(data.profile.stylePrompt || data.profile.ai?.stylePrompt || "");
+      setHandle(slug);
+      setPublishedUrl(`${window.location.origin}/u/${slug}`);
+      setPublishedExpires(data.expiresAt ? data.expiresAt.slice(0, 10) : null);
+      if (data.chatMeta) {
+        setChatMode(data.chatMeta.mode);
+        setChatHostedModelId(data.chatMeta.hostedModelId || "auto");
+        setSavedByokMask(data.chatMeta.hasByokKey ? data.chatMeta.byokKeyMask : "");
+        if (data.chatMeta.byokBaseUrl) setChatByokBaseUrl(data.chatMeta.byokBaseUrl);
+        if (data.chatMeta.byokModel) setChatByokModel(data.chatMeta.byokModel);
+        setChatByokApiKey("");
+        setClearByokKey(false);
+      }
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : "Failed to load site.");
+    } finally {
+      setLoadingSiteSlug(null);
+    }
+  };
 
   const sendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +248,6 @@ export function CreateStudioClient() {
       });
       const data = (await res.json()) as {
         ok?: boolean;
-        delivery?: string;
         instantCode?: string;
         challenge?: string;
         error?: string;
@@ -151,15 +305,6 @@ export function CreateStudioClient() {
     setUser(null);
   };
 
-  const onByokPresetChange = (id: string) => {
-    setByokPreset(id);
-    const preset = BYOK_PRESETS.find((p) => p.id === id);
-    if (preset) {
-      setBaseUrl(preset.baseUrl);
-      setModel(preset.model);
-    }
-  };
-
   const onFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -169,7 +314,7 @@ export function CreateStudioClient() {
 
   const onGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (providerMode !== "byok" && !user) {
+    if (genMode === "hosted" && !user) {
       setAuthModalOpen(true);
       return;
     }
@@ -181,14 +326,16 @@ export function CreateStudioClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           resumeText,
+          stylePrompt: stylePrompt.trim() || undefined,
           theme,
           siteUrl,
-          providerMode,
-          ...(providerMode === "byok"
+          providerMode: genMode,
+          hostedModelId: genModelId,
+          ...(genMode === "byok"
             ? {
-                apiKey: apiKey.trim() || undefined,
-                baseUrl: baseUrl.trim() || undefined,
-                model: model.trim() || undefined,
+                apiKey: genApiKey.trim() || undefined,
+                baseUrl: genBaseUrl.trim() || undefined,
+                model: genModel.trim() || undefined,
               }
             : {}),
         }),
@@ -259,7 +406,20 @@ export function CreateStudioClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           slug: handle,
-          profile: { ...generated, theme },
+          profile: { ...generated, theme, ...(stylePrompt.trim() ? { stylePrompt: stylePrompt.trim() } : {}) },
+          chatConfig:
+            chatMode === "byok"
+              ? {
+                  mode: "byok",
+                  byokApiKey: chatByokApiKey.trim() || undefined,
+                  byokBaseUrl: chatByokBaseUrl.trim() || undefined,
+                  byokModel: chatByokModel.trim() || undefined,
+                  clearByokKey,
+                }
+              : {
+                  mode: "hosted",
+                  hostedModelId: chatHostedModelId,
+                },
         }),
       });
       const data = (await res.json()) as {
@@ -267,6 +427,7 @@ export function CreateStudioClient() {
         url?: string;
         slug?: string;
         expiresAt?: string;
+        chatMeta?: ChatMeta;
         error?: string;
       };
       if (!res.ok || !data.url) {
@@ -274,6 +435,11 @@ export function CreateStudioClient() {
       }
       setPublishedUrl(data.url);
       setPublishedExpires(data.expiresAt ? data.expiresAt.slice(0, 10) : null);
+      if (data.chatMeta) {
+        setSavedByokMask(data.chatMeta.hasByokKey ? data.chatMeta.byokKeyMask : "");
+        setChatByokApiKey("");
+        setClearByokKey(false);
+      }
       if (data.slug && !user.sites.includes(data.slug)) {
         setUser({ ...user, sites: [...user.sites, data.slug] });
       }
@@ -285,6 +451,12 @@ export function CreateStudioClient() {
   };
 
   const remaining = user ? Math.max(0, user.dailyLimit - user.usedToday) : 3;
+  const previewStyleVars: React.CSSProperties = {
+    ...(generated.designTokens?.accent ? ({ "--accent": generated.designTokens.accent } as React.CSSProperties) : {}),
+    ...(generated.designTokens?.bg ? ({ "--bg": generated.designTokens.bg } as React.CSSProperties) : {}),
+    ...(generated.designTokens?.surface ? ({ "--surface": generated.designTokens.surface } as React.CSSProperties) : {}),
+    ...(generated.designTokens?.radius ? ({ "--radius": generated.designTokens.radius } as React.CSSProperties) : {}),
+  };
 
   return (
     <main className="af-create-page" data-theme={theme}>
@@ -325,15 +497,38 @@ export function CreateStudioClient() {
         </div>
       </header>
 
+      {user && user.sites.length > 0 && (
+        <div className="af-shell af-mysites-bar">
+          <span className="af-mysites-label">
+            <Globe size={13} /> {lang === "zh" ? "我的已发布站点（点击加载回编辑器）：" : "My published sites:"}
+          </span>
+          <div className="af-mysites-list">
+            {user.sites.map((slug) => (
+              <button
+                key={slug}
+                type="button"
+                className={`af-icon-pill ${handle === slug && publishedUrl ? "af-site-active" : ""}`}
+                disabled={loadingSiteSlug === slug}
+                onClick={() => void loadExistingSite(slug)}
+              >
+                <span>/u/{slug}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="af-shell af-create-grid">
         <form className="af-create-panel" onSubmit={onGenerate}>
-          <p className="af-eyebrow">TALKCV GENERATOR</p>
+          <div className="af-panel-top">
+            <p className="af-eyebrow">STEP 1 · GENERATE</p>
+            {hasGenerated && (
+              <button type="button" className="af-reset-link" onClick={resetDraft}>
+                <RotateCcw size={12} /> {lang === "zh" ? "清空草稿" : "Reset draft"}
+              </button>
+            )}
+          </div>
           <h1>{lang === "zh" ? "把简历变成会说话的网站" : "Turn your resume into a site that talks back"}</h1>
-          <p className="af-create-sub">
-            {lang === "zh"
-              ? "邮箱登录后即可免 Key 免费生成（每日 3 次，默认 DeepSeek 国内直连免 VPN），并免费托管 30 天专属链接。"
-              : "Sign in with email for 3 free daily generations (DeepSeek / OpenAI hosted) and 30-day free hosting."}
-          </p>
 
           <label className="af-field-label">
             <span>{lang === "zh" ? "1. 简历内容" : "1. Resume content"}</span>
@@ -345,7 +540,7 @@ export function CreateStudioClient() {
           </label>
           <textarea
             className="af-textarea"
-            rows={7}
+            rows={6}
             value={resumeText}
             onChange={(e) => setResumeText(e.target.value)}
             placeholder={
@@ -358,7 +553,7 @@ export function CreateStudioClient() {
 
           <div className="af-field-label">
             <span>
-              <Palette size={13} /> {lang === "zh" ? "2. 选择默认主题" : "2. Choose theme"}
+              <Palette size={13} /> {lang === "zh" ? "2. 选择布局主题" : "2. Choose layout theme"}
             </span>
           </div>
           <div className="af-preset-row">
@@ -376,42 +571,99 @@ export function CreateStudioClient() {
 
           <div className="af-field-label">
             <span>
-              <KeyRound size={13} /> {lang === "zh" ? "3. 选择 AI 通道" : "3. Choose AI provider"}
+              <Wand2 size={13} /> {lang === "zh" ? "3. 自定义风格与人设提示词（可选）" : "3. Style & AI Persona Prompt (optional)"}
+            </span>
+          </div>
+          <div className="af-preset-row">
+            {STYLE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={stylePrompt === preset.prompt ? "active" : ""}
+                onClick={() => setStylePrompt(preset.prompt)}
+              >
+                {localize(preset.label, lang)}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            className="af-single-input"
+            value={stylePrompt}
+            onChange={(e) => setStylePrompt(e.target.value)}
+            maxLength={400}
+            placeholder={
+              lang === "zh"
+                ? "例：重点突出高并发和 AI 量化指标，主色用深海蓝，AI 回复风格简洁犀利…"
+                : "e.g. Emphasize distributed systems metrics, deep blue accent, concise staff-engineer voice…"
+            }
+          />
+
+          <div className="af-field-label">
+            <span>
+              <KeyRound size={13} /> {lang === "zh" ? "4. 选择简历生成模型" : "4. Resume generation model"}
             </span>
           </div>
           <div className="af-preset-row">
             <button
               type="button"
-              className={providerMode === "hosted-deepseek" ? "active" : ""}
-              onClick={() => setProviderMode("hosted-deepseek")}
+              className={genMode === "hosted" ? "active" : ""}
+              onClick={() => setGenMode("hosted")}
             >
-              {lang === "zh" ? "DeepSeek 免费托管（国内直连）" : "Hosted DeepSeek (Free)"}
+              {lang === "zh" ? "TalkCV 免费托管额度" : "TalkCV Hosted Free"}
             </button>
             <button
               type="button"
-              className={providerMode === "hosted-openai" ? "active" : ""}
-              onClick={() => setProviderMode("hosted-openai")}
+              className={genMode === "byok" ? "active" : ""}
+              onClick={() => setGenMode("byok")}
             >
-              {lang === "zh" ? "OpenAI 免费托管" : "Hosted OpenAI (Free)"}
-            </button>
-            <button
-              type="button"
-              className={providerMode === "byok" ? "active" : ""}
-              onClick={() => setProviderMode("byok")}
-            >
-              {lang === "zh" ? "自带 API Key（不限次）" : "Bring Your Own Key"}
+              {lang === "zh" ? "自带 Key 生成（不限次）" : "BYOK (Unlimited)"}
             </button>
           </div>
 
-          {providerMode === "byok" ? (
+          {genMode === "hosted" ? (
+            <>
+              <select
+                className="af-select"
+                value={genModelId}
+                onChange={(e) => setGenModelId(e.target.value)}
+                aria-label="Generation model"
+              >
+                {HOSTED_MODELS.filter((m) => m.id !== "auto").map((m) => (
+                  <option key={m.id} value={m.id} disabled={m.tier === "pro"}>
+                    {localize(m.label, lang)} {m.tier === "pro" ? "🔒 Pro" : "· Free"}
+                  </option>
+                ))}
+              </select>
+              <div className="af-quota-note">
+                {user ? (
+                  <span>
+                    {lang === "zh"
+                      ? `已登录 ${user.email} · 今日剩余免费生成 ${remaining}/${user.dailyLimit} 次`
+                      : `Signed in as ${user.email} · ${remaining}/${user.dailyLimit} free generations left today`}
+                  </span>
+                ) : (
+                  <button type="button" className="af-inline-link" onClick={() => setAuthModalOpen(true)}>
+                    {lang === "zh"
+                      ? "👉 点击先用邮箱登录，领取每日 3 次免费生成额度"
+                      : "👉 Sign in with email for 3 free daily generations"}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
             <>
               <div className="af-preset-row">
                 {BYOK_PRESETS.map((p) => (
                   <button
                     key={p.id}
                     type="button"
-                    className={byokPreset === p.id ? "active" : ""}
-                    onClick={() => onByokPresetChange(p.id)}
+                    className={genByokPreset === p.id ? "active" : ""}
+                    onClick={() => {
+                      setGenByokPreset(p.id);
+                      setGenBaseUrl(p.baseUrl);
+                      setGenModel(p.model);
+                    }}
                   >
                     {p.label}
                   </button>
@@ -420,47 +672,31 @@ export function CreateStudioClient() {
               <div className="af-input-grid">
                 <input
                   type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  value={genApiKey}
+                  onChange={(e) => setGenApiKey(e.target.value)}
                   placeholder="API Key (sk-...)"
                   autoComplete="off"
                 />
                 <input
                   type="text"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  value={genModel}
+                  onChange={(e) => setGenModel(e.target.value)}
                   placeholder="Model (e.g. deepseek-chat)"
                 />
                 <input
                   type="url"
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
+                  value={genBaseUrl}
+                  onChange={(e) => setGenBaseUrl(e.target.value)}
                   placeholder="Base URL"
                 />
                 <input
                   type="url"
                   value={siteUrl}
                   onChange={(e) => setSiteUrl(e.target.value)}
-                  placeholder="Planned Site URL"
+                  placeholder="Site URL"
                 />
               </div>
             </>
-          ) : (
-            <div className="af-quota-note">
-              {user ? (
-                <span>
-                  {lang === "zh"
-                    ? `已登录 ${user.email} · 今日剩余免费生成 ${remaining}/${user.dailyLimit} 次（无需填写 API Key）`
-                    : `Signed in as ${user.email} · ${remaining}/${user.dailyLimit} free generations left today`}
-                </span>
-              ) : (
-                <button type="button" className="af-inline-link" onClick={() => setAuthModalOpen(true)}>
-                  {lang === "zh"
-                    ? "👉 点击先用邮箱登录，立即解锁免 Key 免费生成（每日 3 次）"
-                    : "👉 Sign in with email to unlock 3 free daily generations (no API key needed)"}
-                </button>
-              )}
-            </div>
           )}
 
           {error && <div className="af-ai-error">{error}</div>}
@@ -470,22 +706,22 @@ export function CreateStudioClient() {
             <span>
               {loading
                 ? lang === "zh"
-                  ? "正在解析简历并生成双语站…"
+                  ? "正在解析简历并定制风格…"
                   : "Generating your TalkCV…"
                 : lang === "zh"
-                  ? "免费生成 TalkCV 配置"
+                  ? "生成 TalkCV 配置与预览"
                   : "Generate TalkCV Profile"}
             </span>
           </button>
         </form>
 
-        <section className="af-preview-panel" data-theme={theme}>
+        <section className="af-preview-panel" data-theme={theme} style={previewStyleVars}>
           <div className="af-preview-bar">
             <span>
               {hasGenerated
                 ? lang === "zh"
-                  ? "✅ 已生成你的实时预览"
-                  : "✅ Generated live preview"
+                  ? "✅ 已生成你的实时预览（已自动保存草稿）"
+                  : "✅ Live preview ready (auto-saved)"
                 : lang === "zh"
                   ? "示例实时预览（生成后自动替换）"
                   : "Sample live preview"}
@@ -507,6 +743,92 @@ export function CreateStudioClient() {
           </div>
 
           <div className="af-publish-box">
+            <div className="af-field-label">
+              <span>
+                <Lock size={13} /> {lang === "zh" ? "STEP 2 · 配置发布后的访客 AI 对话模型" : "STEP 2 · Visitor AI Chat Model (for your live site)"}
+              </span>
+            </div>
+            <div className="af-preset-row">
+              <button
+                type="button"
+                className={chatMode === "hosted" ? "active" : ""}
+                onClick={() => setChatMode("hosted")}
+              >
+                {lang === "zh" ? "TalkCV 托管模型（免费 30 次/天）" : "Hosted Free (30 chats/day)"}
+              </button>
+              <button
+                type="button"
+                className={chatMode === "byok" ? "active" : ""}
+                onClick={() => setChatMode("byok")}
+              >
+                {lang === "zh" ? "绑定自有 API Key（解锁无限对话）" : "Bind Your Key (Unlimited Chat)"}
+              </button>
+            </div>
+
+            {chatMode === "hosted" ? (
+              <select
+                className="af-select"
+                value={chatHostedModelId}
+                onChange={(e) => setChatHostedModelId(e.target.value)}
+                aria-label="Visitor chat hosted model"
+              >
+                {HOSTED_MODELS.map((m) => (
+                  <option key={m.id} value={m.id} disabled={m.tier === "pro"}>
+                    {localize(m.label, lang)} {m.tier === "pro" ? "🔒 Pro" : "· Free"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="af-byok-chat-box">
+                {savedByokMask && !clearByokKey && (
+                  <div className="af-saved-key-row">
+                    <span>
+                      {lang === "zh" ? `已加密绑定 Key：${savedByokMask}` : `Encrypted key saved: ${savedByokMask}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="af-reset-link"
+                      onClick={() => {
+                        setClearByokKey(true);
+                        setSavedByokMask("");
+                      }}
+                    >
+                      <Trash2 size={12} /> {lang === "zh" ? "清除 Key" : "Remove Key"}
+                    </button>
+                  </div>
+                )}
+                <div className="af-input-grid">
+                  <input
+                    type="password"
+                    value={chatByokApiKey}
+                    onChange={(e) => {
+                      setChatByokApiKey(e.target.value);
+                      setClearByokKey(false);
+                    }}
+                    placeholder={savedByokMask ? "留空则保留已存 Key，或输入新 Key 替换" : "Visitor Chat API Key (sk-...)"}
+                    autoComplete="off"
+                  />
+                  <input
+                    type="text"
+                    value={chatByokModel}
+                    onChange={(e) => setChatByokModel(e.target.value)}
+                    placeholder="任意模型名，如 gpt-6.2-sol / deepseek-chat"
+                  />
+                  <input
+                    type="url"
+                    value={chatByokBaseUrl}
+                    onChange={(e) => setChatByokBaseUrl(e.target.value)}
+                    placeholder="Base URL (https://api.openai.com/v1)"
+                  />
+                </div>
+                <p className="af-byok-disclaimer">
+                  {lang === "zh"
+                    ? "安全说明：Key 经 AES-256-GCM 加密存储，解锁无限对话（仍保留单 IP 15次/分防刷）。建议在模型平台为该 Key 设月度消费上限，随时可清除。"
+                    : "Encrypted with AES-256-GCM. Unlocks unlimited visitor chat (15 req/min per-IP abuse guard remains). Set a monthly budget cap on your provider key."}
+                </p>
+              </div>
+            )}
+
             <div className="af-publish-row">
               <div className="af-handle-input">
                 <span>/u/</span>
@@ -531,8 +853,8 @@ export function CreateStudioClient() {
                       ? "发布中…"
                       : "Publishing…"
                     : lang === "zh"
-                      ? "一键免费托管（30天）"
-                      : "Publish Free (30 days)"}
+                      ? "发布 / 更新专属链接"
+                      : "Publish / Update Link"}
                 </span>
               </button>
             </div>

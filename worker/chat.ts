@@ -1,7 +1,9 @@
+import { FREE_MODEL_IDS, getHostedModel } from "../lib/models";
 import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
-import { loadPublishedProfile } from "./publish";
+import { decryptSecret } from "./crypto";
+import { getEncryptionMasterKey, loadStoredRecord } from "./publish";
 
 export interface ChatEnv extends AuthEnv {
   OPENAI_API_KEY?: string;
@@ -81,6 +83,7 @@ function checkRateLimit(ip: string): boolean {
 function parseLeadingToolTag(
   raw: string,
   validSlugs: Set<string>,
+  allowThemeSwitch: boolean,
 ): { tool: ClientToolCall | null; remainder: string } {
   const match = raw.match(/^\s*\[\[TOOL:([a-z_]+)(?:\|([^\]]+))?\]\]\s*/);
   if (!match) return { tool: null, remainder: raw };
@@ -97,7 +100,7 @@ function parseLeadingToolTag(
   if (name === "switch_language" && (arg === "en" || arg === "zh")) {
     return { tool: { name, args: { lang: arg } }, remainder };
   }
-  if (name === "switch_theme" && VALID_THEMES.has(arg)) {
+  if (name === "switch_theme" && allowThemeSwitch && VALID_THEMES.has(arg)) {
     return { tool: { name, args: { theme: arg } }, remainder };
   }
   if (name === "copy_contact") {
@@ -165,29 +168,45 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     typeof body.profileSlug === "string" && body.profileSlug.trim()
       ? body.profileSlug.trim().toLowerCase()
       : "__demo__";
+  const isPersonalHosted = siteKey !== "__demo__";
+  const allowThemeSwitch = !isPersonalHosted;
 
-  const withinDailyQuota = await consumeSiteDailyChatQuota(siteKey, env);
-  if (!withinDailyQuota) {
-    const isZh = body.lang === "zh";
-    return jsonError(
-      429,
-      isZh
-        ? `该站点今日免费 AI 对话额度（${DAILY_CHAT_LIMIT_PER_SITE} 次/天）已用完，请明日再试。`
-        : `This site has reached its free daily AI chat quota (${DAILY_CHAT_LIMIT_PER_SITE}/day). Please try again tomorrow.`,
-    );
+  const storedRecord = isPersonalHosted ? await loadStoredRecord(siteKey, env) : null;
+  const activeProfile = storedRecord?.profile ?? defaultProfile;
+  const validSlugs = new Set(activeProfile.projects.map((p) => p.slug));
+
+  // Check if site has an encrypted BYOK key (unlocks unlimited daily visitor chat)
+  const siteChat = storedRecord?.chatConfig;
+  let byokCreds: { baseUrl: string; key: string; model: string } | null = null;
+  if (siteChat?.mode === "byok" && siteChat.byokKeyEncrypted) {
+    const decrypted = await decryptSecret(siteChat.byokKeyEncrypted, getEncryptionMasterKey(env));
+    if (decrypted) {
+      byokCreds = {
+        baseUrl: (siteChat.byokBaseUrl || "https://api.openai.com/v1").replace(/\/+$/, ""),
+        key: decrypted,
+        model: siteChat.byokModel || "gpt-4o-mini",
+      };
+    }
   }
 
-  const activeProfile =
-    siteKey !== "__demo__"
-      ? (await loadPublishedProfile(siteKey, env)) ?? defaultProfile
-      : defaultProfile;
-  const validSlugs = new Set(activeProfile.projects.map((p) => p.slug));
+  if (!byokCreds) {
+    const withinDailyQuota = await consumeSiteDailyChatQuota(siteKey, env);
+    if (!withinDailyQuota) {
+      const isZh = body.lang === "zh";
+      return jsonError(
+        429,
+        isZh
+          ? `该站点今日免费 AI 对话额度（${DAILY_CHAT_LIMIT_PER_SITE} 次/天）已用完，请明日再试（作者绑定自有 API Key 可解锁无限对话）。`
+          : `This site has reached its free daily AI chat quota (${DAILY_CHAT_LIMIT_PER_SITE}/day). Please try again tomorrow.`,
+      );
+    }
+  }
 
   const personaKey = typeof body.persona === "string" && body.persona in PERSONA_NOTES ? body.persona : "default";
   const quoteText = typeof body.quote === "string" ? body.quote.trim().slice(0, 400) : "";
 
   const systemContent =
-    buildSystemPrompt(activeProfile) +
+    buildSystemPrompt(activeProfile, { allowThemeSwitch }) +
     (PERSONA_NOTES[personaKey] ?? "") +
     (quoteText
       ? `\n\n## Visitor Highlighted Text\nThe visitor highlighted this excerpt on the page:\n"""\n${quoteText}\n"""`
@@ -222,15 +241,36 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
       }),
     });
 
-  // Prefer DeepSeek for Mainland China / HK edges so domestic users never hit OpenAI region blocks,
-  // and automatically fail over between OpenAI and DeepSeek if the primary provider errors.
   const candidates: Array<{ baseUrl: string; key: string; model: string }> = [];
-  if (isChinaRegion && deepseekKey) {
-    candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
-    if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+  if (byokCreds) {
+    candidates.push(byokCreds);
   } else {
-    if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
-    if (deepseekKey) candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+    const requestedModelId =
+      siteChat?.mode === "hosted" && siteChat.hostedModelId && FREE_MODEL_IDS.has(siteChat.hostedModelId)
+        ? siteChat.hostedModelId
+        : "auto";
+    const chosen = getHostedModel(requestedModelId);
+
+    if (chosen.provider === "deepseek" && deepseekKey) {
+      candidates.push({
+        baseUrl: "https://api.deepseek.com/v1",
+        key: deepseekKey,
+        model: chosen.apiModel || "deepseek-chat",
+      });
+      if (chosen.apiModel !== "deepseek-chat") {
+        candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+      }
+      if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+    } else if (chosen.provider === "openai" && openaiKey) {
+      candidates.push({ baseUrl: openaiBase, key: openaiKey, model: chosen.apiModel || openaiModel });
+      if (deepseekKey) candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+    } else if (isChinaRegion && deepseekKey) {
+      candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+      if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+    } else {
+      if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+      if (deepseekKey) candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+    }
   }
 
   let upstream: Response | null = null;
@@ -301,7 +341,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
         const closeIdx = pendingTagBuf.indexOf("]]");
         if (closeIdx !== -1) {
           checkedLeadingTag = true;
-          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf, validSlugs);
+          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf, validSlugs, allowThemeSwitch);
           if (tool) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tool })}\n\n`));
           }
@@ -340,7 +380,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
           }
         }
         if (pendingTagBuf) {
-          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf, validSlugs);
+          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf, validSlugs, allowThemeSwitch);
           if (tool) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tool })}\n\n`));
           if (remainder) emitDelta(remainder);
         }

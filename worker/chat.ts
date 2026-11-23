@@ -2,6 +2,7 @@ import { FREE_MODEL_IDS, getHostedModel } from "../lib/models";
 import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
+import { getUserPlan, PRO_DAILY_CHAT_LIMIT_PER_SITE, type BillingEnv } from "./billing";
 import { decryptSecret } from "./crypto";
 import { getEncryptionMasterKey, loadStoredRecord } from "./publish";
 
@@ -32,7 +33,11 @@ function todayDateKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function consumeSiteDailyChatQuota(slug: string, env: ChatEnv): Promise<boolean> {
+async function consumeSiteDailyChatQuota(
+  slug: string,
+  env: ChatEnv,
+  dailyLimit = DAILY_CHAT_LIMIT_PER_SITE,
+): Promise<boolean> {
   const key = `chat_usage:${slug}:${todayDateKey()}`;
   let current = 0;
   if (env.PROFILES_KV) {
@@ -42,7 +47,7 @@ async function consumeSiteDailyChatQuota(slug: string, env: ChatEnv): Promise<bo
   } else {
     current = memSiteChatUsage.get(key) ?? 0;
   }
-  if (current >= DAILY_CHAT_LIMIT_PER_SITE) return false;
+  if (current >= dailyLimit) return false;
   const next = current + 1;
   if (env.PROFILES_KV) {
     await env.PROFILES_KV.put(key, String(next));
@@ -189,15 +194,20 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     }
   }
 
+  const ownerPlan = storedRecord?.ownerEmail
+    ? await getUserPlan(storedRecord.ownerEmail, env as BillingEnv)
+    : { plan: "free" as const, isPro: false, record: null };
+  const activeDailyChatLimit = ownerPlan.isPro ? PRO_DAILY_CHAT_LIMIT_PER_SITE : DAILY_CHAT_LIMIT_PER_SITE;
+
   if (!byokCreds) {
-    const withinDailyQuota = await consumeSiteDailyChatQuota(siteKey, env);
+    const withinDailyQuota = await consumeSiteDailyChatQuota(siteKey, env, activeDailyChatLimit);
     if (!withinDailyQuota) {
       const isZh = body.lang === "zh";
       return jsonError(
         429,
         isZh
-          ? `该站点今日免费 AI 对话额度（${DAILY_CHAT_LIMIT_PER_SITE} 次/天）已用完，请明日再试（作者绑定自有 API Key 可解锁无限对话）。`
-          : `This site has reached its free daily AI chat quota (${DAILY_CHAT_LIMIT_PER_SITE}/day). Please try again tomorrow.`,
+          ? `该站点今日托管 AI 对话额度（${activeDailyChatLimit} 次/天）已用完，请明日再试（作者绑定自有 API Key 可解锁无限对话）。`
+          : `This site has reached its daily hosted AI chat quota (${activeDailyChatLimit}/day). Please try again tomorrow.`,
       );
     }
   }
@@ -246,7 +256,9 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     candidates.push(byokCreds);
   } else {
     const requestedModelId =
-      siteChat?.mode === "hosted" && siteChat.hostedModelId && FREE_MODEL_IDS.has(siteChat.hostedModelId)
+      siteChat?.mode === "hosted" &&
+      siteChat.hostedModelId &&
+      (ownerPlan.isPro || FREE_MODEL_IDS.has(siteChat.hostedModelId))
         ? siteChat.hostedModelId
         : "auto";
     const chosen = getHostedModel(requestedModelId);

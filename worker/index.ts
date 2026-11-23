@@ -5,6 +5,12 @@ import {
   handleSendCodeRequest,
   handleVerifyCodeRequest,
 } from "./auth";
+import {
+  handleBillingCheckoutRequest,
+  handleBillingPortalRequest,
+  handleCreemWebhookRequest,
+  type BillingEnv,
+} from "./billing";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleGenerateRequest } from "./generate";
 import { handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
@@ -15,7 +21,7 @@ import {
   buildSitemapResponse,
 } from "./site-meta";
 
-interface WorkerEnv extends ChatEnv {
+interface WorkerEnv extends ChatEnv, BillingEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
@@ -33,6 +39,15 @@ const worker = {
     }
     if (url.pathname === "/api/auth/logout") {
       return handleLogoutRequest(request);
+    }
+    if (url.pathname === "/api/billing/checkout") {
+      return handleBillingCheckoutRequest(request, env);
+    }
+    if (url.pathname === "/api/billing/portal") {
+      return handleBillingPortalRequest(request, env);
+    }
+    if (url.pathname === "/api/billing/webhook") {
+      return handleCreemWebhookRequest(request, env);
     }
     if (url.pathname === "/api/chat") {
       return handleChatRequest(request, env);

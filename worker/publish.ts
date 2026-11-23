@@ -8,6 +8,7 @@ import {
   recordUserSite,
   type AuthEnv,
 } from "./auth";
+import { getUserPlan, PRO_HOSTING_DAYS, PRO_MAX_SITES_PER_USER, type BillingEnv } from "./billing";
 import { encryptSecret, maskApiKey } from "./crypto";
 
 export interface KVNamespaceLike {
@@ -170,11 +171,14 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     });
   }
 
+  const { isPro } = await getUserPlan(user?.email, env as BillingEnv);
+  const maxSites = isPro ? PRO_MAX_SITES_PER_USER : MAX_SITES_PER_USER;
+
   if (user) {
     const userSites = await getUserSites(user.email, env);
-    if (!userSites.includes(slug) && userSites.length >= MAX_SITES_PER_USER) {
+    if (!userSites.includes(slug) && userSites.length >= maxSites) {
       return jsonResponse(403, {
-        error: `Free accounts can host up to ${MAX_SITES_PER_USER} sites (${userSites.map((s) => `/u/${s}`).join(", ")}). Update an existing handle instead.`,
+        error: `Your plan allows up to ${maxSites} sites (${userSites.map((s) => `/u/${s}`).join(", ")}). Update an existing handle instead.`,
       });
     }
   }
@@ -223,7 +227,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     } else {
       const modelId =
         typeof incomingChat.hostedModelId === "string" ? incomingChat.hostedModelId.trim() : "auto";
-      if (!FREE_MODEL_IDS.has(modelId)) {
+      if (!isPro && !FREE_MODEL_IDS.has(modelId)) {
         return jsonResponse(403, {
           error: `Model "${modelId}" requires TalkCV Pro (or switch to BYOK with your own API key).`,
         });
@@ -236,7 +240,8 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   }
 
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + FREE_HOSTING_DAYS * 86400_000).toISOString();
+  const hostingDays = isPro ? PRO_HOSTING_DAYS : FREE_HOSTING_DAYS;
+  const expiresAt = new Date(now.getTime() + hostingDays * 86400_000).toISOString();
   const record: StoredProfileRecord = {
     profile: cleanProfile,
     ...(user ? { ownerEmail: user.email } : {}),

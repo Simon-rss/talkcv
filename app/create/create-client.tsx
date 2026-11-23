@@ -29,6 +29,9 @@ import { localize, THEMES, type Lang, type PortfolioProfile, type ThemeId } from
 
 interface AuthUser {
   email: string;
+  plan?: "free" | "pro";
+  isPro?: boolean;
+  hasBilling?: boolean;
   usedToday: number;
   dailyLimit: number;
   sites: string[];
@@ -156,16 +159,69 @@ export function CreateStudioClient() {
   const [publishError, setPublishError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [loadingSiteSlug, setLoadingSiteSlug] = useState<string | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingBanner, setBillingBanner] = useState<string | null>(null);
 
-  // Restore user session
+  // Restore user session + check ?upgraded=1 return from Creem
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let rafId: number | null = null;
+    if (params.get("upgraded") === "1") {
+      rafId = window.requestAnimationFrame(() => {
+        setBillingBanner(
+          lang === "zh"
+            ? "支付已完成！Pro 权益（全部高级模型 + 更高额度）正在同步生效。"
+            : "Payment received! Your TalkCV Pro models & higher quotas are now activating.",
+        );
+      });
+      params.delete("upgraded");
+      const q = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+    }
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : { user: null }))
       .then((data: { user?: AuthUser | null }) => {
         if (data.user) setUser(data.user);
       })
       .catch(() => {});
-  }, []);
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, [lang]);
+
+  const startProCheckout = async () => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+    setBillingBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/billing/checkout", { method: "POST" });
+      const data = (await res.json()) as { checkoutUrl?: string; error?: string };
+      if (!res.ok || !data.checkoutUrl) {
+        throw new Error(data.error || "Could not start checkout.");
+      }
+      window.location.href = data.checkoutUrl;
+    } catch (err) {
+      setError(localizeApiError(err instanceof Error ? err.message : "Could not start checkout.", lang));
+      setBillingBusy(false);
+    }
+  };
+
+  const openBillingPortal = async () => {
+    setBillingBusy(true);
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const data = (await res.json()) as { portalUrl?: string; error?: string };
+      if (!res.ok || !data.portalUrl) throw new Error(data.error || "Could not open billing portal.");
+      window.open(data.portalUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(localizeApiError(err instanceof Error ? err.message : "Could not open billing portal.", lang));
+    } finally {
+      setBillingBusy(false);
+    }
+  };
 
   // Restore saved Studio draft on mount (fixes refresh losing draft & model selectors!)
   useEffect(() => {
@@ -538,16 +594,36 @@ export function CreateStudioClient() {
         </Link>
         <div className="af-header-controls">
           {user ? (
-            <div className="af-user-pill">
-              <User size={13} />
-              <span>{user.email}</span>
-              <em>
-                {lang === "zh" ? `今日剩 ${remaining}/${user.dailyLimit} 次` : `${remaining}/${user.dailyLimit} left`}
-              </em>
-              <button type="button" onClick={logout} title={lang === "zh" ? "退出登录" : "Sign out"}>
-                <LogOut size={12} />
-              </button>
-            </div>
+            <>
+              <div className="af-user-pill">
+                <User size={13} />
+                <span>{user.email}</span>
+                {user.isPro && <em style={{ background: "var(--accent)", color: "var(--accent-ink)", padding: "1px 6px", borderRadius: 999 }}>PRO</em>}
+                <em>
+                  {lang === "zh" ? `今日剩 ${remaining}/${user.dailyLimit} 次` : `${remaining}/${user.dailyLimit} left`}
+                </em>
+                <button type="button" onClick={logout} title={lang === "zh" ? "退出登录" : "Sign out"}>
+                  <LogOut size={12} />
+                </button>
+              </div>
+              {user.isPro ? (
+                <button type="button" className="af-icon-pill" onClick={openBillingPortal} disabled={billingBusy}>
+                  <span>{lang === "zh" ? "管理订阅" : "Billing"}</span>
+                </button>
+              ) : (
+                user.hasBilling && (
+                  <button
+                    type="button"
+                    className="af-icon-pill af-login-pill"
+                    onClick={startProCheckout}
+                    disabled={billingBusy}
+                  >
+                    <Sparkles size={13} />
+                    <span>{billingBusy ? "…" : lang === "zh" ? "升级 Pro ($9/月)" : "Upgrade Pro"}</span>
+                  </button>
+                )
+              )}
+            </>
           ) : (
             <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
               <LogIn size={13} />
@@ -567,6 +643,16 @@ export function CreateStudioClient() {
           </button>
         </div>
       </header>
+
+      {billingBanner && (
+        <div className="af-shell af-mysites-bar" role="status">
+          <Sparkles size={14} />
+          <span>{billingBanner}</span>
+          <button type="button" className="af-inline-link" onClick={() => setBillingBanner(null)}>
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {user && user.sites.length > 0 && (
         <div className="af-shell af-mysites-bar">
@@ -701,8 +787,8 @@ export function CreateStudioClient() {
                 aria-label="Generation model"
               >
                 {HOSTED_MODELS.filter((m) => m.id !== "auto").map((m) => (
-                  <option key={m.id} value={m.id} disabled={m.tier === "pro"}>
-                    {localize(m.label, lang)} {m.tier === "pro" ? "🔒 Pro" : "· Free"}
+                  <option key={m.id} value={m.id} disabled={m.tier === "pro" && !user?.isPro}>
+                    {localize(m.label, lang)} {m.tier === "pro" ? (user?.isPro ? "★ Pro" : "🔒 Pro") : "· Free"}
                   </option>
                 ))}
               </select>
@@ -844,8 +930,8 @@ export function CreateStudioClient() {
                 aria-label="Visitor chat hosted model"
               >
                 {HOSTED_MODELS.map((m) => (
-                  <option key={m.id} value={m.id} disabled={m.tier === "pro"}>
-                    {localize(m.label, lang)} {m.tier === "pro" ? "🔒 Pro" : "· Free"}
+                  <option key={m.id} value={m.id} disabled={m.tier === "pro" && !user?.isPro}>
+                    {localize(m.label, lang)} {m.tier === "pro" ? (user?.isPro ? "★ Pro" : "🔒 Pro") : "· Free"}
                   </option>
                 ))}
               </select>

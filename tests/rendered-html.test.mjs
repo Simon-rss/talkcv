@@ -221,4 +221,47 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   const meJson = await meRes.json();
   assert.equal(meJson.user?.email, "tester@example.com");
   assert.equal(meJson.user?.dailyLimit, 3);
+  assert.equal(meJson.user?.isPro, false);
+
+  // Creem billing webhook HMAC verification & Pro upgrade
+  const { createHmac } = await import("node:crypto");
+  const whSecret = "whsec_unit_test_secret";
+  const whPayload = JSON.stringify({
+    id: "evt_test_pro_001",
+    eventType: "checkout.completed",
+    object: {
+      customer: { id: "cust_test_1", email: "tester@example.com" },
+      metadata: { email: "tester@example.com", plan: "pro" },
+    },
+  });
+  const badWhRes = await worker.fetch(
+    new Request("http://localhost/api/billing/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "creem-signature": "bad_sig" },
+      body: whPayload,
+    }),
+    { CREEM_WEBHOOK_SECRET: whSecret, ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(badWhRes.status, 401);
+
+  const validSig = createHmac("sha256", whSecret).update(whPayload).digest("hex");
+  const okWhRes = await worker.fetch(
+    new Request("http://localhost/api/billing/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "creem-signature": validSig },
+      body: whPayload,
+    }),
+    { CREEM_WEBHOOK_SECRET: whSecret, ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(okWhRes.status, 200);
+
+  const meProRes = await worker.fetch(
+    new Request("http://localhost/api/auth/me", {
+      headers: { cookie: cookiePair },
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  const meProJson = await meProRes.json();
+  assert.equal(meProJson.user?.isPro, true);
+  assert.equal(meProJson.user?.dailyLimit, 30);
 });

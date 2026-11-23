@@ -118,6 +118,10 @@ const env = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   AUTH_EMAIL_FROM: process.env.AUTH_EMAIL_FROM,
   AUTH_SECRET: process.env.AUTH_SECRET,
+  CREEM_API_KEY: process.env.CREEM_API_KEY,
+  CREEM_WEBHOOK_SECRET: process.env.CREEM_WEBHOOK_SECRET,
+  CREEM_PRO_PRODUCT_ID: process.env.CREEM_PRO_PRODUCT_ID,
+  CREEM_API_BASE: process.env.CREEM_API_BASE,
   PROFILES_KV: pgKv,
   ASSETS: {
     fetch: async () => new Response("Not found", { status: 404 }),

@@ -1,5 +1,11 @@
 import { profile as sampleProfile } from "../lib/profile";
 import { isValidTheme, type PortfolioProfile, type ProjectAccent, type ThemeId } from "../lib/schema";
+import {
+  DAILY_GENERATE_LIMIT,
+  getDailyUsage,
+  getSessionUser,
+  incrementDailyUsage,
+} from "./auth";
 import type { ChatEnv } from "./chat";
 
 const RATE_WINDOW_MS = 60_000;
@@ -213,6 +219,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
     resumeText?: unknown;
     theme?: unknown;
     siteUrl?: unknown;
+    providerMode?: unknown;
     apiKey?: unknown;
     baseUrl?: unknown;
     model?: unknown;
@@ -228,24 +235,66 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
     return jsonResponse(400, { error: "Please provide at least 30 characters of resume text." });
   }
 
-  const apiKey =
-    (typeof body.apiKey === "string" && body.apiKey.trim()) || env.OPENAI_API_KEY?.trim() || "";
-  if (!apiKey) {
-    return jsonResponse(401, {
-      error: "An OpenAI-compatible API key is required (enter your own key — it is never stored).",
-    });
+  const byokKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  const mode =
+    body.providerMode === "hosted-deepseek" ||
+    body.providerMode === "hosted-openai" ||
+    body.providerMode === "byok"
+      ? body.providerMode
+      : byokKey
+        ? "byok"
+        : env.DEEPSEEK_API_KEY?.trim()
+          ? "hosted-deepseek"
+          : "hosted-openai";
+
+  let apiKey = "";
+  let baseUrl = "https://api.openai.com/v1";
+  let model = "gpt-4o-mini";
+  let hostedUserEmail: string | null = null;
+
+  if (mode === "byok") {
+    if (!byokKey) {
+      return jsonResponse(401, {
+        error: "An OpenAI-compatible API key is required for BYOK mode (or sign in to use TalkCV's free daily quota).",
+      });
+    }
+    apiKey = byokKey;
+    baseUrl = ((typeof body.baseUrl === "string" && body.baseUrl.trim()) || "https://api.openai.com/v1").replace(
+      /\/+$/,
+      "",
+    );
+    model = (typeof body.model === "string" && body.model.trim()) || "gpt-4o-mini";
+  } else {
+    const user = await getSessionUser(request, env);
+    if (!user) {
+      return jsonResponse(401, {
+        error: "Please sign in with your email to use TalkCV's free daily AI quota (or paste your own API key).",
+      });
+    }
+    const used = await getDailyUsage(user.email, env);
+    if (used >= DAILY_GENERATE_LIMIT) {
+      return jsonResponse(429, {
+        error: `Daily free generation limit reached (${DAILY_GENERATE_LIMIT}/day). Try again tomorrow or use your own API key.`,
+      });
+    }
+    hostedUserEmail = user.email;
+
+    if (mode === "hosted-deepseek") {
+      apiKey = env.DEEPSEEK_API_KEY?.trim() || "";
+      baseUrl = "https://api.deepseek.com/v1";
+      model = "deepseek-chat";
+    } else {
+      apiKey = env.OPENAI_API_KEY?.trim() || "";
+      baseUrl = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
+      model = env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+    }
+
+    if (!apiKey) {
+      return jsonResponse(503, {
+        error: `Hosted ${mode === "hosted-deepseek" ? "DeepSeek" : "OpenAI"} is not configured on this server.`,
+      });
+    }
   }
-
-  const baseUrl = (
-    (typeof body.baseUrl === "string" && body.baseUrl.trim()) ||
-    env.OPENAI_BASE_URL?.trim() ||
-    "https://api.openai.com/v1"
-  ).replace(/\/+$/, "");
-
-  const model =
-    (typeof body.model === "string" && body.model.trim()) ||
-    env.OPENAI_MODEL?.trim() ||
-    "gpt-4o-mini";
 
   const theme: ThemeId = isValidTheme(body.theme) ? body.theme : "editorial";
   const siteUrl =
@@ -305,7 +354,12 @@ ${JSON.stringify(sampleProfile)}`;
     const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
     const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl);
-    return jsonResponse(200, { profile: normalized });
+    let quota: { usedToday: number; dailyLimit: number } | undefined;
+    if (hostedUserEmail) {
+      const usedToday = await incrementDailyUsage(hostedUserEmail, env);
+      quota = { usedToday, dailyLimit: DAILY_GENERATE_LIMIT };
+    }
+    return jsonResponse(200, { profile: normalized, ...(quota ? { quota } : {}) });
   } catch {
     return jsonResponse(502, { error: "Model response could not be parsed as valid JSON. Try again." });
   }

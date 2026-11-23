@@ -140,4 +140,42 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
 
   const uPageRes = await render("/u/demo-user");
   assert.equal(uPageRes.status, 200);
+
+  // Email auth flow (/api/auth/send-code -> /api/auth/verify -> /api/auth/me)
+  const sendRes = await worker.fetch(
+    new Request("http://localhost/api/auth/send-code", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "tester@example.com" }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(sendRes.status, 200);
+  const sendJson = await sendRes.json();
+  assert.equal(sendJson.ok, true);
+  assert.match(sendJson.instantCode ?? "", /^\d{6}$/);
+
+  const verifyRes = await worker.fetch(
+    new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "tester@example.com", code: sendJson.instantCode }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(verifyRes.status, 200);
+  const setCookie = verifyRes.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /talkcv_session=/);
+  const cookiePair = setCookie.split(";")[0];
+
+  const meRes = await worker.fetch(
+    new Request("http://localhost/api/auth/me", {
+      headers: { cookie: cookiePair },
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(meRes.status, 200);
+  const meJson = await meRes.json();
+  assert.equal(meJson.user?.email, "tester@example.com");
+  assert.equal(meJson.user?.dailyLimit, 3);
 });

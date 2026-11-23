@@ -9,45 +9,149 @@ import {
   FileUp,
   Globe,
   KeyRound,
+  LogIn,
+  LogOut,
+  Mail,
   Palette,
   Sparkles,
+  User,
+  X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { profile as defaultProfile } from "../../lib/profile";
 import { localize, THEMES, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
 
-const PROVIDER_PRESETS = [
+interface AuthUser {
+  email: string;
+  usedToday: number;
+  dailyLimit: number;
+  sites: string[];
+}
+
+type ProviderMode = "hosted-deepseek" | "hosted-openai" | "byok";
+
+const BYOK_PRESETS = [
+  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
-  { id: "deepseek", label: "DeepSeek (国内直连)", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-4o-mini" },
-  { id: "custom", label: "Custom", baseUrl: "", model: "" },
 ] as const;
 
 export function CreateStudioClient() {
   const [lang, setLang] = useState<Lang>("zh");
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authCode, setAuthCode] = useState("");
+  const [authStep, setAuthStep] = useState<"email" | "code">("email");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMsg, setAuthMsg] = useState<string | null>(null);
+  const [authErr, setAuthErr] = useState<string | null>(null);
+
   const [resumeText, setResumeText] = useState("");
   const [theme, setTheme] = useState<ThemeId>("editorial");
-  const [siteUrl, setSiteUrl] = useState("https://my-talkcv.dev");
-  const [provider, setProvider] = useState<string>("deepseek");
+  const [siteUrl, setSiteUrl] = useState("https://talkcv.renss.top");
+  const [providerMode, setProviderMode] = useState<ProviderMode>("hosted-deepseek");
+  const [byokPreset, setByokPreset] = useState<string>("deepseek");
   const [baseUrl, setBaseUrl] = useState("https://api.deepseek.com/v1");
   const [model, setModel] = useState("deepseek-chat");
   const [apiKey, setApiKey] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<PortfolioProfile>(defaultProfile);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [copied, setCopied] = useState(false);
+
   const [handle, setHandle] = useState("alex-chen");
   const [publishing, setPublishing] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [publishedExpires, setPublishedExpires] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
-  const onProviderChange = (id: string) => {
-    setProvider(id);
-    const preset = PROVIDER_PRESETS.find((p) => p.id === id);
-    if (preset && preset.id !== "custom") {
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : { user: null }))
+      .then((data: { user?: AuthUser | null }) => {
+        if (data.user) setUser(data.user);
+      })
+      .catch(() => {});
+  }, []);
+
+  const sendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthErr(null);
+    setAuthMsg(null);
+    setAuthBusy(true);
+    try {
+      const res = await fetch("/api/auth/send-code", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: authEmail }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        delivery?: string;
+        instantCode?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) throw new Error(data.error || "Failed to send code.");
+      setAuthStep("code");
+      if (data.instantCode) {
+        setAuthCode(data.instantCode);
+        setAuthMsg(
+          lang === "zh"
+            ? `测试期即时验证码：${data.instantCode}（已自动填入，点击确认即可登录）`
+            : `Instant verification code: ${data.instantCode} (auto-filled)`,
+        );
+      } else {
+        setAuthMsg(
+          lang === "zh"
+            ? "验证码已发送到你的邮箱，请查收（10 分钟内有效）。"
+            : "Verification code sent to your email (valid for 10 min).",
+        );
+      }
+    } catch (err) {
+      setAuthErr(err instanceof Error ? err.message : "Failed to send code.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const verifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthErr(null);
+    setAuthBusy(true);
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: authEmail, code: authCode }),
+      });
+      const data = (await res.json()) as { ok?: boolean; user?: AuthUser; error?: string };
+      if (!res.ok || !data.user) throw new Error(data.error || "Invalid code.");
+      setUser(data.user);
+      setAuthModalOpen(false);
+      setAuthStep("email");
+      setAuthCode("");
+      setAuthMsg(null);
+    } catch (err) {
+      setAuthErr(err instanceof Error ? err.message : "Verification failed.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setUser(null);
+  };
+
+  const onByokPresetChange = (id: string) => {
+    setByokPreset(id);
+    const preset = BYOK_PRESETS.find((p) => p.id === id);
+    if (preset) {
       setBaseUrl(preset.baseUrl);
       setModel(preset.model);
     }
@@ -62,6 +166,10 @@ export function CreateStudioClient() {
 
   const onGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (providerMode !== "byok" && !user) {
+      setAuthModalOpen(true);
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
@@ -72,18 +180,30 @@ export function CreateStudioClient() {
           resumeText,
           theme,
           siteUrl,
-          apiKey: apiKey.trim() || undefined,
-          baseUrl: baseUrl.trim() || undefined,
-          model: model.trim() || undefined,
+          providerMode,
+          ...(providerMode === "byok"
+            ? {
+                apiKey: apiKey.trim() || undefined,
+                baseUrl: baseUrl.trim() || undefined,
+                model: model.trim() || undefined,
+              }
+            : {}),
         }),
       });
-      const data = (await res.json()) as { profile?: PortfolioProfile; error?: string };
+      const data = (await res.json()) as {
+        profile?: PortfolioProfile;
+        quota?: { usedToday: number; dailyLimit: number };
+        error?: string;
+      };
       if (!res.ok || !data.profile) {
         throw new Error(data.error || "Generation failed.");
       }
       setGenerated(data.profile);
       setHasGenerated(true);
       setPublishedUrl(null);
+      if (data.quota && user) {
+        setUser({ ...user, usedToday: data.quota.usedToday, dailyLimit: data.quota.dailyLimit });
+      }
       const suggested = data.profile.basics.name.en
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
@@ -124,6 +244,10 @@ export function CreateStudioClient() {
   };
 
   const publishLiveSite = async () => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
     setPublishError(null);
     setPublishing(true);
     try {
@@ -135,17 +259,29 @@ export function CreateStudioClient() {
           profile: { ...generated, theme },
         }),
       });
-      const data = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        url?: string;
+        slug?: string;
+        expiresAt?: string;
+        error?: string;
+      };
       if (!res.ok || !data.url) {
         throw new Error(data.error || "Publish failed.");
       }
       setPublishedUrl(data.url);
+      setPublishedExpires(data.expiresAt ? data.expiresAt.slice(0, 10) : null);
+      if (data.slug && !user.sites.includes(data.slug)) {
+        setUser({ ...user, sites: [...user.sites, data.slug] });
+      }
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : "Publish failed.");
     } finally {
       setPublishing(false);
     }
   };
+
+  const remaining = user ? Math.max(0, user.dailyLimit - user.usedToday) : 3;
 
   return (
     <main className="af-create-page" data-theme={theme}>
@@ -155,9 +291,26 @@ export function CreateStudioClient() {
           <strong>TalkCV Studio</strong>
         </Link>
         <div className="af-header-controls">
+          {user ? (
+            <div className="af-user-pill">
+              <User size={13} />
+              <span>{user.email}</span>
+              <em>
+                {lang === "zh" ? `今日剩 ${remaining}/${user.dailyLimit} 次` : `${remaining}/${user.dailyLimit} left`}
+              </em>
+              <button type="button" onClick={logout} title={lang === "zh" ? "退出登录" : "Sign out"}>
+                <LogOut size={12} />
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
+              <LogIn size={13} />
+              <span>{lang === "zh" ? "邮箱登录（领每日免费额度）" : "Sign in with Email"}</span>
+            </button>
+          )}
           <Link className="af-icon-pill" href="/">
             <ArrowLeft size={13} />
-            <span>{lang === "zh" ? "返回示例站" : "Back to Demo"}</span>
+            <span>{lang === "zh" ? "示例站" : "Demo"}</span>
           </Link>
           <button
             type="button"
@@ -175,8 +328,8 @@ export function CreateStudioClient() {
           <h1>{lang === "zh" ? "把简历变成会说话的网站" : "Turn your resume into a site that talks back"}</h1>
           <p className="af-create-sub">
             {lang === "zh"
-              ? "粘贴简历文本或上传 .md / .txt 文件，填入你的 API Key（仅本次请求使用，绝不存储），10 秒生成双语配置并实时预览 3 套主题。"
-              : "Paste your resume or upload .md/.txt, bring your own API key (never stored), and preview 3 live themes in seconds."}
+              ? "邮箱登录后即可免 Key 免费生成（每日 3 次，默认 DeepSeek 国内直连免 VPN），并免费托管 30 天专属链接。"
+              : "Sign in with email for 3 free daily generations (DeepSeek / OpenAI hosted) and 30-day free hosting."}
           </p>
 
           <label className="af-field-label">
@@ -189,7 +342,7 @@ export function CreateStudioClient() {
           </label>
           <textarea
             className="af-textarea"
-            rows={8}
+            rows={7}
             value={resumeText}
             onChange={(e) => setResumeText(e.target.value)}
             placeholder={
@@ -220,49 +373,92 @@ export function CreateStudioClient() {
 
           <div className="af-field-label">
             <span>
-              <KeyRound size={13} /> {lang === "zh" ? "3. 模型与 API Key（BYOK，不落盘）" : "3. Model & API Key (BYOK, never stored)"}
+              <KeyRound size={13} /> {lang === "zh" ? "3. 选择 AI 通道" : "3. Choose AI provider"}
             </span>
           </div>
           <div className="af-preset-row">
-            {PROVIDER_PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={provider === p.id ? "active" : ""}
-                onClick={() => onProviderChange(p.id)}
-              >
-                {p.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              className={providerMode === "hosted-deepseek" ? "active" : ""}
+              onClick={() => setProviderMode("hosted-deepseek")}
+            >
+              {lang === "zh" ? "DeepSeek 免费托管（国内直连）" : "Hosted DeepSeek (Free)"}
+            </button>
+            <button
+              type="button"
+              className={providerMode === "hosted-openai" ? "active" : ""}
+              onClick={() => setProviderMode("hosted-openai")}
+            >
+              {lang === "zh" ? "OpenAI 免费托管" : "Hosted OpenAI (Free)"}
+            </button>
+            <button
+              type="button"
+              className={providerMode === "byok" ? "active" : ""}
+              onClick={() => setProviderMode("byok")}
+            >
+              {lang === "zh" ? "自带 API Key（不限次）" : "Bring Your Own Key"}
+            </button>
           </div>
 
-          <div className="af-input-grid">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="API Key (sk-...)"
-              autoComplete="off"
-            />
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="Model (e.g. deepseek-chat)"
-            />
-            <input
-              type="url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="Base URL (https://api.deepseek.com/v1)"
-            />
-            <input
-              type="url"
-              value={siteUrl}
-              onChange={(e) => setSiteUrl(e.target.value)}
-              placeholder="Planned Site URL (https://me.dev)"
-            />
-          </div>
+          {providerMode === "byok" ? (
+            <>
+              <div className="af-preset-row">
+                {BYOK_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={byokPreset === p.id ? "active" : ""}
+                    onClick={() => onByokPresetChange(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="af-input-grid">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="API Key (sk-...)"
+                  autoComplete="off"
+                />
+                <input
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="Model (e.g. deepseek-chat)"
+                />
+                <input
+                  type="url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="Base URL"
+                />
+                <input
+                  type="url"
+                  value={siteUrl}
+                  onChange={(e) => setSiteUrl(e.target.value)}
+                  placeholder="Planned Site URL"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="af-quota-note">
+              {user ? (
+                <span>
+                  {lang === "zh"
+                    ? `已登录 ${user.email} · 今日剩余免费生成 ${remaining}/${user.dailyLimit} 次（无需填写 API Key）`
+                    : `Signed in as ${user.email} · ${remaining}/${user.dailyLimit} free generations left today`}
+                </span>
+              ) : (
+                <button type="button" className="af-inline-link" onClick={() => setAuthModalOpen(true)}>
+                  {lang === "zh"
+                    ? "👉 点击先用邮箱登录，立即解锁免 Key 免费生成（每日 3 次）"
+                    : "👉 Sign in with email to unlock 3 free daily generations (no API key needed)"}
+                </button>
+              )}
+            </div>
+          )}
 
           {error && <div className="af-ai-error">{error}</div>}
 
@@ -332,18 +528,25 @@ export function CreateStudioClient() {
                       ? "发布中…"
                       : "Publishing…"
                     : lang === "zh"
-                      ? "一键发布专属链接"
-                      : "Publish Live Link"}
+                      ? "一键免费托管（30天）"
+                      : "Publish Free (30 days)"}
                 </span>
               </button>
             </div>
             {publishError && <div className="af-ai-error">{publishError}</div>}
             {publishedUrl && (
               <div className="af-published-banner">
-                <a href={publishedUrl} target="_blank" rel="noreferrer">
-                  🎉 {publishedUrl}
-                  <ExternalLink size={13} />
-                </a>
+                <div>
+                  <a href={publishedUrl} target="_blank" rel="noreferrer">
+                    🎉 {publishedUrl}
+                    <ExternalLink size={13} />
+                  </a>
+                  {publishedExpires && (
+                    <small className="af-expiry-note">
+                      {lang === "zh" ? `免费托管有效期至 ${publishedExpires}` : `Free hosting until ${publishedExpires}`}
+                    </small>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="af-icon-pill"
@@ -392,6 +595,59 @@ export function CreateStudioClient() {
           </div>
         </section>
       </div>
+
+      {authModalOpen && (
+        <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={() => setAuthModalOpen(false)}>
+          <div className="af-auth-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="af-auth-head">
+              <strong>
+                <Mail size={15} /> {lang === "zh" ? "邮箱验证码登录" : "Sign in with Email"}
+              </strong>
+              <button type="button" onClick={() => setAuthModalOpen(false)} aria-label="Close">
+                <X size={15} />
+              </button>
+            </div>
+            {authStep === "email" ? (
+              <form className="af-auth-form" onSubmit={sendOtp}>
+                <p>
+                  {lang === "zh"
+                    ? "登录后即可免费使用 TalkCV 内置 DeepSeek / OpenAI 额度（每日 3 次）并免费托管你的专属简历链接。"
+                    : "Sign in to unlock 3 free daily AI generations and 30-day hosting for your TalkCV link."}
+                </p>
+                <input
+                  type="email"
+                  required
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  placeholder="you@example.com"
+                />
+                {authErr && <div className="af-ai-error">{authErr}</div>}
+                <button type="submit" className="af-btn af-btn-primary" disabled={authBusy}>
+                  {authBusy ? (lang === "zh" ? "发送中…" : "Sending…") : lang === "zh" ? "获取 6 位验证码" : "Send 6-digit code"}
+                </button>
+              </form>
+            ) : (
+              <form className="af-auth-form" onSubmit={verifyOtp}>
+                {authMsg && <div className="af-quota-note">{authMsg}</div>}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  required
+                  value={authCode}
+                  onChange={(e) => setAuthCode(e.target.value)}
+                  placeholder={lang === "zh" ? "输入 6 位验证码" : "6-digit code"}
+                />
+                {authErr && <div className="af-ai-error">{authErr}</div>}
+                <button type="submit" className="af-btn af-btn-primary" disabled={authBusy}>
+                  {authBusy ? (lang === "zh" ? "验证中…" : "Verifying…") : lang === "zh" ? "确认登录" : "Verify & Sign in"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

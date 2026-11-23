@@ -1,11 +1,13 @@
 import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
-import { loadPublishedProfile, type PublishEnv } from "./publish";
+import type { AuthEnv } from "./auth";
+import { loadPublishedProfile } from "./publish";
 
-export interface ChatEnv extends PublishEnv {
+export interface ChatEnv extends AuthEnv {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
   OPENAI_BASE_URL?: string;
+  DEEPSEEK_API_KEY?: string;
 }
 
 interface IncomingMessage {
@@ -89,11 +91,12 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     return jsonError(405, "Method not allowed.");
   }
 
-  const apiKey = env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
+  const openaiKey = env.OPENAI_API_KEY?.trim() || "";
+  const deepseekKey = env.DEEPSEEK_API_KEY?.trim() || "";
+  if (!openaiKey && !deepseekKey) {
     return jsonError(
       503,
-      "AI chat is not configured yet. Add OPENAI_API_KEY to your environment to enable it.",
+      "AI chat is not configured yet. Add OPENAI_API_KEY or DEEPSEEK_API_KEY to enable it.",
     );
   }
 
@@ -148,27 +151,63 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
       ? `\n\n## Visitor Highlighted Text\nThe visitor highlighted this excerpt on the page:\n"""\n${quoteText}\n"""`
       : "");
 
-  const baseUrl = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
-  const model = env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+  const cf = (request as Request & { cf?: { colo?: string; country?: string } }).cf;
+  const edgeColo = cf?.colo || "EDGE";
+  const isChinaRegion =
+    cf?.country === "CN" ||
+    cf?.country === "HK" ||
+    cf?.country === "MO" ||
+    edgeColo === "HKG" ||
+    edgeColo === "MFM";
+
+  const openaiBase = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const openaiModel = env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
   const startedAt = Date.now();
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${baseUrl}/chat/completions`, {
+  const callProvider = (url: string, key: string, mdl: string) =>
+    fetch(`${url}/chat/completions`, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${apiKey}`,
+        authorization: `Bearer ${key}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model,
+        model: mdl,
         stream: true,
         temperature: 0.4,
         max_tokens: 900,
         messages: [{ role: "system", content: systemContent }, ...sanitized],
       }),
     });
-  } catch {
+
+  // Prefer DeepSeek for Mainland China / HK edges so domestic users never hit OpenAI region blocks,
+  // and automatically fail over between OpenAI and DeepSeek if the primary provider errors.
+  const candidates: Array<{ baseUrl: string; key: string; model: string }> = [];
+  if (isChinaRegion && deepseekKey) {
+    candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+    if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+  } else {
+    if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+    if (deepseekKey) candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+  }
+
+  let upstream: Response | null = null;
+  let model = candidates[0].model;
+  for (const cand of candidates) {
+    try {
+      const res = await callProvider(cand.baseUrl, cand.key, cand.model);
+      if (res.ok && res.body) {
+        upstream = res;
+        model = cand.model;
+        break;
+      }
+      upstream = res;
+    } catch {
+      upstream = null;
+    }
+  }
+
+  if (!upstream) {
     return jsonError(502, "Unable to reach AI provider.");
   }
 
@@ -184,8 +223,6 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
-  const cf = (request as Request & { cf?: { colo?: string } }).cf;
-  const edgeColo = cf?.colo || "EDGE";
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

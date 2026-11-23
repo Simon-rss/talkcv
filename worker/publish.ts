@@ -1,4 +1,11 @@
 import type { PortfolioProfile } from "../lib/schema";
+import {
+  FREE_HOSTING_DAYS,
+  getSessionUser,
+  getUserSites,
+  MAX_SITES_PER_USER,
+  recordUserSite,
+} from "./auth";
 
 export interface KVNamespaceLike {
   get(key: string): Promise<string | null>;
@@ -7,6 +14,13 @@ export interface KVNamespaceLike {
 
 export interface PublishEnv {
   PROFILES_KV?: KVNamespaceLike;
+}
+
+interface StoredProfileRecord {
+  profile: PortfolioProfile;
+  ownerEmail?: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 const RESERVED_SLUGS = new Set([
@@ -42,20 +56,36 @@ export function normalizeSlug(raw: string): string {
     .slice(0, 32);
 }
 
-export async function loadPublishedProfile(
+async function loadStoredRecord(
   slug: string,
   env: PublishEnv,
-): Promise<PortfolioProfile | null> {
+): Promise<StoredProfileRecord | null> {
   const clean = normalizeSlug(slug);
   if (!clean) return null;
   const key = `profile:${clean}`;
   const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : (memoryStore.get(key) ?? null);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as PortfolioProfile;
+    const parsed = JSON.parse(raw) as StoredProfileRecord | PortfolioProfile;
+    if ("profile" in parsed && parsed.profile && typeof parsed.profile === "object") {
+      return parsed as StoredProfileRecord;
+    }
+    return {
+      profile: parsed as PortfolioProfile,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + FREE_HOSTING_DAYS * 86400_000).toISOString(),
+    };
   } catch {
     return null;
   }
+}
+
+export async function loadPublishedProfile(
+  slug: string,
+  env: PublishEnv,
+): Promise<PortfolioProfile | null> {
+  const record = await loadStoredRecord(slug, env);
+  return record?.profile ?? null;
 }
 
 export async function handlePublishRequest(request: Request, env: PublishEnv): Promise<Response> {
@@ -85,7 +115,33 @@ export async function handlePublishRequest(request: Request, env: PublishEnv): P
     return jsonResponse(400, { error: "Valid profile payload is required." });
   }
 
-  const serialized = JSON.stringify(profileObj);
+  const user = await getSessionUser(request, env);
+  const existing = await loadStoredRecord(slug, env);
+  if (existing?.ownerEmail && existing.ownerEmail !== user?.email) {
+    return jsonResponse(403, {
+      error: `The handle "/u/${slug}" is already owned by another account. Please pick a different handle.`,
+    });
+  }
+
+  if (user) {
+    const userSites = await getUserSites(user.email, env);
+    if (!userSites.includes(slug) && userSites.length >= MAX_SITES_PER_USER) {
+      return jsonResponse(403, {
+        error: `Free accounts can host up to ${MAX_SITES_PER_USER} sites (${userSites.map((s) => `/u/${s}`).join(", ")}). Update an existing handle instead.`,
+      });
+    }
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + FREE_HOSTING_DAYS * 86400_000).toISOString();
+  const record: StoredProfileRecord = {
+    profile: profileObj as PortfolioProfile,
+    ...(user ? { ownerEmail: user.email } : {}),
+    createdAt: existing?.createdAt ?? now.toISOString(),
+    expiresAt,
+  };
+
+  const serialized = JSON.stringify(record);
   if (serialized.length > 100_000) {
     return jsonResponse(413, { error: "Profile payload is too large (max 100KB)." });
   }
@@ -97,11 +153,16 @@ export async function handlePublishRequest(request: Request, env: PublishEnv): P
     memoryStore.set(key, serialized);
   }
 
+  if (user) {
+    await recordUserSite(user.email, slug, env);
+  }
+
   const origin = new URL(request.url).origin;
   return jsonResponse(200, {
     ok: true,
     slug,
     url: `${origin}/u/${slug}`,
+    expiresAt,
     storage: env.PROFILES_KV ? "kv" : "memory",
   });
 }

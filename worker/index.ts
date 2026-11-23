@@ -1,4 +1,10 @@
 import handler from "vinext/server/app-router-entry";
+import {
+  handleLogoutRequest,
+  handleMeRequest,
+  handleSendCodeRequest,
+  handleVerifyCodeRequest,
+} from "./auth";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleGenerateRequest } from "./generate";
 import { handleGetProfileRequest, handlePublishRequest } from "./publish";
@@ -16,6 +22,18 @@ interface WorkerEnv extends ChatEnv {
 const worker = {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/api/auth/send-code") {
+      return handleSendCodeRequest(request, env);
+    }
+    if (url.pathname === "/api/auth/verify") {
+      return handleVerifyCodeRequest(request, env);
+    }
+    if (url.pathname === "/api/auth/me") {
+      return handleMeRequest(request, env);
+    }
+    if (url.pathname === "/api/auth/logout") {
+      return handleLogoutRequest(request);
+    }
     if (url.pathname === "/api/chat") {
       return handleChatRequest(request, env);
     }

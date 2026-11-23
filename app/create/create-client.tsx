@@ -195,6 +195,9 @@ export function CreateStudioClient() {
   const [refineOpen, setRefineOpen] = useState(false);
   const [editingSkills, setEditingSkills] = useState(false);
   const [skillsDraft, setSkillsDraft] = useState("");
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   const currentPlan: PlanTier = user?.plan ?? "free";
   const remainingEdits = user ? Math.max(0, (user.editDailyLimit ?? 0) - (user.editUsedToday ?? 0)) : 0;
@@ -546,11 +549,87 @@ export function CreateStudioClient() {
     setUser(null);
   };
 
+  const processResumeFile = async (file: File) => {
+    setError(null);
+    setUploadNote(null);
+    const name = file.name || "resume";
+    const ext = name.toLowerCase().split(".").pop() || "";
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError(lang === "zh" ? "文件超过 5MB 限制，请压缩后再上传。" : "File exceeds the 5 MB limit.");
+      return;
+    }
+
+    if (ext === "txt" || ext === "md" || ext === "markdown" || ext === "json") {
+      const text = await file.text();
+      setResumeText(text.slice(0, 14000));
+      setUploadNote(lang === "zh" ? `已导入 ${name}` : `Loaded ${name}`);
+      return;
+    }
+
+    if (ext === "doc") {
+      setError(
+        lang === "zh"
+          ? "暂不支持旧版 .doc 格式，请先另存为 .docx 或导出 .pdf 再上传。"
+          : "Legacy .doc is not supported directly. Please save as .docx or .pdf and upload again.",
+      );
+      return;
+    }
+
+    if (ext !== "pdf" && ext !== "docx") {
+      setError(
+        lang === "zh"
+          ? "不支持该文件格式，请上传 .pdf、.docx、.md、.txt 或 .json 简历。"
+          : "Unsupported format. Please upload .pdf, .docx, .md, .txt, or .json.",
+      );
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const res = await fetch("/api/parse-resume", {
+        method: "POST",
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-filename": encodeURIComponent(name),
+        },
+        body: file,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        text?: string;
+        pages?: number;
+        code?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.text) {
+        if (data.code === "SCANNED_PDF") {
+          throw new Error(
+            lang === "zh"
+              ? "检测到这份 PDF 可能是纯图片扫描件，无法直接提取文字。请导出可复制文字版 PDF / Word（.docx），或直接粘贴文本。"
+              : data.error || "Scanned image PDF detected.",
+          );
+        }
+        throw new Error(data.error || (lang === "zh" ? "文件解析失败，请检查文件是否加密或损坏。" : "Failed to parse file."));
+      }
+      setResumeText(data.text.slice(0, 14000));
+      setUploadNote(
+        lang === "zh"
+          ? `已成功解析 ${name}${data.pages ? `（共 ${data.pages} 页，${data.text.length} 字）` : `（${data.text.length} 字）`}`
+          : `Parsed ${name}${data.pages ? ` (${data.pages} pages, ${data.text.length} chars)` : ` (${data.text.length} chars)`}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : lang === "zh" ? "简历解析失败。" : "Failed to parse resume.");
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
   const onFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    const text = await file.text();
-    setResumeText(text.slice(0, 14000));
+    await processResumeFile(file);
   };
 
   const onGenerate = async (e: React.FormEvent) => {
@@ -819,19 +898,50 @@ export function CreateStudioClient() {
             <span>{lang === "zh" ? "1. 简历内容" : "1. Resume content"}</span>
             <label className="af-upload-btn">
               <FileUp size={13} />
-              <span>{lang === "zh" ? "导入 .md / .txt" : "Upload .md / .txt"}</span>
-              <input type="file" accept=".md,.txt,.json" onChange={onFileUpload} hidden />
+              <span>
+                {uploadingFile
+                  ? lang === "zh"
+                    ? "解析文件中…"
+                    : "Parsing…"
+                  : lang === "zh"
+                    ? "上传 PDF / Word / MD"
+                    : "Upload PDF / DOCX / MD"}
+              </span>
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.md,.txt,.json"
+                onChange={onFileUpload}
+                disabled={uploadingFile}
+                hidden
+              />
             </label>
           </label>
+          {uploadNote && (
+            <div className="af-quota-note" style={{ marginBottom: 6 }}>
+              ✓ {uploadNote}
+            </div>
+          )}
           <textarea
             className="af-textarea"
+            style={dragOver ? { borderColor: "var(--accent)", boxShadow: "0 0 0 2px var(--accent-soft)" } : undefined}
             rows={6}
             value={resumeText}
             onChange={(e) => setResumeText(e.target.value)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) void processResumeFile(file);
+            }}
             placeholder={
               lang === "zh"
-                ? "把你的简历全文（姓名、联系方式、工作经历、项目成果、技能）直接粘贴在这里…"
-                : "Paste your resume text (name, contact, experience, projects, metrics, skills)…"
+                ? "可直接拖入 PDF / Word (.docx) / Markdown 简历文件，或把简历全文粘贴在这里…"
+                : "Drop a PDF / Word (.docx) / Markdown resume here, or paste your resume text…"
             }
             required
           />

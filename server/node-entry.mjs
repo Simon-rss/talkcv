@@ -8,6 +8,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { Pool } from "pg";
 import worker from "../dist/server/index.js";
+import { handleParseResumeNodeRequest } from "./parse-resume.mjs";
 
 const PORT = Number(process.env.PORT || 3100);
 const CLIENT_DIR = path.resolve(import.meta.dirname, "..", "dist", "client");
@@ -138,6 +139,11 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", `${proto}://${host}`);
 
     if ((req.method === "GET" || req.method === "HEAD") && tryServeStatic(url.pathname, res)) {
+      return;
+    }
+
+    if (url.pathname === "/api/parse-resume") {
+      await handleParseResumeNodeRequest(req, res);
       return;
     }
 

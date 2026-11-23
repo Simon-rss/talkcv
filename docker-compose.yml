@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: talkcv-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: talkcv
+      POSTGRES_USER: talkcv
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-talkcv_change_me}
+    volumes:
+      - talkcv_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U talkcv -d talkcv"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: talkcv-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3100:3100"
+    environment:
+      PORT: "3100"
+      DATABASE_URL: postgresql://talkcv:${POSTGRES_PASSWORD:-talkcv_change_me}@postgres:5432/talkcv
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-TalkCV <noreply@mail.renss.top>}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+
+volumes:
+  talkcv_pgdata:

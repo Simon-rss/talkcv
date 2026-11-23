@@ -19,6 +19,8 @@ export const FREE_HOSTING_DAYS = 30;
 
 const memUsage = new Map<string, number>();
 const memUserSites = new Map<string, string[]>();
+const otpCooldown = new Map<string, number>();
+const OTP_COOLDOWN_MS = 30_000;
 
 function jsonResponse(status: number, body: Record<string, unknown>, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -167,6 +169,17 @@ export async function handleSendCodeRequest(request: Request, env: AuthEnv): Pro
   if (!email) {
     return jsonResponse(400, { error: "Please enter a valid email address." });
   }
+
+  const ip =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "local";
+  const cooldownKey = `${ip}:${email}`;
+  const lastSent = otpCooldown.get(cooldownKey) ?? 0;
+  if (Date.now() - lastSent < OTP_COOLDOWN_MS) {
+    return jsonResponse(429, { error: "Please wait 30 seconds before requesting another code." });
+  }
+  otpCooldown.set(cooldownKey, Date.now());
 
   const code = randomCode();
   const expiresAt = Date.now() + 10 * 60 * 1000;

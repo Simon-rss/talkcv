@@ -166,12 +166,14 @@ function CountUpValue({ value }: { value: string }) {
 }
 
 function SiteHeader({ casePage = false }: { casePage?: boolean }) {
-  const { profile, lang, setLang, theme, setTheme } = useApp();
+  const { profile, profileSlug, lang, setLang, theme, setTheme } = useApp();
   const { setCmdOpen } = usePortfolioAI();
+  const isPersonalHosted = Boolean(profileSlug);
+  const homeHref = isPersonalHosted && profileSlug !== "__draft__" ? `/u/${profileSlug}` : "/";
 
   return (
     <header className="af-header">
-      <Link className="af-brand" href="/">
+      <Link className="af-brand" href={homeHref}>
         <span className="af-brand-mark">{profile.basics.initials}</span>
         <strong>{localize(profile.basics.name, lang)}</strong>
       </Link>
@@ -181,26 +183,30 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
         <Link href={casePage ? "/#capabilities" : "#capabilities"}>{lang === "en" ? "Capabilities" : "能力"}</Link>
         <Link href={casePage ? "/#experience" : "#experience"}>{lang === "en" ? "Experience" : "经历"}</Link>
         <Link href={casePage ? "/#contact" : "#contact"}>{lang === "en" ? "Contact" : "联系"}</Link>
-        <Link className="af-nav-create" href="/create">
-          {lang === "en" ? "Create Yours" : "免费生成"}
-        </Link>
+        {!isPersonalHosted && (
+          <Link className="af-nav-create" href="/create">
+            {lang === "en" ? "Create Yours" : "免费生成"}
+          </Link>
+        )}
       </nav>
 
       <div className="af-header-controls">
-        <div className="af-theme-switcher" role="group" aria-label={lang === "en" ? "Theme" : "主题"}>
-          <Palette size={13} aria-hidden="true" />
-          {THEMES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={theme === item.id ? "active" : ""}
-              onClick={() => setTheme(item.id)}
-              title={localize(item.description, lang)}
-            >
-              {localize(item.label, lang)}
-            </button>
-          ))}
-        </div>
+        {!isPersonalHosted && (
+          <div className="af-theme-switcher" role="group" aria-label={lang === "en" ? "Theme" : "主题"}>
+            <Palette size={13} aria-hidden="true" />
+            {THEMES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={theme === item.id ? "active" : ""}
+                onClick={() => setTheme(item.id)}
+                title={localize(item.description, lang)}
+              >
+                {localize(item.label, lang)}
+              </button>
+            ))}
+          </div>
+        )}
 
         <button
           type="button"
@@ -311,8 +317,9 @@ function ContactBand() {
 }
 
 function SiteFooter() {
-  const { profile, lang } = useApp();
+  const { profile, profileSlug, lang } = useApp();
   const buildSha = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "dev";
+  const isPersonalHosted = Boolean(profileSlug);
 
   return (
     <footer className="af-footer af-shell">
@@ -320,17 +327,25 @@ function SiteFooter() {
         <span>
           © {new Date().getFullYear()} {localize(profile.basics.name, lang)}
         </span>
-        <span>{localize(profile.basics.footerNote, lang)}</span>
+        {isPersonalHosted ? (
+          <Link href="/create" className="af-powered-by">
+            {lang === "en" ? "Hosted with TalkCV" : "由 TalkCV 托管"}
+          </Link>
+        ) : (
+          <span>{localize(profile.basics.footerNote, lang)}</span>
+        )}
       </div>
-      <div className="af-footer-meta">
-        <a href="/llms.txt">
-          {lang === "en" ? "Agents: read /llms.txt" : "给 AI 读的版本：/llms.txt"}
-        </a>
-        <span>
-          {lang === "en" ? `Built from ${buildSha}` : `构建版本 ${buildSha}`} ·{" "}
-          <a href="/resume.json">/resume.json</a>
-        </span>
-      </div>
+      {!isPersonalHosted && (
+        <div className="af-footer-meta">
+          <a href="/llms.txt">
+            {lang === "en" ? "Agents: read /llms.txt" : "给 AI 读的版本：/llms.txt"}
+          </a>
+          <span>
+            {lang === "en" ? `Built from ${buildSha}` : `构建版本 ${buildSha}`} ·{" "}
+            <a href="/resume.json">/resume.json</a>
+          </span>
+        </div>
+      )}
     </footer>
   );
 }

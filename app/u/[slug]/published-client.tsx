@@ -53,7 +53,7 @@ export function PublishedProfileClient({ slug }: { slug: string }) {
         <p className="af-intro">
           The 30-day free hosting period for this TalkCV has expired. If you are the owner, sign in at TalkCV Studio to republish.
         </p>
-        <Link className="af-btn af-btn-primary" href="/create">
+        <Link className="af-btn af-btn-primary" href={`/create?handle=${encodeURIComponent(slug)}`}>
           Open TalkCV Studio →
         </Link>
       </main>
@@ -68,7 +68,7 @@ export function PublishedProfileClient({ slug }: { slug: string }) {
         <p className="af-intro">
           This handle hasn&apos;t been published yet. Claim it and create your interactive AI resume in 10 seconds.
         </p>
-        <Link className="af-btn af-btn-primary" href="/create">
+        <Link className="af-btn af-btn-primary" href={`/create?handle=${encodeURIComponent(slug)}`}>
           Claim /u/{slug} →
         </Link>
       </main>

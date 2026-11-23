@@ -85,7 +85,7 @@ function parseLeadingToolTag(
   validSlugs: Set<string>,
   allowThemeSwitch: boolean,
 ): { tool: ClientToolCall | null; remainder: string } {
-  const match = raw.match(/^\s*\[\[TOOL:([a-z_]+)(?:\|([^\]]+))?\]\]\s*/);
+  const match = raw.match(/^\s*\[\[TOOL:([a-z_]+)(?:\|([\s\S]*?))?\]\]\s*/);
   if (!match) return { tool: null, remainder: raw };
   const name = match[1];
   const arg = (match[2] ?? "").trim();
@@ -275,6 +275,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
 
   let upstream: Response | null = null;
   let model = candidates[0].model;
+  const requestedModel = candidates[0].model;
   for (const cand of candidates) {
     try {
       const res = await callProvider(cand.baseUrl, cand.key, cand.model);
@@ -387,7 +388,13 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
         controller.enqueue(
           encoder.encode(
             `data: ${JSON.stringify({
-              meta: { model, ttftMs: ttftMs ?? Date.now() - startedAt, totalMs: Date.now() - startedAt, edge: edgeColo },
+              meta: {
+                model,
+                ...(requestedModel !== model ? { requestedModel } : {}),
+                ttftMs: ttftMs ?? Date.now() - startedAt,
+                totalMs: Date.now() - startedAt,
+                edge: edgeColo,
+              },
             })}\n\n`,
           ),
         );

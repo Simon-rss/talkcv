@@ -45,6 +45,7 @@ export interface ExecutedTool {
 
 interface TraceMeta {
   model: string;
+  requestedModel?: string;
   ttftMs: number;
   totalMs: number;
   edge: string;
@@ -362,11 +363,15 @@ export function CommandPalette({
   } = usePortfolioAI();
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (cmdOpen) {
-      const raf = window.requestAnimationFrame(() => inputRef.current?.focus());
+      const raf = window.requestAnimationFrame(() => {
+        setActiveIdx(0);
+        inputRef.current?.focus();
+      });
       return () => window.cancelAnimationFrame(raf);
     }
   }, [cmdOpen]);
@@ -376,17 +381,24 @@ export function CommandPalette({
   const isPersonalHosted = Boolean(profileSlug);
   const actions = [
     ...(!isPersonalHosted
-      ? THEMES.map((t) => ({
-          id: `theme-${t.id}`,
-          label:
-            lang === "zh"
-              ? `切换主题：${t.label.zh}${theme === t.id ? "（当前）" : ""}`
-              : `Switch theme: ${t.label.en}${theme === t.id ? " (active)" : ""}`,
-          run: () => {
-            setTheme(t.id);
-            showToast(lang === "zh" ? `已切换为 ${t.label.zh}` : `Switched to ${t.label.en}`);
+      ? [
+          {
+            id: "create-own",
+            label: lang === "zh" ? "免费生成我的个人站 (/create)" : "Build your own TalkCV free (/create)",
+            run: () => router.push("/create"),
           },
-        }))
+          ...THEMES.map((t) => ({
+            id: `theme-${t.id}`,
+            label:
+              lang === "zh"
+                ? `切换主题：${t.label.zh}${theme === t.id ? "（当前）" : ""}`
+                : `Switch theme: ${t.label.en}${theme === t.id ? " (active)" : ""}`,
+            run: () => {
+              setTheme(t.id);
+              showToast(lang === "zh" ? `已切换为 ${t.label.zh}` : `Switched to ${t.label.en}`);
+            },
+          })),
+        ]
       : []),
     ...profile.projects.map((p) => ({
       id: `proj-${p.slug}`,
@@ -426,6 +438,7 @@ export function CommandPalette({
 
   const q = query.trim().toLowerCase();
   const filtered = q ? actions.filter((a) => a.label.toLowerCase().includes(q)) : actions;
+  const clampedIdx = filtered.length > 0 ? Math.min(activeIdx, filtered.length - 1) : 0;
 
   return (
     <div
@@ -442,37 +455,63 @@ export function CommandPalette({
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActiveIdx(0);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") setCmdOpen(false);
-              if (e.key === "Enter" && filtered[0]) {
-                filtered[0].run();
+              if (e.key === "Escape") {
+                setCmdOpen(false);
+              } else if (e.key === "ArrowDown" && filtered.length > 0) {
+                e.preventDefault();
+                setActiveIdx((prev) => (prev + 1) % filtered.length);
+              } else if (e.key === "ArrowUp" && filtered.length > 0) {
+                e.preventDefault();
+                setActiveIdx((prev) => (prev - 1 + filtered.length) % filtered.length);
+              } else if (e.key === "Enter" && filtered[clampedIdx]) {
+                e.preventDefault();
+                filtered[clampedIdx].run();
                 setCmdOpen(false);
                 setQuery("");
               }
             }}
-            placeholder={lang === "zh" ? "搜索项目、切换主题或执行命令…" : "Search cases, switch themes, or run commands…"}
+            placeholder={
+              isPersonalHosted
+                ? lang === "zh"
+                  ? "搜索项目、复制 JD 链接或打开 AI 助手…"
+                  : "Search cases, copy JD link, or open AI…"
+                : lang === "zh"
+                  ? "搜索项目、切换主题或执行命令…"
+                  : "Search cases, switch themes, or run commands…"
+            }
           />
           <button type="button" onClick={() => setCmdOpen(false)} aria-label="Close">
             <X size={15} />
           </button>
         </div>
         <div className="af-cmd-list">
-          {filtered.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="af-cmd-item"
-              onClick={() => {
-                item.run();
-                setCmdOpen(false);
-                setQuery("");
-              }}
-            >
-              {item.id.startsWith("theme-") ? <Palette size={14} /> : <Sparkles size={14} />}
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {filtered.length === 0 ? (
+            <div className="af-cmd-empty">
+              {lang === "zh" ? "未找到匹配的命令" : "No matching commands"}
+            </div>
+          ) : (
+            filtered.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`af-cmd-item${idx === clampedIdx ? " is-active" : ""}`}
+                onMouseEnter={() => setActiveIdx(idx)}
+                onClick={() => {
+                  item.run();
+                  setCmdOpen(false);
+                  setQuery("");
+                }}
+              >
+                {item.id.startsWith("theme-") ? <Palette size={14} /> : <Sparkles size={14} />}
+                <span>{item.label}</span>
+              </button>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -502,6 +541,13 @@ function SimpleMarkdown({ text }: { text: string }) {
   return (
     <div className="af-md">
       {lines.map((line, idx) => {
+        const headingMatch = line.match(/^\s*(#{1,4})\s+(.+)$/);
+        if (headingMatch) {
+          const level = headingMatch[1].length;
+          const content = renderInline(headingMatch[2]);
+          if (level <= 2) return <h3 key={idx} className="af-md-h">{content}</h3>;
+          return <h4 key={idx} className="af-md-h af-md-h-sub">{content}</h4>;
+        }
         if (/^\s*[-*•]\s+/.test(line)) {
           return (
             <p key={idx} className="af-md-bullet">
@@ -511,6 +557,58 @@ function SimpleMarkdown({ text }: { text: string }) {
         }
         return <p key={idx}>{renderInline(line)}</p>;
       })}
+    </div>
+  );
+}
+
+function EditableEmailCard({
+  email,
+  initialSubject,
+  initialBody,
+  lang,
+}: {
+  email: string;
+  initialSubject: string;
+  initialBody: string;
+  lang: Lang;
+}) {
+  const [subject, setSubject] = useState(initialSubject);
+  const [body, setBody] = useState(initialBody);
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="af-email-card">
+      <input
+        type="text"
+        className="af-email-subject-input"
+        value={subject}
+        onChange={(e) => setSubject(e.target.value)}
+        aria-label={lang === "zh" ? "邮件主题" : "Email subject"}
+      />
+      <textarea
+        className="af-email-body-input"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={4}
+        aria-label={lang === "zh" ? "邮件正文" : "Email body"}
+      />
+      <div className="af-email-actions">
+        <a href={buildMailtoHref(email, subject, body)}>
+          <Mail size={13} />
+          <span>{lang === "zh" ? "打开邮件客户端" : "Open Mail App"}</span>
+        </a>
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard?.writeText(`To: ${email}\nSubject: ${subject}\n\n${body}`);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1800);
+          }}
+        >
+          <ClipboardCopy size={13} />
+          <span>{copied ? (lang === "zh" ? "已复制" : "Copied") : lang === "zh" ? "复制" : "Copy"}</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -707,7 +805,9 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
     }
   };
 
-  const prompts = profile.ai.suggestedPrompts[lang] ?? profile.ai.suggestedPrompts.en;
+  const prompts = (profile.ai.suggestedPrompts[lang] ?? profile.ai.suggestedPrompts.en).filter(
+    (p) => !profileSlug || !/theme|主题/i.test(p),
+  );
 
   return (
     <div className="af-ai-widget">
@@ -847,30 +947,21 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
                   {msg.tools
                     ?.filter((tc) => tc.name === "draft_email")
                     .map((tc, eIdx) => (
-                      <div key={eIdx} className="af-email-card">
-                        <strong>{tc.args.subject}</strong>
-                        <div className="af-email-actions">
-                          <a href={buildMailtoHref(profile.basics.email, tc.args.subject ?? "", tc.args.body ?? "")}>
-                            <Mail size={13} />
-                            <span>{lang === "zh" ? "打开邮件客户端" : "Open Mail App"}</span>
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void navigator.clipboard?.writeText(
-                                `To: ${profile.basics.email}\nSubject: ${tc.args.subject ?? ""}\n\n${tc.args.body ?? ""}`,
-                              )
-                            }
-                          >
-                            <ClipboardCopy size={13} />
-                            <span>{lang === "zh" ? "复制" : "Copy"}</span>
-                          </button>
-                        </div>
-                      </div>
+                      <EditableEmailCard
+                        key={eIdx}
+                        email={profile.basics.email}
+                        initialSubject={tc.args.subject ?? ""}
+                        initialBody={tc.args.body ?? ""}
+                        lang={lang}
+                      />
                     ))}
                   {msg.trace && (
                     <div className="af-trace-bar">
-                      <span>{msg.trace.model}</span>
+                      <span>
+                        {msg.trace.requestedModel && msg.trace.requestedModel !== msg.trace.model
+                          ? `${msg.trace.model} (fallback from ${msg.trace.requestedModel})`
+                          : msg.trace.model}
+                      </span>
                       <span>TTFT {(msg.trace.ttftMs / 1000).toFixed(2)}s</span>
                       <span>CF:{msg.trace.edge}</span>
                     </div>
@@ -902,7 +993,15 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={lang === "zh" ? "问项目架构、切换主题或约面…" : "Ask about projects, themes, or contact…"}
+              placeholder={
+                profileSlug
+                  ? lang === "zh"
+                    ? "问项目架构、贴 JD 或起草约面邮件…"
+                    : "Ask about projects, match a JD, or draft an invite…"
+                  : lang === "zh"
+                    ? "问项目架构、切换主题或约面…"
+                    : "Ask about projects, themes, or contact…"
+              }
               maxLength={2200}
             />
             <button type="submit" disabled={loading || (!input.trim() && !quote)} aria-label="Send">

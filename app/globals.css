@@ -1171,9 +1171,56 @@ button {
   font-size: 13.5px;
 }
 
-.af-cmd-item:hover {
+.af-cmd-item:hover,
+.af-cmd-item.is-active {
   background: var(--surface-alt);
   color: var(--accent);
+}
+
+.af-cmd-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.af-md-h {
+  margin: 10px 0 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.af-md-h-sub {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.af-email-subject-input,
+.af-email-body-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 6px 8px;
+}
+
+.af-email-subject-input {
+  font-weight: 600;
+}
+
+.af-email-body-input {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.af-mobile-create {
+  display: none;
 }
 
 .af-toast {
@@ -1197,6 +1244,33 @@ button {
   .af-nav,
   .af-kbd-hint {
     display: none;
+  }
+  .af-mobile-create {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .af-header {
+    padding: 10px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .af-header-controls {
+    gap: 6px;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .af-user-pill {
+    max-width: calc(100vw - 90px);
+    overflow: hidden;
+  }
+  .af-user-pill > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
   }
   .af-exp-layout,
   .af-timeline-item,

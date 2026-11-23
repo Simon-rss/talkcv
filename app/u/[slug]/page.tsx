@@ -12,6 +12,9 @@ export async function generateMetadata({
   return {
     title: { absolute: label },
     description: desc,
+    alternates: {
+      canonical: `/u/${slug}`,
+    },
     openGraph: {
       type: "profile",
       title: label,

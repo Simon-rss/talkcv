@@ -181,7 +181,7 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
   const { profile, profileSlug, lang, setLang, theme, setTheme } = useApp();
   const { setCmdOpen } = usePortfolioAI();
   const isPersonalHosted = Boolean(profileSlug);
-  const homeHref = isPersonalHosted && profileSlug !== "__draft__" ? `/u/${profileSlug}` : "/";
+  const homeHref = profileSlug === "__draft__" ? "/preview" : isPersonalHosted ? `/u/${profileSlug}` : "/";
 
   return (
     <header className="af-header">
@@ -203,6 +203,11 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
       </nav>
 
       <div className="af-header-controls">
+        {!isPersonalHosted && (
+          <Link className="af-nav-create af-mobile-create" href="/create">
+            {lang === "en" ? "Create" : "免费生成"}
+          </Link>
+        )}
         {!isPersonalHosted && (
           <div className="af-theme-switcher" role="group" aria-label={lang === "en" ? "Theme" : "主题"}>
             <Palette size={13} aria-hidden="true" />
@@ -370,6 +375,17 @@ function HomeContent() {
   const modalProject = modalProjectSlug
     ? profile.projects.find((p) => p.slug === modalProjectSlug) ?? null
     : null;
+
+  useEffect(() => {
+    if (!modalProject) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setModalProjectSlug(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalProject, setModalProjectSlug]);
 
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get("filter");

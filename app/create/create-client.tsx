@@ -74,6 +74,39 @@ const BYOK_PRESETS = [
 
 const STUDIO_DRAFT_KEY = "talkcv-studio-draft";
 
+function localizeApiError(raw: string, lang: Lang): string {
+  if (lang !== "zh") return raw;
+  const s = raw.trim();
+  if (/An OpenAI-compatible API key is required/i.test(s)) {
+    return "自有 Key 模式需要填入 OpenAI 兼容 API Key（或登录账号使用每日免费托管额度）。";
+  }
+  if (/Please sign in with your email/i.test(s)) {
+    return "请先使用邮箱登录以使用 TalkCV 免费托管额度（或切换为自有 API Key）。";
+  }
+  if (/Daily free generation limit reached/i.test(s)) {
+    return "今日免费生成额度（3 次/天）已用完，请明日再试或切换自有 API Key。";
+  }
+  if (/Please enter your visitor chat API key/i.test(s)) {
+    return "请先填写访客对话的自有 API Key（或切换回免费托管模型）。";
+  }
+  if (/requires TalkCV Pro/i.test(s)) {
+    return "该模型为 TalkCV Pro 专属，请升级 Pro 或切换为自有 API Key 使用。";
+  }
+  if (/Rate limit exceeded/i.test(s)) {
+    return "请求过于频繁，请稍等一分钟后再试。";
+  }
+  if (/at least 30 characters/i.test(s)) {
+    return "请至少输入 30 个字符的简历内容。";
+  }
+  if (/Invalid API key/i.test(s)) {
+    return "API Key 无效，请检查后重试。";
+  }
+  if (/Handle must be/i.test(s)) {
+    return "自定义网址仅支持 3–32 位小写字母、数字和连字符。";
+  }
+  return s;
+}
+
 export function CreateStudioClient() {
   const [lang, setLang] = useState<Lang>("zh");
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -134,7 +167,7 @@ export function CreateStudioClient() {
       .catch(() => {});
   }, []);
 
-  // Restore saved Studio draft on mount (fixes refresh losing draft!)
+  // Restore saved Studio draft on mount (fixes refresh losing draft & model selectors!)
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       try {
@@ -147,15 +180,30 @@ export function CreateStudioClient() {
             handle?: string;
             generated?: PortfolioProfile;
             hasGenerated?: boolean;
+            genMode?: "hosted" | "byok";
+            genModelId?: string;
+            chatMode?: "hosted" | "byok";
+            chatHostedModelId?: string;
           };
           if (typeof d.resumeText === "string") setResumeText(d.resumeText);
           if (typeof d.stylePrompt === "string") setStylePrompt(d.stylePrompt);
           if (d.theme === "editorial" || d.theme === "terminal" || d.theme === "bento") setTheme(d.theme);
           if (typeof d.handle === "string" && d.handle) setHandle(d.handle);
+          if (d.genMode === "hosted" || d.genMode === "byok") setGenMode(d.genMode);
+          if (typeof d.genModelId === "string" && d.genModelId) setGenModelId(d.genModelId);
+          if (d.chatMode === "hosted" || d.chatMode === "byok") setChatMode(d.chatMode);
+          if (typeof d.chatHostedModelId === "string" && d.chatHostedModelId) {
+            setChatHostedModelId(d.chatHostedModelId);
+          }
           if (d.generated && d.hasGenerated) {
             setGenerated(d.generated);
             setHasGenerated(true);
           }
+        }
+        // Honor ?handle=<slug> from Claim links (takes precedence over draft handle)
+        const queryHandle = new URLSearchParams(window.location.search).get("handle")?.trim().toLowerCase();
+        if (queryHandle && /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(queryHandle)) {
+          setHandle(queryHandle);
         }
       } catch {
         // ignore corrupted draft
@@ -172,7 +220,18 @@ export function CreateStudioClient() {
     try {
       window.localStorage.setItem(
         STUDIO_DRAFT_KEY,
-        JSON.stringify({ resumeText, stylePrompt, theme, handle, generated, hasGenerated }),
+        JSON.stringify({
+          resumeText,
+          stylePrompt,
+          theme,
+          handle,
+          generated,
+          hasGenerated,
+          genMode,
+          genModelId,
+          chatMode,
+          chatHostedModelId,
+        }),
       );
       if (hasGenerated) {
         window.localStorage.setItem("talkcv-draft-profile", JSON.stringify({ ...generated, theme }));
@@ -180,7 +239,19 @@ export function CreateStudioClient() {
     } catch {
       // ignore storage quota
     }
-  }, [draftHydrated, resumeText, stylePrompt, theme, handle, generated, hasGenerated]);
+  }, [
+    draftHydrated,
+    resumeText,
+    stylePrompt,
+    theme,
+    handle,
+    generated,
+    hasGenerated,
+    genMode,
+    genModelId,
+    chatMode,
+    chatHostedModelId,
+  ]);
 
   const resetDraft = () => {
     setResumeText("");
@@ -361,7 +432,7 @@ export function CreateStudioClient() {
         .slice(0, 24);
       if (suggested.length >= 3) setHandle(suggested);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate profile.");
+      setError(localizeApiError(err instanceof Error ? err.message : "Failed to generate profile.", lang));
     } finally {
       setLoading(false);
     }
@@ -444,7 +515,7 @@ export function CreateStudioClient() {
         setUser({ ...user, sites: [...user.sites, data.slug] });
       }
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : "Publish failed.");
+      setPublishError(localizeApiError(err instanceof Error ? err.message : "Publish failed.", lang));
     } finally {
       setPublishing(false);
     }

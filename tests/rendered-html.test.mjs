@@ -25,7 +25,7 @@ test("profile.json passes schema validation and contains zero private author dat
   const parsed = JSON.parse(raw);
   const errors = validateProfile(parsed);
   assert.deepEqual(errors, []);
-  assert.doesNotMatch(raw, /Ren Sishuo|renss\.top|rss1549596771|Simon-rss|evose|tiwork|PRD-50|PRD-56/i);
+  assert.doesNotMatch(raw, /Ren Sishuo|rss1549596771|evose|tiwork|PRD-50|PRD-56/i);
 });
 
 test("SSR renders home page, case studies, and custom 404", async () => {

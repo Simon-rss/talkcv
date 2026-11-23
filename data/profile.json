@@ -1,6 +1,6 @@
 {
   "theme": "editorial",
-  "siteUrl": "https://talkcv.example.dev",
+  "siteUrl": "https://talkcv.renss.top",
   "basics": {
     "name": {
       "en": "Alex Chen",
@@ -17,7 +17,7 @@
     },
     "timezone": "America/Los_Angeles",
     "email": "alex.chen@example.dev",
-    "github": "https://github.com/talkcv-demo",
+    "github": "https://github.com/Simon-rss/talkcv",
     "headline": {
       "en": "I build production AI workflows that survive real traffic.",
       "zh": "构建扛得住真实生产流量的 AI 工作流与智能体系统。"
@@ -169,7 +169,7 @@
       "links": [
         {
           "label": { "en": "Demo Repository", "zh": "示例仓库" },
-          "href": "https://github.com/talkcv-demo"
+          "href": "https://github.com/Simon-rss/talkcv"
         }
       ],
       "sections": [

@@ -72,6 +72,7 @@ function normalizeGeneratedProfile(
   theme: ThemeId,
   siteUrl: string,
   stylePrompt?: string,
+  sourceResumeText = "",
 ): PortfolioProfile {
   const basicsRaw = (raw.basics && typeof raw.basics === "object" ? raw.basics : {}) as Record<string, unknown>;
   const name = loc(basicsRaw.name, "Portfolio Owner");
@@ -183,7 +184,13 @@ function normalizeGeneratedProfile(
       location: loc(basicsRaw.location, "Remote"),
       timezone: typeof basicsRaw.timezone === "string" && basicsRaw.timezone.trim() ? basicsRaw.timezone.trim() : "UTC",
       email: typeof basicsRaw.email === "string" && basicsRaw.email.trim() ? basicsRaw.email.trim() : "hello@example.com",
-      ...(typeof basicsRaw.github === "string" && basicsRaw.github.startsWith("http") ? { github: basicsRaw.github } : {}),
+      ...(typeof basicsRaw.github === "string" &&
+      basicsRaw.github.startsWith("http") &&
+      !basicsRaw.github.includes("talkcv-demo") &&
+      !basicsRaw.github.includes("Simon-rss/talkcv") &&
+      sourceResumeText.toLowerCase().includes("github")
+        ? { github: basicsRaw.github }
+        : {}),
       headline: loc(basicsRaw.headline, "Building reliable software systems."),
       intro: loc(basicsRaw.intro, ""),
       education: loc(basicsRaw.education, ""),
@@ -210,12 +217,12 @@ function normalizeGeneratedProfile(
       suggestedPrompts: {
         en: [
           "Walk me through the strongest project",
-          "Switch theme to Terminal mode",
+          "Summarize core engineering strengths",
           "Draft an interview invite email",
         ],
         zh: [
           "介绍一下最硬核的代表项目",
-          "切换成暗黑极客主题看看",
+          "总结一下核心技术与架构优势",
           "帮我起草一封面试邀约邮件",
         ],
       },
@@ -338,33 +345,39 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   const siteUrl =
     typeof body.siteUrl === "string" && body.siteUrl.trim().startsWith("http")
       ? body.siteUrl.trim()
-      : "https://talkcv.example.dev";
+      : "https://talkcv.renss.top";
 
   const styleInstruction = stylePrompt
     ? `\n- Custom style & tone preference from the user: "${stylePrompt}". Reflect this tone in headline, intro, project framing, AND optionally include a "designTokens" object with safe hex colors & radius matching the theme (${theme}), e.g. {"accent":"#0f766e","radius":"14px"} (only 6-digit hex colors #RRGGBB and radius 0px-28px; ensure high readability contrast with the ${theme} theme).`
     : "";
 
+  const sanitizedSample = {
+    ...sampleProfile,
+    basics: { ...sampleProfile.basics, github: undefined },
+    projects: sampleProfile.projects.map((p) => ({ ...p, links: undefined })),
+  };
+
   const systemPrompt = `You are a precise resume-to-portfolio compiler for TalkCV. Convert the resume into a valid JSON object matching this exact schema (output ONLY raw JSON, no markdown fences).
 Rules:
 - Populate BOTH "en" and "zh" for every localized field (translate faithfully if the resume is single-language).
 - Extract 2-5 featured projects with concrete metrics in facts[], crisp architecture sections[], and workflow[] steps.
-- NEVER invent metrics, companies, or skills not present in the resume.
+- STRICT VERBATIM NUMERICAL FIDELITY: NEVER alter, round, recalculate, or invent any number, duration, percentage, or metric from the resume (e.g. if the resume says "27 -> 8 minutes", facts[] and summary MUST say "27 -> 8", NEVER change 27 to another number).
+- NEVER invent companies, skills, or URLs not present in the resume. ONLY include basics.github if the resume explicitly contains a GitHub URL or handle; otherwise omit basics.github completely.
 - Use lowercase ASCII kebab-case slugs.${styleInstruction}
 
-Reference example:
-${JSON.stringify(sampleProfile)}`;
+Reference schema example:
+${JSON.stringify(sanitizedSample)}`;
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${baseUrl}/chat/completions`, {
+  const callGenerate = (targetModel: string) =>
+    fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model,
-        temperature: 0.2,
+        model: targetModel,
+        temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -375,6 +388,13 @@ ${JSON.stringify(sampleProfile)}`;
         ],
       }),
     });
+
+  let upstream: Response;
+  try {
+    upstream = await callGenerate(model);
+    if (!upstream.ok && baseUrl.includes("api.deepseek.com") && model !== "deepseek-chat") {
+      upstream = await callGenerate("deepseek-chat");
+    }
   } catch {
     return jsonResponse(502, { error: "Unable to reach the configured AI API endpoint." });
   }
@@ -395,7 +415,7 @@ ${JSON.stringify(sampleProfile)}`;
     const content = payload.choices?.[0]?.message?.content?.trim() ?? "";
     const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt);
+    const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt, resumeText);
     let quota: { usedToday: number; dailyLimit: number } | undefined;
     let extraHeaders: Record<string, string> | undefined;
     if (hostedUserEmail) {

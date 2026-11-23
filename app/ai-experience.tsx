@@ -26,12 +26,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { getSiteUrl, profile } from "../lib/profile";
+import { getSiteUrl, profile as defaultProfile } from "../lib/profile";
 import {
   isValidTheme,
   localize,
   THEMES,
   type Lang,
+  type PortfolioProfile,
   type ThemeId,
 } from "../lib/schema";
 
@@ -58,6 +59,8 @@ interface ChatMessage {
 }
 
 interface PortfolioAIContextValue {
+  activeProfile: PortfolioProfile;
+  profileSlug?: string;
   chatOpen: boolean;
   setChatOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   cmdOpen: boolean;
@@ -87,26 +90,31 @@ export function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function buildMailtoHref(subject: string, body: string): string {
+function buildMailtoHref(email: string, subject: string, body: string): string {
   const params = new URLSearchParams();
   if (subject) params.set("subject", subject);
   if (body) params.set("body", body);
-  return `mailto:${profile.basics.email}?${params.toString()}`;
+  return `mailto:${email}?${params.toString()}`;
 }
 
 export function PortfolioAIProvider({
+  activeProfile = defaultProfile,
+  profileSlug,
   lang,
   setLang,
   theme,
   setTheme,
   children,
 }: {
+  activeProfile?: PortfolioProfile;
+  profileSlug?: string;
   lang: Lang;
   setLang: (l: Lang) => void;
   theme: ThemeId;
   setTheme: (t: ThemeId) => void;
   children: React.ReactNode;
 }) {
+  const profile = activeProfile;
   const router = useRouter();
   const [chatOpen, setChatOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -152,11 +160,11 @@ export function PortfolioAIProvider({
           (lang === "zh"
             ? `你好 ${profile.basics.name.zh}，看了你的作品集，想约个时间交流。`
             : `Hi ${profile.basics.name.en}, I enjoyed your portfolio and would love to connect.`);
-        window.location.href = buildMailtoHref(subject, body);
+        window.location.href = buildMailtoHref(profile.basics.email, subject, body);
         showToast(lang === "zh" ? "正在拉起邮件客户端…" : "Opening your mail client…");
       }
     },
-    [lang, router, setLang, setTheme, showToast],
+    [lang, profile.basics.email, profile.basics.name.en, profile.basics.name.zh, router, setLang, setTheme, showToast],
   );
 
   // Global Cmd+K / Ctrl+K shortcut
@@ -235,10 +243,12 @@ export function PortfolioAIProvider({
     return () => {
       delete window.hire;
     };
-  }, [executeTool, lang]);
+  }, [executeTool, lang, profile.basics.initials, profile.basics.name.en, profile.basics.name.zh]);
 
   const value = useMemo<PortfolioAIContextValue>(
     () => ({
+      activeProfile: profile,
+      profileSlug,
       chatOpen,
       setChatOpen,
       cmdOpen,
@@ -254,7 +264,7 @@ export function PortfolioAIProvider({
       executeTool,
       showToast,
     }),
-    [chatOpen, cmdOpen, quote, persona, prefillPrompt, pendingJd, executeTool, showToast],
+    [profile, profileSlug, chatOpen, cmdOpen, quote, persona, prefillPrompt, pendingJd, executeTool, showToast],
   );
 
   return (
@@ -272,7 +282,7 @@ export function PortfolioAIProvider({
 
 /* ---------------- Selection Ask Popover ---------------- */
 export function SelectionAskPopover({ lang }: { lang: Lang }) {
-  const { setQuote, setChatOpen } = usePortfolioAI();
+  const { activeProfile: profile, setQuote, setChatOpen } = usePortfolioAI();
   const [popover, setPopover] = useState<{ text: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -297,7 +307,7 @@ export function SelectionAskPopover({ lang }: { lang: Lang }) {
     };
     document.addEventListener("mouseup", onMouseUp);
     return () => document.removeEventListener("mouseup", onMouseUp);
-  }, []);
+  }, [profile.ai.enabled]);
 
   if (!popover) return null;
 
@@ -332,7 +342,7 @@ export function CommandPalette({
   theme: ThemeId;
   setTheme: (t: ThemeId) => void;
 }) {
-  const { cmdOpen, setCmdOpen, setChatOpen, showToast } = usePortfolioAI();
+  const { activeProfile: profile, cmdOpen, setCmdOpen, setChatOpen, showToast } = usePortfolioAI();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -481,6 +491,8 @@ function SimpleMarkdown({ text }: { text: string }) {
 /* ---------------- AI Chat Drawer ---------------- */
 export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   const {
+    activeProfile: profile,
+    profileSlug,
     chatOpen,
     setChatOpen,
     quote,
@@ -558,6 +570,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
           lang,
           persona,
           quote: currentQuote,
+          ...(profileSlug ? { profileSlug } : {}),
         }),
       });
 
@@ -776,7 +789,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
                       <div key={eIdx} className="af-email-card">
                         <strong>{tc.args.subject}</strong>
                         <div className="af-email-actions">
-                          <a href={buildMailtoHref(tc.args.subject ?? "", tc.args.body ?? "")}>
+                          <a href={buildMailtoHref(profile.basics.email, tc.args.subject ?? "", tc.args.body ?? "")}>
                             <Mail size={13} />
                             <span>{lang === "zh" ? "打开邮件客户端" : "Open Mail App"}</span>
                           </a>

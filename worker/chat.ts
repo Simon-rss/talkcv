@@ -1,7 +1,8 @@
-import { profile } from "../lib/profile";
+import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
+import { loadPublishedProfile, type PublishEnv } from "./publish";
 
-export interface ChatEnv {
+export interface ChatEnv extends PublishEnv {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
   OPENAI_BASE_URL?: string;
@@ -21,7 +22,6 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 15;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
-const VALID_SLUGS = new Set(profile.projects.map((p) => p.slug));
 const VALID_SECTIONS = new Set(["work", "capabilities", "experience", "contact"]);
 const VALID_THEMES = new Set(["editorial", "terminal", "bento"]);
 
@@ -50,14 +50,17 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
-function parseLeadingToolTag(raw: string): { tool: ClientToolCall | null; remainder: string } {
+function parseLeadingToolTag(
+  raw: string,
+  validSlugs: Set<string>,
+): { tool: ClientToolCall | null; remainder: string } {
   const match = raw.match(/^\s*\[\[TOOL:([a-z_]+)(?:\|([^\]]+))?\]\]\s*/);
   if (!match) return { tool: null, remainder: raw };
   const name = match[1];
   const arg = (match[2] ?? "").trim();
   const remainder = raw.slice(match[0].length);
 
-  if (name === "open_project" && VALID_SLUGS.has(arg)) {
+  if (name === "open_project" && validSlugs.has(arg)) {
     return { tool: { name, args: { slug: arg } }, remainder };
   }
   if (name === "scroll_to_section" && VALID_SECTIONS.has(arg)) {
@@ -103,7 +106,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     return jsonError(429, "Too many requests. Please wait a minute and try again.");
   }
 
-  let body: { messages?: unknown; lang?: unknown; persona?: unknown; quote?: unknown };
+  let body: { messages?: unknown; lang?: unknown; persona?: unknown; quote?: unknown; profileSlug?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -129,11 +132,17 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     return jsonError(400, "A non-empty user message is required.");
   }
 
+  const activeProfile =
+    typeof body.profileSlug === "string" && body.profileSlug.trim()
+      ? (await loadPublishedProfile(body.profileSlug, env)) ?? defaultProfile
+      : defaultProfile;
+  const validSlugs = new Set(activeProfile.projects.map((p) => p.slug));
+
   const personaKey = typeof body.persona === "string" && body.persona in PERSONA_NOTES ? body.persona : "default";
   const quoteText = typeof body.quote === "string" ? body.quote.trim().slice(0, 400) : "";
 
   const systemContent =
-    buildSystemPrompt(profile) +
+    buildSystemPrompt(activeProfile) +
     (PERSONA_NOTES[personaKey] ?? "") +
     (quoteText
       ? `\n\n## Visitor Highlighted Text\nThe visitor highlighted this excerpt on the page:\n"""\n${quoteText}\n"""`
@@ -213,7 +222,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
         const closeIdx = pendingTagBuf.indexOf("]]");
         if (closeIdx !== -1) {
           checkedLeadingTag = true;
-          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf);
+          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf, validSlugs);
           if (tool) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tool })}\n\n`));
           }
@@ -252,7 +261,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
           }
         }
         if (pendingTagBuf) {
-          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf);
+          const { tool, remainder } = parseLeadingToolTag(pendingTagBuf, validSlugs);
           if (tool) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ tool })}\n\n`));
           if (remainder) emitDelta(remainder);
         }

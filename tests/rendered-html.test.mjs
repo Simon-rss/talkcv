@@ -114,4 +114,30 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
   );
   assert.equal(genNoKeyRes.status, 401);
+
+  // /api/publish + /api/profiles/:slug + /u/:slug round-trip
+  const demoProfile = JSON.parse(await readFile(new URL("../data/profile.json", import.meta.url), "utf8"));
+  const pubRes = await worker.fetch(
+    new Request("http://localhost/api/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug: "demo-user", profile: demoProfile }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(pubRes.status, 200);
+  const pubJson = await pubRes.json();
+  assert.equal(pubJson.slug, "demo-user");
+  assert.match(pubJson.url, /\/u\/demo-user$/);
+
+  const getRes = await worker.fetch(
+    new Request("http://localhost/api/profiles/demo-user"),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(getRes.status, 200);
+  const getJson = await getRes.json();
+  assert.equal(getJson.profile?.basics?.name?.en, "Alex Chen");
+
+  const uPageRes = await render("/u/demo-user");
+  assert.equal(uPageRes.status, 200);
 });

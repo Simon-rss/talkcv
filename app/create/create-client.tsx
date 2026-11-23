@@ -5,7 +5,9 @@ import {
   Check,
   Copy,
   Download,
+  ExternalLink,
   FileUp,
+  Globe,
   KeyRound,
   Palette,
   Sparkles,
@@ -36,6 +38,11 @@ export function CreateStudioClient() {
   const [generated, setGenerated] = useState<PortfolioProfile>(defaultProfile);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [handle, setHandle] = useState("alex-chen");
+  const [publishing, setPublishing] = useState(false);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const onProviderChange = (id: string) => {
     setProvider(id);
@@ -76,6 +83,13 @@ export function CreateStudioClient() {
       }
       setGenerated(data.profile);
       setHasGenerated(true);
+      setPublishedUrl(null);
+      const suggested = data.profile.basics.name.en
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 24);
+      if (suggested.length >= 3) setHandle(suggested);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate profile.");
     } finally {
@@ -99,6 +113,38 @@ export function CreateStudioClient() {
     await navigator.clipboard?.writeText(`${JSON.stringify({ ...generated, theme }, null, 2)}\n`);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  const openFullscreenPreview = () => {
+    window.sessionStorage.setItem(
+      "talkcv-draft-profile",
+      JSON.stringify({ ...generated, theme }),
+    );
+    window.open("/preview", "_blank", "noopener,noreferrer");
+  };
+
+  const publishLiveSite = async () => {
+    setPublishError(null);
+    setPublishing(true);
+    try {
+      const res = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          slug: handle,
+          profile: { ...generated, theme },
+        }),
+      });
+      const data = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Publish failed.");
+      }
+      setPublishedUrl(data.url);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : "Publish failed.");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -246,15 +292,72 @@ export function CreateStudioClient() {
                   : "Sample live preview"}
             </span>
             <div className="af-preview-actions">
+              <button type="button" className="af-icon-pill" onClick={openFullscreenPreview}>
+                <ExternalLink size={13} />
+                <span>{lang === "zh" ? "全屏体验" : "Fullscreen"}</span>
+              </button>
               <button type="button" className="af-icon-pill" onClick={copyJson}>
                 {copied ? <Check size={13} /> : <Copy size={13} />}
-                <span>{copied ? (lang === "zh" ? "已复制" : "Copied") : "Copy JSON"}</span>
+                <span>{copied ? (lang === "zh" ? "已复制" : "Copied") : "JSON"}</span>
               </button>
               <button type="button" className="af-icon-pill" onClick={downloadJson}>
                 <Download size={13} />
-                <span>profile.json</span>
+                <span>{lang === "zh" ? "下载" : "Download"}</span>
               </button>
             </div>
+          </div>
+
+          <div className="af-publish-box">
+            <div className="af-publish-row">
+              <div className="af-handle-input">
+                <span>/u/</span>
+                <input
+                  type="text"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="your-name"
+                  aria-label="Custom handle"
+                />
+              </div>
+              <button
+                type="button"
+                className="af-btn af-btn-primary af-publish-btn"
+                disabled={publishing}
+                onClick={publishLiveSite}
+              >
+                <Globe size={15} />
+                <span>
+                  {publishing
+                    ? lang === "zh"
+                      ? "发布中…"
+                      : "Publishing…"
+                    : lang === "zh"
+                      ? "一键发布专属链接"
+                      : "Publish Live Link"}
+                </span>
+              </button>
+            </div>
+            {publishError && <div className="af-ai-error">{publishError}</div>}
+            {publishedUrl && (
+              <div className="af-published-banner">
+                <a href={publishedUrl} target="_blank" rel="noreferrer">
+                  🎉 {publishedUrl}
+                  <ExternalLink size={13} />
+                </a>
+                <button
+                  type="button"
+                  className="af-icon-pill"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(publishedUrl);
+                    setCopiedUrl(true);
+                    window.setTimeout(() => setCopiedUrl(false), 1800);
+                  }}
+                >
+                  {copiedUrl ? <Check size={12} /> : <Copy size={12} />}
+                  <span>{copiedUrl ? (lang === "zh" ? "已复制" : "Copied") : lang === "zh" ? "复制链接" : "Copy Link"}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="af-preview-canvas">

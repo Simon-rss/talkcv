@@ -24,12 +24,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { getSiteUrl, profile } from "../lib/profile";
+import { getSiteUrl, profile as defaultProfile } from "../lib/profile";
 import {
   isValidTheme,
   localize,
   THEMES,
   type Lang,
+  type PortfolioProfile,
   type ProjectItem,
   type ThemeId,
 } from "../lib/schema";
@@ -43,6 +44,8 @@ import {
 } from "./ai-experience";
 
 interface AppContextValue {
+  profile: PortfolioProfile;
+  profileSlug?: string;
   lang: Lang;
   setLang: (l: Lang) => void;
   theme: ThemeId;
@@ -57,19 +60,29 @@ function useApp() {
   return ctx;
 }
 
-function AppProvider({ children }: { children: React.ReactNode }) {
+function AppProvider({
+  initialProfile = defaultProfile,
+  profileSlug,
+  children,
+}: {
+  initialProfile?: PortfolioProfile;
+  profileSlug?: string;
+  children: React.ReactNode;
+}) {
   const [lang, setLangState] = useState<Lang>("en");
-  const [theme, setThemeState] = useState<ThemeId>(profile.theme);
+  const [theme, setThemeState] = useState<ThemeId>(initialProfile.theme || "editorial");
 
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       const savedLang = window.localStorage.getItem("talkcv-lang");
       if (savedLang === "en" || savedLang === "zh") setLangState(savedLang);
-      const savedTheme = window.localStorage.getItem("talkcv-theme");
-      if (isValidTheme(savedTheme)) setThemeState(savedTheme);
+      if (!profileSlug) {
+        const savedTheme = window.localStorage.getItem("talkcv-theme");
+        if (isValidTheme(savedTheme)) setThemeState(savedTheme);
+      }
     });
     return () => window.cancelAnimationFrame(raf);
-  }, []);
+  }, [profileSlug]);
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -86,11 +99,21 @@ function AppProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem("talkcv-theme", next);
   };
 
-  const value = useMemo(() => ({ lang, setLang, theme, setTheme }), [lang, theme]);
+  const value = useMemo(
+    () => ({ profile: initialProfile, profileSlug, lang, setLang, theme, setTheme }),
+    [initialProfile, profileSlug, lang, theme],
+  );
 
   return (
     <AppContext.Provider value={value}>
-      <PortfolioAIProvider lang={lang} setLang={setLang} theme={theme} setTheme={setTheme}>
+      <PortfolioAIProvider
+        activeProfile={initialProfile}
+        profileSlug={profileSlug}
+        lang={lang}
+        setLang={setLang}
+        theme={theme}
+        setTheme={setTheme}
+      >
         {children}
         <SelectionAskPopover lang={lang} />
         <CommandPalette lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} />
@@ -143,7 +166,7 @@ function CountUpValue({ value }: { value: string }) {
 }
 
 function SiteHeader({ casePage = false }: { casePage?: boolean }) {
-  const { lang, setLang, theme, setTheme } = useApp();
+  const { profile, lang, setLang, theme, setTheme } = useApp();
   const { setCmdOpen } = usePortfolioAI();
 
   return (
@@ -204,6 +227,7 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
 }
 
 function LiveClock({ lang }: { lang: Lang }) {
+  const { profile } = useApp();
   const [clock, setClock] = useState<{ time: string; awake: boolean } | null>(null);
 
   useEffect(() => {
@@ -229,7 +253,7 @@ function LiveClock({ lang }: { lang: Lang }) {
       window.cancelAnimationFrame(raf);
       window.clearInterval(timer);
     };
-  }, []);
+  }, [profile.basics.timezone]);
 
   return (
     <p className="af-clock" aria-live="polite">
@@ -256,7 +280,7 @@ function LiveClock({ lang }: { lang: Lang }) {
 }
 
 function ContactBand() {
-  const { lang } = useApp();
+  const { profile, lang } = useApp();
   return (
     <section className="af-contact" id="contact">
       <div className="af-shell af-contact-grid">
@@ -287,7 +311,7 @@ function ContactBand() {
 }
 
 function SiteFooter() {
-  const { lang } = useApp();
+  const { profile, lang } = useApp();
   const buildSha = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "dev";
 
   return (
@@ -312,7 +336,7 @@ function SiteFooter() {
 }
 
 function HomeContent() {
-  const { lang, theme } = useApp();
+  const { profile, profileSlug, lang, theme } = useApp();
   const { setChatOpen } = usePortfolioAI();
   const [filter, setFilter] = useState<"all" | "platform" | "enterprise" | "product">("all");
 
@@ -424,10 +448,12 @@ function HomeContent() {
                   </div>
                 ))}
               </div>
-              <Link className="af-card-cta" href={`/projects/${project.slug}`}>
-                <span>{lang === "en" ? "Read case study" : "查看案例详情"}</span>
-                <ArrowUpRight size={15} />
-              </Link>
+              {!profileSlug && (
+                <Link className="af-card-cta" href={`/projects/${project.slug}`}>
+                  <span>{lang === "en" ? "Read case study" : "查看案例详情"}</span>
+                  <ArrowUpRight size={15} />
+                </Link>
+              )}
             </article>
           ))}
         </div>
@@ -495,7 +521,7 @@ function estimateReadingMinutes(project: ProjectItem, lang: Lang): number {
 }
 
 function CaseStudyContent({ project }: { project: ProjectItem }) {
-  const { lang, theme } = useApp();
+  const { profile, lang, theme } = useApp();
   const router = useRouter();
   const { chatOpen, cmdOpen } = usePortfolioAI();
   const [progress, setProgress] = useState(0);
@@ -545,7 +571,7 @@ function CaseStudyContent({ project }: { project: ProjectItem }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [chatOpen, cmdOpen, currentIndex, router]);
+  }, [chatOpen, cmdOpen, currentIndex, profile.projects, router]);
 
   return (
     <main className={`af-page af-theme-${theme}`}>
@@ -651,7 +677,7 @@ function CaseStudyContent({ project }: { project: ProjectItem }) {
 }
 
 function NotFoundContent() {
-  const { lang, theme } = useApp();
+  const { profile, lang, theme } = useApp();
   const { setCmdOpen, setChatOpen } = usePortfolioAI();
   const [pathname, setPathname] = useState("/unknown");
 
@@ -691,9 +717,15 @@ function NotFoundContent() {
   );
 }
 
-export function PortfolioHome() {
+export function PortfolioHome({
+  initialProfile,
+  profileSlug,
+}: {
+  initialProfile?: PortfolioProfile;
+  profileSlug?: string;
+} = {}) {
   return (
-    <AppProvider>
+    <AppProvider initialProfile={initialProfile} profileSlug={profileSlug}>
       <HomeContent />
     </AppProvider>
   );

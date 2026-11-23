@@ -13,6 +13,7 @@ import {
   Mail,
   Palette,
   Sparkles,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -352,8 +353,12 @@ function SiteFooter() {
 
 function HomeContent() {
   const { profile, profileSlug, lang, theme } = useApp();
-  const { setChatOpen } = usePortfolioAI();
+  const { setChatOpen, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
   const [filter, setFilter] = useState<"all" | "platform" | "enterprise" | "product">("all");
+  const isPersonalHosted = Boolean(profileSlug);
+  const modalProject = modalProjectSlug
+    ? profile.projects.find((p) => p.slug === modalProjectSlug) ?? null
+    : null;
 
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get("filter");
@@ -385,7 +390,10 @@ function HomeContent() {
           <h1>{localize(profile.basics.headline, lang)}</h1>
           <p className="af-intro">{localize(profile.basics.intro, lang)}</p>
           <p className="print-only">
-            {profile.basics.email} · {getSiteUrl()}
+            {profile.basics.email} ·{" "}
+            {isPersonalHosted && profileSlug !== "__draft__"
+              ? `https://talkcv.renss.top/u/${profileSlug}`
+              : getSiteUrl()}
           </p>
           <div className="af-actions">
             <a className="af-btn af-btn-primary" href="#work">
@@ -448,7 +456,17 @@ function HomeContent() {
                 </div>
               </div>
               <h3>
-                <Link href={`/projects/${project.slug}`}>{localize(project.title, lang)}</Link>
+                {isPersonalHosted ? (
+                  <button
+                    type="button"
+                    className="af-card-title-btn"
+                    onClick={() => setModalProjectSlug(project.slug)}
+                  >
+                    {localize(project.title, lang)}
+                  </button>
+                ) : (
+                  <Link href={`/projects/${project.slug}`}>{localize(project.title, lang)}</Link>
+                )}
               </h3>
               <p className="af-card-role">
                 <BriefcaseBusiness size={14} />
@@ -463,7 +481,16 @@ function HomeContent() {
                   </div>
                 ))}
               </div>
-              {!profileSlug && (
+              {isPersonalHosted ? (
+                <button
+                  type="button"
+                  className="af-card-cta af-card-cta-btn"
+                  onClick={() => setModalProjectSlug(project.slug)}
+                >
+                  <span>{lang === "en" ? "View case details" : "查看案例详情"}</span>
+                  <ArrowUpRight size={15} />
+                </button>
+              ) : (
                 <Link className="af-card-cta" href={`/projects/${project.slug}`}>
                   <span>{lang === "en" ? "Read case study" : "查看案例详情"}</span>
                   <ArrowUpRight size={15} />
@@ -516,6 +543,83 @@ function HomeContent() {
 
       <ContactBand />
       <SiteFooter />
+
+      {modalProject && (
+        <div
+          className="af-case-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={localize(modalProject.title, lang)}
+          onClick={() => setModalProjectSlug(null)}
+        >
+          <div className="af-case-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="af-case-modal-head">
+              <div>
+                <p className="af-eyebrow">{localize(modalProject.category, lang)}</p>
+                <h2>{localize(modalProject.title, lang)}</h2>
+                <p className="af-card-role">
+                  <BriefcaseBusiness size={14} />
+                  <span>{localize(modalProject.role, lang)}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                className="af-icon-pill"
+                onClick={() => setModalProjectSlug(null)}
+                aria-label="Close"
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <div className="af-case-modal-body">
+              <p className="af-intro">{localize(modalProject.summary, lang)}</p>
+              {modalProject.facts.length > 0 && (
+                <div className="af-facts af-case-facts">
+                  {modalProject.facts.map((fact) => (
+                    <div key={fact.value + fact.label.en}>
+                      <strong>{fact.value}</strong>
+                      <span>{localize(fact.label, lang)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="af-story-list">
+                {modalProject.sections.map((section, idx) => (
+                  <article key={section.title.en} className="af-story-card">
+                    <span className="af-story-num">0{idx + 1}</span>
+                    <div>
+                      <p className="af-eyebrow">{localize(section.eyebrow, lang)}</p>
+                      <h3>{localize(section.title, lang)}</h3>
+                      <p>{localize(section.body, lang)}</p>
+                      {section.items && (
+                        <ul className="af-story-bullets">
+                          {section.items.map((item) => (
+                            <li key={item.en}>
+                              <CheckCircle2 size={15} />
+                              <span>{localize(item, lang)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {modalProject.workflow.length > 0 && (
+                <div className="af-cap-grid" style={{ marginTop: 18 }}>
+                  {modalProject.workflow.map((step) => (
+                    <article key={step.number} className="af-cap-card">
+                      <span className="af-story-num">{step.number}</span>
+                      <h3>{localize(step.title, lang)}</h3>
+                      <p>{localize(step.text, lang)}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

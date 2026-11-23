@@ -116,6 +116,11 @@ export async function handlePublishRequest(request: Request, env: PublishEnv): P
   }
 
   const user = await getSessionUser(request, env);
+  if (env.PROFILES_KV && !user) {
+    return jsonResponse(401, {
+      error: "Please sign in with your email before publishing a TalkCV site.",
+    });
+  }
   const existing = await loadStoredRecord(slug, env);
   if (existing?.ownerEmail && existing.ownerEmail !== user?.email) {
     return jsonResponse(403, {
@@ -171,9 +176,17 @@ export async function handleGetProfileRequest(
   slug: string,
   env: PublishEnv,
 ): Promise<Response> {
-  const found = await loadPublishedProfile(slug, env);
-  if (!found) {
+  const record = await loadStoredRecord(slug, env);
+  if (!record) {
     return jsonResponse(404, { error: "Published TalkCV profile not found." });
   }
-  return jsonResponse(200, { profile: found });
+  const expTs = Date.parse(record.expiresAt);
+  if (Number.isFinite(expTs) && Date.now() > expTs) {
+    return jsonResponse(410, {
+      error: "Hosting period expired.",
+      expired: true,
+      expiresAt: record.expiresAt,
+    });
+  }
+  return jsonResponse(200, { profile: record.profile, expiresAt: record.expiresAt });
 }

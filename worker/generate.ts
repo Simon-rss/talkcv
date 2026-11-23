@@ -1,6 +1,7 @@
 import { profile as sampleProfile } from "../lib/profile";
 import { isValidTheme, type PortfolioProfile, type ProjectAccent, type ThemeId } from "../lib/schema";
 import {
+  buildUsageCookie,
   DAILY_GENERATE_LIMIT,
   getDailyUsage,
   getSessionUser,
@@ -15,10 +16,17 @@ const genBuckets = new Map<string, { count: number; resetAt: number }>();
 const VALID_ACCENTS: ProjectAccent[] = ["mint", "blue", "coral", "amber"];
 const VALID_GROUPS = ["platform", "enterprise", "product"] as const;
 
-function jsonResponse(status: number, body: Record<string, unknown>): Response {
+function jsonResponse(
+  status: number,
+  body: Record<string, unknown>,
+  extraHeaders?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      ...extraHeaders,
+    },
   });
 }
 
@@ -271,7 +279,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
         error: "Please sign in with your email to use TalkCV's free daily AI quota (or paste your own API key).",
       });
     }
-    const used = await getDailyUsage(user.email, env);
+    const used = await getDailyUsage(user.email, env, request);
     if (used >= DAILY_GENERATE_LIMIT) {
       return jsonResponse(429, {
         error: `Daily free generation limit reached (${DAILY_GENERATE_LIMIT}/day). Try again tomorrow or use your own API key.`,
@@ -355,11 +363,13 @@ ${JSON.stringify(sampleProfile)}`;
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
     const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl);
     let quota: { usedToday: number; dailyLimit: number } | undefined;
+    let extraHeaders: Record<string, string> | undefined;
     if (hostedUserEmail) {
-      const usedToday = await incrementDailyUsage(hostedUserEmail, env);
+      const usedToday = await incrementDailyUsage(hostedUserEmail, env, request);
       quota = { usedToday, dailyLimit: DAILY_GENERATE_LIMIT };
+      extraHeaders = { "set-cookie": await buildUsageCookie(request, hostedUserEmail, usedToday, env) };
     }
-    return jsonResponse(200, { profile: normalized, ...(quota ? { quota } : {}) });
+    return jsonResponse(200, { profile: normalized, ...(quota ? { quota } : {}) }, extraHeaders);
   } catch {
     return jsonResponse(502, { error: "Model response could not be parsed as valid JSON. Try again." });
   }

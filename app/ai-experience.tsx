@@ -61,6 +61,8 @@ interface ChatMessage {
 interface PortfolioAIContextValue {
   activeProfile: PortfolioProfile;
   profileSlug?: string;
+  modalProjectSlug: string | null;
+  setModalProjectSlug: (slug: string | null) => void;
   chatOpen: boolean;
   setChatOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   cmdOpen: boolean;
@@ -116,6 +118,7 @@ export function PortfolioAIProvider({
 }) {
   const profile = activeProfile;
   const router = useRouter();
+  const [modalProjectSlug, setModalProjectSlug] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quote, setQuote] = useState("");
@@ -134,13 +137,17 @@ export function PortfolioAIProvider({
   const executeTool = useCallback(
     (tool: ExecutedTool) => {
       if (tool.name === "open_project" && tool.args.slug) {
-        router.push(`/projects/${tool.args.slug}`);
+        if (profileSlug) {
+          setModalProjectSlug(tool.args.slug);
+        } else {
+          router.push(`/projects/${tool.args.slug}`);
+        }
         showToast(lang === "zh" ? `已打开案例：${tool.args.slug}` : `Opened case: ${tool.args.slug}`);
       } else if (tool.name === "scroll_to_section" && tool.args.section) {
         const el = document.getElementById(tool.args.section);
         if (el) {
           el.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
-        } else {
+        } else if (!profileSlug) {
           router.push(`/#${tool.args.section}`);
         }
         showToast(lang === "zh" ? `已定位到 #${tool.args.section}` : `Scrolled to #${tool.args.section}`);
@@ -164,7 +171,7 @@ export function PortfolioAIProvider({
         showToast(lang === "zh" ? "正在拉起邮件客户端…" : "Opening your mail client…");
       }
     },
-    [lang, profile.basics.email, profile.basics.name.en, profile.basics.name.zh, router, setLang, setTheme, showToast],
+    [lang, profile.basics.email, profile.basics.name.en, profile.basics.name.zh, profileSlug, router, setLang, setTheme, showToast],
   );
 
   // Global Cmd+K / Ctrl+K shortcut
@@ -249,6 +256,8 @@ export function PortfolioAIProvider({
     () => ({
       activeProfile: profile,
       profileSlug,
+      modalProjectSlug,
+      setModalProjectSlug,
       chatOpen,
       setChatOpen,
       cmdOpen,
@@ -264,7 +273,7 @@ export function PortfolioAIProvider({
       executeTool,
       showToast,
     }),
-    [profile, profileSlug, chatOpen, cmdOpen, quote, persona, prefillPrompt, pendingJd, executeTool, showToast],
+    [profile, profileSlug, modalProjectSlug, chatOpen, cmdOpen, quote, persona, prefillPrompt, pendingJd, executeTool, showToast],
   );
 
   return (
@@ -342,7 +351,15 @@ export function CommandPalette({
   theme: ThemeId;
   setTheme: (t: ThemeId) => void;
 }) {
-  const { activeProfile: profile, cmdOpen, setCmdOpen, setChatOpen, showToast } = usePortfolioAI();
+  const {
+    activeProfile: profile,
+    profileSlug,
+    setModalProjectSlug,
+    cmdOpen,
+    setCmdOpen,
+    setChatOpen,
+    showToast,
+  } = usePortfolioAI();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -356,28 +373,38 @@ export function CommandPalette({
 
   if (!cmdOpen) return null;
 
+  const isPersonalHosted = Boolean(profileSlug);
   const actions = [
-    ...THEMES.map((t) => ({
-      id: `theme-${t.id}`,
-      label:
-        lang === "zh"
-          ? `切换主题：${t.label.zh}${theme === t.id ? "（当前）" : ""}`
-          : `Switch theme: ${t.label.en}${theme === t.id ? " (active)" : ""}`,
-      run: () => {
-        setTheme(t.id);
-        showToast(lang === "zh" ? `已切换为 ${t.label.zh}` : `Switched to ${t.label.en}`);
-      },
-    })),
+    ...(!isPersonalHosted
+      ? THEMES.map((t) => ({
+          id: `theme-${t.id}`,
+          label:
+            lang === "zh"
+              ? `切换主题：${t.label.zh}${theme === t.id ? "（当前）" : ""}`
+              : `Switch theme: ${t.label.en}${theme === t.id ? " (active)" : ""}`,
+          run: () => {
+            setTheme(t.id);
+            showToast(lang === "zh" ? `已切换为 ${t.label.zh}` : `Switched to ${t.label.en}`);
+          },
+        }))
+      : []),
     ...profile.projects.map((p) => ({
       id: `proj-${p.slug}`,
       label: `${lang === "zh" ? "打开案例" : "Open case"}: ${localize(p.title, lang)}`,
-      run: () => router.push(`/projects/${p.slug}`),
+      run: () => {
+        if (isPersonalHosted) setModalProjectSlug(p.slug);
+        else router.push(`/projects/${p.slug}`);
+      },
     })),
     {
       id: "copy-jd-link",
       label: lang === "zh" ? "复制 JD 匹配分享链接 (?jd=)" : "Copy JD-match share link (?jd=)",
       run: () => {
-        void navigator.clipboard?.writeText(`${getSiteUrl()}/?jd=`);
+        const base =
+          isPersonalHosted && profileSlug !== "__draft__"
+            ? `${window.location.origin}/u/${profileSlug}`
+            : window.location.origin || getSiteUrl();
+        void navigator.clipboard?.writeText(`${base}?jd=`);
         showToast(lang === "zh" ? "已复制，把 JD 拼在链接后即可" : "Copied! Append any JD text after ?jd=");
       },
     },
@@ -506,13 +533,42 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
     executeTool,
   } = usePortfolioAI();
 
+  const storageKey = `talkcv-chat:${profileSlug || "demo"}`;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hydratedChat, setHydratedChat] = useState(false);
   const [input, setInput] = useState("");
   const [jdMode, setJdMode] = useState(false);
   const [jdText, setJdText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        const saved = window.sessionStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setMessages(parsed as ChatMessage[]);
+        }
+      } catch {
+        // ignore storage errors
+      } finally {
+        setHydratedChat(true);
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!hydratedChat) return;
+    try {
+      if (messages.length === 0) window.sessionStorage.removeItem(storageKey);
+      else window.sessionStorage.setItem(storageKey, JSON.stringify(messages.slice(-24)));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [hydratedChat, messages, storageKey]);
 
   useEffect(() => {
     if (!prefillPrompt) return;
@@ -671,6 +727,11 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
                 onClick={() => {
                   setMessages([]);
                   setError(null);
+                  try {
+                    window.sessionStorage.removeItem(storageKey);
+                  } catch {
+                    // ignore
+                  }
                 }}
                 aria-label="Reset conversation"
                 title={lang === "zh" ? "重置对话" : "Reset"}

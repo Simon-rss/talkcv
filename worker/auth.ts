@@ -106,18 +106,60 @@ export async function getSessionUser(request: Request, env: AuthEnv): Promise<Se
   return { email, createdAt: new Date(exp - 30 * 86400_000).toISOString() };
 }
 
-export async function getDailyUsage(email: string, env: AuthEnv): Promise<number> {
+export async function getCookieDailyUsage(
+  request: Request,
+  email: string,
+  env: AuthEnv,
+): Promise<number> {
+  const raw = parseCookies(request)["talkcv_usage"];
+  if (!raw) return 0;
+  const parts = raw.split("|");
+  if (parts.length !== 4) return 0;
+  const [cEmail, cDate, cCountStr, sig] = parts;
+  if (cEmail !== email || cDate !== todayKey()) return 0;
+  const expected = await hmacHex(getSigningSecret(env), `usage:${cEmail}|${cDate}|${cCountStr}`);
+  if (!timingSafeEqual(sig, expected)) return 0;
+  const count = Number(cCountStr);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+export async function buildUsageCookie(
+  request: Request,
+  email: string,
+  count: number,
+  env: AuthEnv,
+): Promise<string> {
+  const date = todayKey();
+  const sig = await hmacHex(getSigningSecret(env), `usage:${email}|${date}|${count}`);
+  const val = encodeURIComponent(`${email}|${date}|${count}|${sig}`);
+  const isHttps = request.url.startsWith("https://");
+  return `talkcv_usage=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${isHttps ? "; Secure" : ""}`;
+}
+
+export async function getDailyUsage(
+  email: string,
+  env: AuthEnv,
+  request?: Request,
+): Promise<number> {
   const key = `usage:${email}:${todayKey()}`;
+  let kvCount = 0;
   if (env.PROFILES_KV) {
     const raw = await env.PROFILES_KV.get(key);
     const num = Number(raw ?? "0");
-    return Number.isFinite(num) ? num : 0;
+    kvCount = Number.isFinite(num) ? num : 0;
+  } else {
+    kvCount = memUsage.get(key) ?? 0;
   }
-  return memUsage.get(key) ?? 0;
+  const cookieCount = request ? await getCookieDailyUsage(request, email, env) : 0;
+  return Math.max(kvCount, cookieCount);
 }
 
-export async function incrementDailyUsage(email: string, env: AuthEnv): Promise<number> {
-  const current = await getDailyUsage(email, env);
+export async function incrementDailyUsage(
+  email: string,
+  env: AuthEnv,
+  request?: Request,
+): Promise<number> {
+  const current = await getDailyUsage(email, env, request);
   const next = current + 1;
   const key = `usage:${email}:${todayKey()}`;
   if (env.PROFILES_KV) {
@@ -249,7 +291,7 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
   const sessionSig = await hmacHex(getSigningSecret(env), `session:${email}|${sessionExp}`);
   const sessionValue = encodeURIComponent(`${email}|${sessionExp}|${sessionSig}`);
 
-  const usedToday = await getDailyUsage(email, env);
+  const usedToday = await getDailyUsage(email, env, request);
   const sites = await getUserSites(email, env);
   const isHttps = request.url.startsWith("https://");
   const cookie = `talkcv_session=${sessionValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
@@ -274,7 +316,7 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
   if (!user) {
     return jsonResponse(200, { user: null });
   }
-  const usedToday = await getDailyUsage(user.email, env);
+  const usedToday = await getDailyUsage(user.email, env, request);
   const sites = await getUserSites(user.email, env);
   return jsonResponse(200, {
     user: {

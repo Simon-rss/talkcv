@@ -1644,3 +1644,69 @@ button {
   color: var(--ink);
   font: inherit;
 }
+
+.af-card-title-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.af-card-title-btn:hover {
+  color: var(--accent);
+}
+
+.af-card-cta-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  align-self: flex-start;
+}
+
+.af-case-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.af-case-modal {
+  width: min(780px, 100%);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.35);
+}
+
+.af-case-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.af-case-modal-head h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.af-case-modal-body {
+  padding: 20px 24px 28px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}

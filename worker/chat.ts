@@ -22,7 +22,33 @@ export interface ClientToolCall {
 
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 15;
+const DAILY_CHAT_LIMIT_PER_SITE = 30;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const memSiteChatUsage = new Map<string, number>();
+
+function todayDateKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function consumeSiteDailyChatQuota(slug: string, env: ChatEnv): Promise<boolean> {
+  const key = `chat_usage:${slug}:${todayDateKey()}`;
+  let current = 0;
+  if (env.PROFILES_KV) {
+    const raw = await env.PROFILES_KV.get(key);
+    const parsed = Number(raw ?? "0");
+    current = Number.isFinite(parsed) ? parsed : 0;
+  } else {
+    current = memSiteChatUsage.get(key) ?? 0;
+  }
+  if (current >= DAILY_CHAT_LIMIT_PER_SITE) return false;
+  const next = current + 1;
+  if (env.PROFILES_KV) {
+    await env.PROFILES_KV.put(key, String(next));
+  } else {
+    memSiteChatUsage.set(key, next);
+  }
+  return true;
+}
 
 const VALID_SECTIONS = new Set(["work", "capabilities", "experience", "contact"]);
 const VALID_THEMES = new Set(["editorial", "terminal", "bento"]);
@@ -135,9 +161,25 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     return jsonError(400, "A non-empty user message is required.");
   }
 
-  const activeProfile =
+  const siteKey =
     typeof body.profileSlug === "string" && body.profileSlug.trim()
-      ? (await loadPublishedProfile(body.profileSlug, env)) ?? defaultProfile
+      ? body.profileSlug.trim().toLowerCase()
+      : "__demo__";
+
+  const withinDailyQuota = await consumeSiteDailyChatQuota(siteKey, env);
+  if (!withinDailyQuota) {
+    const isZh = body.lang === "zh";
+    return jsonError(
+      429,
+      isZh
+        ? `该站点今日免费 AI 对话额度（${DAILY_CHAT_LIMIT_PER_SITE} 次/天）已用完，请明日再试。`
+        : `This site has reached its free daily AI chat quota (${DAILY_CHAT_LIMIT_PER_SITE}/day). Please try again tomorrow.`,
+    );
+  }
+
+  const activeProfile =
+    siteKey !== "__demo__"
+      ? (await loadPublishedProfile(siteKey, env)) ?? defaultProfile
       : defaultProfile;
   const validSlugs = new Set(activeProfile.projects.map((p) => p.slug));
 

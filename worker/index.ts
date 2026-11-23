@@ -8,7 +8,9 @@ import {
 import {
   handleBillingCheckoutRequest,
   handleBillingPortalRequest,
+  handleCreateRedeemCodesRequest,
   handleCreemWebhookRequest,
+  handleRedeemCodeRequest,
   type BillingEnv,
 } from "./billing";
 import { handleChatRequest, type ChatEnv } from "./chat";
@@ -48,6 +50,12 @@ const worker = {
     }
     if (url.pathname === "/api/billing/webhook") {
       return handleCreemWebhookRequest(request, env);
+    }
+    if (url.pathname === "/api/billing/redeem") {
+      return handleRedeemCodeRequest(request, env);
+    }
+    if (url.pathname === "/api/billing/admin/codes") {
+      return handleCreateRedeemCodesRequest(request, env);
     }
     if (url.pathname === "/api/chat") {
       return handleChatRequest(request, env);

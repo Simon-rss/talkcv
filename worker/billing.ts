@@ -21,8 +21,65 @@ export const PRO_DAILY_CHAT_LIMIT_PER_SITE = 500;
 export const PRO_HOSTING_DAYS = 365;
 export const PRO_MAX_SITES_PER_USER = 10;
 
+interface RedeemCodeRecord {
+  code: string;
+  days: number;
+  maxUses: number;
+  usedBy: string[];
+  note?: string;
+  createdAt: string;
+}
+
 const memPlans = new Map<string, string>();
 const memEvents = new Set<string>();
+const memCodes = new Map<string, string>();
+const redeemRateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function checkRedeemRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const bucket = redeemRateBuckets.get(ip);
+  if (!bucket || now > bucket.resetAt) {
+    redeemRateBuckets.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (bucket.count >= 10) return false;
+  bucket.count += 1;
+  return true;
+}
+
+function normalizeRedeemCode(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 40);
+}
+
+function generateRandomCode(prefix = "TALKCV"): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  const chars = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+  return `${prefix}-${chars.slice(0, 4)}-${chars.slice(4, 8)}`;
+}
+
+async function loadRedeemCode(code: string, env: BillingEnv): Promise<RedeemCodeRecord | null> {
+  const key = `redeem:${code}`;
+  const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : (memCodes.get(key) ?? null);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as RedeemCodeRecord;
+  } catch {
+    return null;
+  }
+}
+
+async function saveRedeemCode(record: RedeemCodeRecord, env: BillingEnv): Promise<void> {
+  const key = `redeem:${record.code}`;
+  const serialized = JSON.stringify(record);
+  if (env.PROFILES_KV) {
+    await env.PROFILES_KV.put(key, serialized);
+  } else {
+    memCodes.set(key, serialized);
+  }
+}
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -307,4 +364,131 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
   }
 
   return jsonResponse(200, { ok: true, eventType, email });
+}
+
+export async function handleCreateRedeemCodesRequest(request: Request, env: BillingEnv): Promise<Response> {
+  if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
+
+  const adminSecret = env.AUTH_SECRET?.trim() || "talkcv-dev-secret-change-in-prod";
+  const authHeader = request.headers.get("authorization")?.trim() || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token || !timingSafeEqual(token, adminSecret)) {
+    return jsonResponse(401, { error: "Unauthorized." });
+  }
+
+  let body: { count?: unknown; days?: unknown; maxUses?: unknown; code?: unknown; note?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return jsonResponse(400, { error: "Invalid JSON body." });
+  }
+
+  const days = Math.min(3650, Math.max(1, Math.floor(Number(body.days) || 30)));
+  const maxUses = Math.min(1000, Math.max(1, Math.floor(Number(body.maxUses) || 1)));
+  const count = Math.min(50, Math.max(1, Math.floor(Number(body.count) || 1)));
+  const note = typeof body.note === "string" ? body.note.trim().slice(0, 120) : undefined;
+  const customCode = normalizeRedeemCode(body.code);
+
+  const created: RedeemCodeRecord[] = [];
+  if (customCode) {
+    const rec: RedeemCodeRecord = {
+      code: customCode,
+      days,
+      maxUses,
+      usedBy: [],
+      ...(note ? { note } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    await saveRedeemCode(rec, env);
+    created.push(rec);
+  } else {
+    for (let i = 0; i < count; i++) {
+      const rec: RedeemCodeRecord = {
+        code: generateRandomCode("TALKCV"),
+        days,
+        maxUses,
+        usedBy: [],
+        ...(note ? { note } : {}),
+        createdAt: new Date().toISOString(),
+      };
+      await saveRedeemCode(rec, env);
+      created.push(rec);
+    }
+  }
+
+  return jsonResponse(200, {
+    ok: true,
+    codes: created.map((c) => ({ code: c.code, days: c.days, maxUses: c.maxUses })),
+  });
+}
+
+export async function handleRedeemCodeRequest(request: Request, env: BillingEnv): Promise<Response> {
+  if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
+
+  const ip =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown";
+  if (!checkRedeemRateLimit(ip)) {
+    return jsonResponse(429, { error: "Too many redeem attempts. Please wait a minute and try again." });
+  }
+
+  const user = await getSessionUser(request, env);
+  if (!user) {
+    return jsonResponse(401, { error: "Please sign in with your email before redeeming a code." });
+  }
+
+  let body: { code?: unknown };
+  try {
+    body = (await request.json()) as { code?: unknown };
+  } catch {
+    return jsonResponse(400, { error: "Invalid JSON body." });
+  }
+
+  const code = normalizeRedeemCode(body.code);
+  if (code.length < 4) {
+    return jsonResponse(400, { error: "Please enter a valid redemption code." });
+  }
+
+  const record = await loadRedeemCode(code, env);
+  if (!record) {
+    return jsonResponse(404, { error: "Invalid redemption code." });
+  }
+
+  const email = user.email.toLowerCase();
+  if (record.usedBy.includes(email)) {
+    return jsonResponse(409, { error: "You have already redeemed this code." });
+  }
+  if (record.usedBy.length >= record.maxUses) {
+    return jsonResponse(410, { error: "This redemption code has already been used." });
+  }
+
+  const prev = await getUserPlan(email, env);
+  const prevExpMs = prev.record?.expiresAt ? Date.parse(prev.record.expiresAt) : 0;
+  const baseMs = prev.isPro && Number.isFinite(prevExpMs) && prevExpMs > Date.now() ? prevExpMs : Date.now();
+  const nextExpiresAt = new Date(baseMs + record.days * 86400_000).toISOString();
+
+  record.usedBy.push(email);
+  await saveRedeemCode(record, env);
+  await setUserPlan(
+    email,
+    {
+      plan: "pro",
+      status: "redeemed",
+      customerId: prev.record?.customerId,
+      subscriptionId: prev.record?.subscriptionId,
+      updatedAt: new Date().toISOString(),
+      expiresAt: nextExpiresAt,
+    },
+    env,
+  );
+
+  return jsonResponse(200, {
+    ok: true,
+    plan: "pro",
+    isPro: true,
+    dailyLimit: PRO_DAILY_GENERATE_LIMIT,
+    days: record.days,
+    expiresAt: nextExpiresAt,
+  });
 }

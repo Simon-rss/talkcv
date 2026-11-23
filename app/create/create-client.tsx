@@ -107,6 +107,18 @@ function localizeApiError(raw: string, lang: Lang): string {
   if (/Handle must be/i.test(s)) {
     return "自定义网址仅支持 3–32 位小写字母、数字和连字符。";
   }
+  if (/Invalid redemption code/i.test(s)) {
+    return "兑换码无效，请检查是否输入正确。";
+  }
+  if (/already redeemed this code/i.test(s)) {
+    return "你的账号已经兑换过该兑换码。";
+  }
+  if (/already been used/i.test(s)) {
+    return "该兑换码已被使用完。";
+  }
+  if (/Too many redeem attempts/i.test(s)) {
+    return "尝试次数过多，请稍等一分钟后再试。";
+  }
   return s;
 }
 
@@ -161,6 +173,10 @@ export function CreateStudioClient() {
   const [loadingSiteSlug, setLoadingSiteSlug] = useState<string | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingBanner, setBillingBanner] = useState<string | null>(null);
+  const [redeemModalOpen, setRedeemModalOpen] = useState(false);
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeemBusy, setRedeemBusy] = useState(false);
+  const [redeemErr, setRedeemErr] = useState<string | null>(null);
 
   // Restore user session + check ?upgraded=1 return from Creem
   useEffect(() => {
@@ -220,6 +236,53 @@ export function CreateStudioClient() {
       setError(localizeApiError(err instanceof Error ? err.message : "Could not open billing portal.", lang));
     } finally {
       setBillingBusy(false);
+    }
+  };
+
+  const submitRedeemCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      setRedeemModalOpen(false);
+      setAuthModalOpen(true);
+      return;
+    }
+    setRedeemErr(null);
+    setRedeemBusy(true);
+    try {
+      const res = await fetch("/api/billing/redeem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: redeemCode.trim() }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        isPro?: boolean;
+        dailyLimit?: number;
+        days?: number;
+        expiresAt?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Invalid redemption code.");
+      }
+      setUser({
+        ...user,
+        plan: "pro",
+        isPro: true,
+        dailyLimit: data.dailyLimit ?? 30,
+      });
+      setRedeemModalOpen(false);
+      setRedeemCode("");
+      const expDate = data.expiresAt ? data.expiresAt.slice(0, 10) : "";
+      setBillingBanner(
+        lang === "zh"
+          ? `兑换成功！已开通 TalkCV Pro（+${data.days ?? 30} 天，有效期至 ${expDate}），全部 Pro 模型与高额度已解锁。`
+          : `Code redeemed! TalkCV Pro activated (+${data.days ?? 30} days, valid until ${expDate}).`,
+      );
+    } catch (err) {
+      setRedeemErr(localizeApiError(err instanceof Error ? err.message : "Redemption failed.", lang));
+    } finally {
+      setRedeemBusy(false);
     }
   };
 
@@ -623,6 +686,17 @@ export function CreateStudioClient() {
                   </button>
                 )
               )}
+              <button
+                type="button"
+                className="af-icon-pill"
+                onClick={() => {
+                  setRedeemErr(null);
+                  setRedeemModalOpen(true);
+                }}
+              >
+                <KeyRound size={13} />
+                <span>{lang === "zh" ? "兑换码" : "Redeem"}</span>
+              </button>
             </>
           ) : (
             <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
@@ -1077,6 +1151,39 @@ export function CreateStudioClient() {
           </div>
         </section>
       </div>
+
+      {redeemModalOpen && (
+        <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={() => setRedeemModalOpen(false)}>
+          <div className="af-auth-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="af-auth-head">
+              <strong>
+                <KeyRound size={15} /> {lang === "zh" ? "兑换 Pro 邀请码" : "Redeem Pro Invite Code"}
+              </strong>
+              <button type="button" onClick={() => setRedeemModalOpen(false)} aria-label="Close">
+                <X size={15} />
+              </button>
+            </div>
+            <form className="af-auth-form" onSubmit={submitRedeemCode}>
+              <p>
+                {lang === "zh"
+                  ? "输入内测或活动兑换码，立即解锁全部 Pro 高级模型、每日 30 次生成额度与 365 天托管。"
+                  : "Enter your invite code to unlock all Pro models, 30 daily generations, and 365-day hosting."}
+              </p>
+              <input
+                type="text"
+                required
+                value={redeemCode}
+                onChange={(e) => setRedeemCode(e.target.value.toUpperCase())}
+                placeholder="TALKCV-XXXX-XXXX"
+              />
+              {redeemErr && <div className="af-ai-error">{redeemErr}</div>}
+              <button type="submit" className="af-btn af-btn-primary" disabled={redeemBusy || !redeemCode.trim()}>
+                {redeemBusy ? (lang === "zh" ? "兑换中…" : "Redeeming…") : lang === "zh" ? "立即兑换" : "Redeem Now"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {authModalOpen && (
         <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={() => setAuthModalOpen(false)}>

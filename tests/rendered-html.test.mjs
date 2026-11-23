@@ -264,4 +264,48 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   const meProJson = await meProRes.json();
   assert.equal(meProJson.user?.isPro, true);
   assert.equal(meProJson.user?.dailyLimit, 30);
+
+  // Admin mint redeem code & user redeem flow
+  const mintBad = await worker.fetch(
+    new Request("http://localhost/api/billing/admin/codes", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer wrong-secret" },
+      body: JSON.stringify({ code: "TALKCV-BETA-001", days: 30, maxUses: 1 }),
+    }),
+    { AUTH_SECRET: "test-admin-secret", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(mintBad.status, 401);
+
+  const mintOk = await worker.fetch(
+    new Request("http://localhost/api/billing/admin/codes", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-admin-secret" },
+      body: JSON.stringify({ code: "TALKCV-BETA-001", days: 30, maxUses: 1 }),
+    }),
+    { AUTH_SECRET: "test-admin-secret", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(mintOk.status, 200);
+
+  const redeemOk = await worker.fetch(
+    new Request("http://localhost/api/billing/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookiePair },
+      body: JSON.stringify({ code: "talkcv-beta-001" }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(redeemOk.status, 200);
+  const redeemJson = await redeemOk.json();
+  assert.equal(redeemJson.isPro, true);
+  assert.equal(redeemJson.days, 30);
+
+  const redeemDup = await worker.fetch(
+    new Request("http://localhost/api/billing/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookiePair },
+      body: JSON.stringify({ code: "TALKCV-BETA-001" }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(redeemDup.status, 409);
 });

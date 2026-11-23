@@ -1,0 +1,405 @@
+{
+  "theme": "editorial",
+  "siteUrl": "https://talkcv.example.dev",
+  "basics": {
+    "name": {
+      "en": "Alex Chen",
+      "zh": "陈明远"
+    },
+    "initials": "AC",
+    "role": {
+      "en": "Staff AI Systems Engineer · San Francisco",
+      "zh": "资深 AI 系统工程师 · 旧金山"
+    },
+    "location": {
+      "en": "San Francisco, CA",
+      "zh": "旧金山"
+    },
+    "timezone": "America/Los_Angeles",
+    "email": "alex.chen@example.dev",
+    "github": "https://github.com/talkcv-demo",
+    "headline": {
+      "en": "I build production AI workflows that survive real traffic.",
+      "zh": "构建扛得住真实生产流量的 AI 工作流与智能体系统。"
+    },
+    "intro": {
+      "en": "6+ years shipping distributed backends, developer platforms, and LLM agent infrastructure. Replace this sample profile with your own resume in one command: npm run generate.",
+      "zh": "6 年以上分布式后端、开发者平台与大模型 Agent 基础设施实战经验。只需一条命令 npm run generate，即可把这份示例配置替换为你的个人简历。"
+    },
+    "education": {
+      "en": "B.S. in Computer Science · University of Washington (2016 – 2020)",
+      "zh": "计算机科学学士 · 华盛顿大学（2016 – 2020）"
+    },
+    "footerNote": {
+      "en": "Powered by TalkCV · Edit data/profile.json or run npm run generate",
+      "zh": "由 TalkCV 驱动 · 编辑 data/profile.json 或运行 npm run generate"
+    }
+  },
+  "skills": [
+    "Python",
+    "TypeScript",
+    "FastAPI",
+    "React",
+    "PostgreSQL",
+    "Redis",
+    "Cloudflare Workers",
+    "LLM Tool Calling",
+    "RAG & Evaluations",
+    "Docker & Kubernetes"
+  ],
+  "capabilities": [
+    {
+      "title": {
+        "en": "Agent Orchestration & Tooling",
+        "zh": "Agent 编排与工具调用"
+      },
+      "summary": {
+        "en": "Deterministic state machines, structured JSON outputs, execution guards, and human-in-the-loop approval flows.",
+        "zh": "确定性状态机、结构化输出、并发执行保护以及人工审批闭环。"
+      }
+    },
+    {
+      "title": {
+        "en": "Low-Latency Streaming & Gateways",
+        "zh": "低延迟流式链路与模型网关"
+      },
+      "summary": {
+        "en": "Multi-provider routing, automatic failover, SSE streaming, token accounting, and edge caching.",
+        "zh": "多模型供应商路由、自动容灾切换、SSE 流式传输、用量计量与边缘缓存。"
+      }
+    },
+    {
+      "title": {
+        "en": "Production Reliability & Evals",
+        "zh": "生产级可靠性与评测体系"
+      },
+      "summary": {
+        "en": "Offline regression suites, live trace observability, idempotent workers, and zero-downtime schema migrations.",
+        "zh": "离线回归评测集、实时链路追踪、幂等任务队列与零停机数据库迁移。"
+      }
+    }
+  ],
+  "experiences": [
+    {
+      "period": "2024 – Present",
+      "company": {
+        "en": "Northstar Cloud AI",
+        "zh": "Northstar Cloud AI"
+      },
+      "role": {
+        "en": "Staff AI Systems Engineer",
+        "zh": "资深 AI 系统工程师"
+      },
+      "summary": {
+        "en": "Architected the company-wide Agent Runtime and multi-provider LLM Gateway serving 40M+ monthly requests with 99.95% availability.",
+        "zh": "主导公司级 Agent 运行时与多模型网关架构，稳定支撑月均 4000 万+ 请求，可用性达 99.95%。"
+      }
+    },
+    {
+      "period": "2022 – 2024",
+      "company": {
+        "en": "PulseGrid Analytics",
+        "zh": "PulseGrid 数据平台"
+      },
+      "role": {
+        "en": "Senior Full-Stack Engineer",
+        "zh": "高级全栈工程师"
+      },
+      "summary": {
+        "en": "Led real-time SQL copilot and collaborative notebook features in TypeScript, React, and Python; reduced query authoring time by 52%.",
+        "zh": "主导实时 SQL 副驾驶与协作式 Notebook 研发，帮助分析师平均缩短 52% 的查询编写时间。"
+      }
+    },
+    {
+      "period": "2020 – 2022",
+      "company": {
+        "en": "HarborPay Systems",
+        "zh": "HarborPay 支付系统"
+      },
+      "role": {
+        "en": "Backend Software Engineer",
+        "zh": "后端研发工程师"
+      },
+      "summary": {
+        "en": "Built idempotent settlement pipelines, automated regression harnesses, and anomaly detection alerts across high-throughput payment services.",
+        "zh": "负责高吞吐支付清算幂等流水线、自动化回归测试框架与异常告警系统建设。"
+      }
+    }
+  ],
+  "projects": [
+    {
+      "slug": "pulse-agent-runtime",
+      "accent": "mint",
+      "group": "platform",
+      "category": {
+        "en": "AGENT INFRASTRUCTURE",
+        "zh": "智能体基础设施"
+      },
+      "title": {
+        "en": "Pulse Agent Runtime & Lock Engine",
+        "zh": "Pulse 智能体运行时与并发锁引擎"
+      },
+      "role": {
+        "en": "Lead Architect · Python / FastAPI / Redis / React",
+        "zh": "首席架构师 · Python / FastAPI / Redis / React"
+      },
+      "summary": {
+        "en": "A resumable multi-step Agent execution engine with tool sandboxing, optimistic state locks, and live SSE trace streaming.",
+        "zh": "支持断点续跑的多步 Agent 执行引擎，内置工具沙箱、乐观状态锁与实时 SSE 追踪流。"
+      },
+      "outcome": {
+        "en": "Cut failed multi-turn tool runs by 64% while enabling safe human-agent co-editing.",
+        "zh": "将多轮工具调用失败率降低 64%，并实现了安全的人机协同编辑。"
+      },
+      "tags": ["Agent", "FastAPI", "Redis", "SSE", "TypeScript"],
+      "facts": [
+        {
+          "value": "-64%",
+          "label": { "en": "tool-run failure rate", "zh": "工具调用失败率" }
+        },
+        {
+          "value": "24",
+          "label": { "en": "typed agent tools", "zh": "强类型工具数" }
+        },
+        {
+          "value": "180ms",
+          "label": { "en": "median TTFT", "zh": "中位首字延迟" }
+        }
+      ],
+      "links": [
+        {
+          "label": { "en": "Demo Repository", "zh": "示例仓库" },
+          "href": "https://github.com/talkcv-demo"
+        }
+      ],
+      "sections": [
+        {
+          "eyebrow": { "en": "THE PROBLEM", "zh": "核心问题" },
+          "title": {
+            "en": "Long-running agents silently corrupted shared workspaces",
+            "zh": "长耗时 Agent 静默破坏共享工作区状态"
+          },
+          "body": {
+            "en": "When users edited documents while an agent executed multi-step tool calls, race conditions caused lost updates and broken references.",
+            "zh": "当用户在 Agent 执行多步工具调用期间同时编辑文档时，竞态条件会导致更新丢失与引用损坏。"
+          },
+          "items": [
+            {
+              "en": "Introduced scoped execution locks with automatic lease expiry and clean rollback.",
+              "zh": "引入带自动租约过期与回滚机制的作用域执行锁。"
+            },
+            {
+              "en": "Streamed every tool input, output, and latency span to the UI via Redis Streams + SSE.",
+              "zh": "通过 Redis Streams + SSE 将每次工具输入、输出与耗时实时推送到前端。"
+            }
+          ]
+        },
+        {
+          "eyebrow": { "en": "VERIFICATION", "zh": "验证结果" },
+          "title": {
+            "en": "Deterministic replay and automated load testing",
+            "zh": "确定性回放与自动化压测验证"
+          },
+          "body": {
+            "en": "Every tool schema is validated at boundaries and replayed against a 90-case regression suite before release.",
+            "zh": "所有工具 Schema 在边界严格校验，并在每次发布前跑通 90 个场景的确定性回归集。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": { "en": "Plan & Lock", "zh": "规划与加锁" },
+          "text": {
+            "en": "Acquire workspace lease and validate tool arguments against strict JSON schemas.",
+            "zh": "获取工作区租约锁，并按严格 JSON Schema 校验工具参数。"
+          }
+        },
+        {
+          "number": "02",
+          "title": { "en": "Execute & Stream", "zh": "执行与流式回报" },
+          "text": {
+            "en": "Run sandboxed tools with retry policies and push live trace events over SSE.",
+            "zh": "在沙箱中带重试策略执行工具，并通过 SSE 实时推送轨迹。"
+          }
+        },
+        {
+          "number": "03",
+          "title": { "en": "Commit & Release", "zh": "提交与释放" },
+          "text": {
+            "en": "Persist incremental state diffs atomically and release the execution lock.",
+            "zh": "原子化落盘增量状态变更，并安全释放执行锁。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "mesh-llm-gateway",
+      "accent": "blue",
+      "group": "enterprise",
+      "category": {
+        "en": "AI GATEWAY",
+        "zh": "模型网关"
+      },
+      "title": {
+        "en": "Mesh Multi-Provider LLM Gateway",
+        "zh": "Mesh 多供应商大模型网关"
+      },
+      "role": {
+        "en": "System Owner · Cloudflare Workers / TypeScript / Go",
+        "zh": "系统负责人 · Cloudflare Workers / TypeScript / Go"
+      },
+      "summary": {
+        "en": "Unified OpenAI-compatible routing layer with circuit breakers, automatic region failover, and per-tenant budget caps.",
+        "zh": "统一的 OpenAI 兼容路由层，提供熔断器、跨区域自动容灾与多租户预算配额管控。"
+      },
+      "outcome": {
+        "en": "99.95% uptime across 4 model providers with 31% lower blended token cost.",
+        "zh": "横跨 4 家模型供应商实现 99.95% 可用性，综合 Token 成本降低 31%。"
+      },
+      "tags": ["Gateway", "Cloudflare Workers", "TypeScript", "Observability"],
+      "facts": [
+        {
+          "value": "99.95%",
+          "label": { "en": "monthly availability", "zh": "月度可用性" }
+        },
+        {
+          "value": "-31%",
+          "label": { "en": "blended token spend", "zh": "综合模型成本" }
+        },
+        {
+          "value": "4",
+          "label": { "en": "upstream providers", "zh": "接入上游厂商" }
+        }
+      ],
+      "sections": [
+        {
+          "eyebrow": { "en": "ARCHITECTURE", "zh": "架构设计" },
+          "title": {
+            "en": "Zero single-provider outage impact",
+            "zh": "消除单一模型厂商故障带来的业务中断"
+          },
+          "body": {
+            "en": "Built health-scored routing tables that shift traffic within 200ms whenever an upstream provider returns 429 or 5xx errors.",
+            "zh": "构建基于健康分的动态路由表，当上游返回 429 或 5xx 时在 200ms 内完成无感切流。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": { "en": "Authenticate", "zh": "鉴权与限流" },
+          "text": {
+            "en": "Verify tenant key and enforce per-minute token and spend budgets at the edge.",
+            "zh": "在边缘节点校验租户密钥并执行分钟级 Token 与费用限额。"
+          }
+        },
+        {
+          "number": "02",
+          "title": { "en": "Route & Failover", "zh": "智能路由与容灾" },
+          "text": {
+            "en": "Select the healthiest provider by latency and automatically fall back on transient errors.",
+            "zh": "按延迟选择最优供应商，遇到瞬时故障自动切至备用通道。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "evalbench-studio",
+      "accent": "coral",
+      "group": "product",
+      "category": {
+        "en": "DEVELOPER PRODUCT",
+        "zh": "开发者产品"
+      },
+      "title": {
+        "en": "EvalBench Prompt & Regression Studio",
+        "zh": "EvalBench 提示词与回归评测台"
+      },
+      "role": {
+        "en": "Creator · React / Next.js / Python",
+        "zh": "独立作者 · React / Next.js / Python"
+      },
+      "summary": {
+        "en": "Side-by-side LLM diff workbench that turns production chat logs into repeatable CI assertions.",
+        "zh": "支持并排对比的大模型评测工作台，把线上真实对话一键转化为可复用的 CI 断言。"
+      },
+      "outcome": {
+        "en": "Adopted by 12 internal product teams, catching 100% of schema regressions before deploy.",
+        "zh": "被 12 个内部产品团队采用，上线前拦截 100% 的结构化输出回归问题。"
+      },
+      "tags": ["Evals", "React", "CI/CD", "Python", "Agent"],
+      "facts": [
+        {
+          "value": "12",
+          "label": { "en": "teams onboarded", "zh": "接入研发团队" }
+        },
+        {
+          "value": "450+",
+          "label": { "en": "golden eval cases", "zh": "黄金评测用例" }
+        },
+        {
+          "value": "3x",
+          "label": { "en": "faster prompt iteration", "zh": "提示词迭代提速" }
+        }
+      ],
+      "sections": [
+        {
+          "eyebrow": { "en": "PRODUCT DESIGN", "zh": "产品设计" },
+          "title": {
+            "en": "Make prompt changes as reviewable as code PRs",
+            "zh": "让 Prompt 改动像代码 PR 一样可审查"
+          },
+          "body": {
+            "en": "Engineers inspect exact rubric scores, latency deltas, and cost changes in one clean diff view before merging.",
+            "zh": "工程师在合并前即可在同一视图查看精确评分、延迟变化与成本差异。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": { "en": "Capture Traces", "zh": "采集真实样本" },
+          "text": {
+            "en": "Promote edge-case production chats into anonymized golden datasets.",
+            "zh": "将线上边界案例一键脱敏并沉淀为黄金评测集。"
+          }
+        },
+        {
+          "number": "02",
+          "title": { "en": "Gate Merges", "zh": "CI 门禁拦截" },
+          "text": {
+            "en": "Run deterministic JSON and rubric checks on every pull request.",
+            "zh": "每次提交 PR 自动执行结构化校验与质量评分门禁。"
+          }
+        }
+      ]
+    }
+  ],
+  "ai": {
+    "enabled": true,
+    "assistantName": {
+      "en": "Alex's AI Agent",
+      "zh": "Alex 的 AI 助手"
+    },
+    "welcome": {
+      "en": "Hi! Are you hiring, evaluating technical depth, or exploring a collaboration? Ask me anything about Alex's projects — or paste a Job Description for an honest match report.",
+      "zh": "你好！你是来招聘、做技术评估还是交流合作？可以问我任何关于 Alex 项目与架构的问题，也可以直接贴一段 JD 测匹配度。"
+    },
+    "suggestedPrompts": {
+      "en": [
+        "Walk me through your strongest AI system",
+        "Switch theme to Terminal mode",
+        "Draft an interview invite email"
+      ],
+      "zh": [
+        "介绍一下你最硬核的 AI 系统",
+        "切换成暗黑极客主题看看",
+        "帮我起草一封面试邀约邮件"
+      ]
+    },
+    "guardrails": [
+      "Keep responses crisp, grounded, and honest about trade-offs."
+    ]
+  }
+}

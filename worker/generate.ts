@@ -283,6 +283,8 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   let baseUrl = "https://api.openai.com/v1";
   let model = "gpt-4o-mini";
   let hostedUserEmail: string | null = null;
+  let activeQuotaPeriod: "lifetime" | "month" = "lifetime";
+  let activeQuotaLimit = DAILY_GENERATE_LIMIT;
 
   if (mode === "byok") {
     if (!byokKey) {
@@ -304,11 +306,15 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
       });
     }
     const { plan, limits } = await getUserPlan(user.email, env as BillingEnv);
-    const activeDailyLimit = limits.dailyGenerateLimit;
-    const used = await getDailyUsage(user.email, env, request);
-    if (used >= activeDailyLimit) {
+    activeQuotaLimit = limits.generateLimit;
+    activeQuotaPeriod = limits.generatePeriod;
+    const used = await getDailyUsage(user.email, env, request, activeQuotaPeriod);
+    if (used >= activeQuotaLimit) {
       return jsonResponse(429, {
-        error: `Daily generation limit reached (${activeDailyLimit}/day). Try again tomorrow or upgrade your plan.`,
+        error:
+          activeQuotaPeriod === "lifetime"
+            ? `Free account generation quota reached (${activeQuotaLimit} total). Upgrade to Pro (30/month) or use your own API key.`
+            : `Monthly generation limit reached (${activeQuotaLimit}/month). Upgrade to Max or use your own API key.`,
       });
     }
     hostedUserEmail = user.email;
@@ -422,9 +428,11 @@ ${JSON.stringify(sanitizedSample)}`;
     let quota: { usedToday: number; dailyLimit: number } | undefined;
     let extraHeaders: Record<string, string> | undefined;
     if (hostedUserEmail) {
-      const usedToday = await incrementDailyUsage(hostedUserEmail, env, request);
-      quota = { usedToday, dailyLimit: DAILY_GENERATE_LIMIT };
-      extraHeaders = { "set-cookie": await buildUsageCookie(request, hostedUserEmail, usedToday, env) };
+      const usedToday = await incrementDailyUsage(hostedUserEmail, env, request, activeQuotaPeriod);
+      quota = { usedToday, dailyLimit: activeQuotaLimit };
+      extraHeaders = {
+        "set-cookie": await buildUsageCookie(request, hostedUserEmail, usedToday, env, activeQuotaPeriod),
+      };
     }
     return jsonResponse(200, { profile: normalized, ...(quota ? { quota } : {}) }, extraHeaders);
   } catch {

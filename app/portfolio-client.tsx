@@ -96,10 +96,33 @@ function AppProvider({
     if (tokens?.bg) root.setProperty("--bg", tokens.bg);
     if (tokens?.surface) root.setProperty("--surface", tokens.surface);
     if (tokens?.radius) root.setProperty("--radius", tokens.radius);
+
+    // Dynamic tab title & favicon for personal sites / preview
+    if (profileSlug) {
+      const displayName = localize(initialProfile.basics.name, lang);
+      document.title =
+        lang === "zh" ? `${displayName} · 个人交互简历` : `${displayName} · Interactive CV`;
+
+      let faviconHref = initialProfile.basics.avatar || "";
+      if (!faviconHref) {
+        const bg = tokens?.accent || (theme === "terminal" ? "#10b981" : theme === "bento" ? "#4f46e5" : "#0d7a5f");
+        const initials = (initialProfile.basics.initials || "TC").slice(0, 2).replace(/[<>&"']/g, "");
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${bg}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-weight="700" font-size="26">${initials}</text></svg>`;
+        faviconHref = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+      }
+      let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+      }
+      link.href = faviconHref;
+    }
+
     return () => {
       for (const k of keys) root.removeProperty(k);
     };
-  }, [initialProfile.designTokens, lang, theme]);
+  }, [initialProfile.basics.avatar, initialProfile.basics.initials, initialProfile.basics.name, initialProfile.designTokens, lang, profileSlug, theme]);
 
   const setLang = (next: Lang) => {
     setLangState(next);
@@ -186,8 +209,15 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
   return (
     <header className="af-header">
       <Link className="af-brand" href={homeHref}>
-        <span className="af-brand-mark">{profile.basics.initials}</span>
+        {profile.basics.avatar ? (
+          <img className="af-brand-avatar" src={profile.basics.avatar} alt={localize(profile.basics.name, lang)} />
+        ) : (
+          <span className="af-brand-mark">{profile.basics.initials}</span>
+        )}
         <strong>{localize(profile.basics.name, lang)}</strong>
+        {isPersonalHosted && (
+          <span className="af-brand-sub">{lang === "zh" ? "个人简历" : "Interactive CV"}</span>
+        )}
       </Link>
 
       <nav className="af-nav" aria-label="Primary">
@@ -345,9 +375,11 @@ function SiteFooter() {
           © {new Date().getFullYear()} {localize(profile.basics.name, lang)}
         </span>
         {isPersonalHosted ? (
-          <Link href="/create" className="af-powered-by">
-            {lang === "en" ? "Hosted with TalkCV" : "由 TalkCV 托管"}
-          </Link>
+          !profile.hideBranding && (
+            <Link href="/create" className="af-powered-by">
+              {lang === "en" ? "Hosted with TalkCV" : "由 TalkCV 托管"}
+            </Link>
+          )
         ) : (
           <span>{localize(profile.basics.footerNote, lang)}</span>
         )}

@@ -1,7 +1,7 @@
 import { canUseModel, getHostedModel } from "../lib/models";
 import { isValidTheme, sanitizeDesignTokens, type PortfolioProfile, type ThemeId } from "../lib/schema";
 import { getSessionUser } from "./auth";
-import { getDailyEditUsage, getUserPlan, incrementDailyEditUsage, type BillingEnv } from "./billing";
+import { getMonthlyEditUsage, getUserPlan, incrementMonthlyEditUsage, type BillingEnv } from "./billing";
 import type { ChatEnv } from "./chat";
 
 interface EditHistoryTurn {
@@ -77,11 +77,11 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
         error: "AI Live Refine is a TalkCV Pro / Max feature. Upgrade your plan to unlock multi-turn AI editing.",
       });
     }
-    editDailyLimit = limits.dailyEditLimit;
-    const used = await getDailyEditUsage(user.email, env);
+    editDailyLimit = limits.editLimit;
+    const used = await getMonthlyEditUsage(user.email, env);
     if (used >= editDailyLimit) {
       return jsonResponse(429, {
-        error: `Daily AI refine limit reached (${editDailyLimit}/day). Try again tomorrow or upgrade to Max.`,
+        error: `Monthly AI refine limit reached (${editDailyLimit}/month). Upgrade to Max for 300/month.`,
       });
     }
     userEmail = user.email;
@@ -196,7 +196,7 @@ Rules:
 
     let editQuota: { usedToday: number; dailyLimit: number } | undefined;
     if (userEmail) {
-      const usedToday = await incrementDailyEditUsage(userEmail, env);
+      const usedToday = await incrementMonthlyEditUsage(userEmail, env);
       editQuota = { usedToday, dailyLimit: editDailyLimit };
     }
 

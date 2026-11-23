@@ -125,7 +125,7 @@ export function AiRefinePanel({
           <strong>{isZh ? "AI 多轮实时精修" : "AI Multi-turn Live Refine"}</strong>
           {providerMode === "hosted" && editDailyLimit > 0 && (
             <span className="af-refine-quota">
-              {isZh ? `今日剩 ${remainingEdits}/${editDailyLimit} 次` : `${remainingEdits}/${editDailyLimit} left`}
+              {isZh ? `本月剩 ${remainingEdits}/${editDailyLimit} 次` : `${remainingEdits}/${editDailyLimit} left/mo`}
             </span>
           )}
         </div>

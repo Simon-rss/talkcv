@@ -25,8 +25,7 @@ export function PublishedProfileClient({ slug }: { slug: string }) {
         setProfile(data.profile);
         setStatus("ready");
         const name = data.profile.basics?.name?.zh || data.profile.basics?.name?.en || slug;
-        const role = data.profile.basics?.role?.zh || data.profile.basics?.role?.en || "TalkCV";
-        document.title = `${name} | ${role}`;
+        document.title = `${name} · 个人交互简历`;
       })
       .catch(() => {
         if (active) setStatus("not_found");

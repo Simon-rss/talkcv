@@ -263,8 +263,9 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   );
   const meProJson = await meProRes.json();
   assert.equal(meProJson.user?.isPro, true);
-  assert.equal(meProJson.user?.dailyLimit, 15);
-  assert.equal(meProJson.user?.editDailyLimit, 30);
+  assert.equal(meProJson.user?.dailyLimit, 30);
+  assert.equal(meProJson.user?.quotaPeriod, "month");
+  assert.equal(meProJson.user?.editDailyLimit, 100);
 
   // AI Live Edit requires Pro/Max when not using BYOK
   const unauthEditRes = await worker.fetch(

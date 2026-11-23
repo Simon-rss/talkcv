@@ -172,6 +172,11 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
 
   const { plan, limits } = await getUserPlan(user?.email, env as BillingEnv);
   const maxSites = limits.maxSites;
+  // White-label (hideBranding) is exclusive to Max plan
+  const finalProfile: PortfolioProfile = {
+    ...cleanProfile,
+    hideBranding: plan === "max" && Boolean(cleanProfile.hideBranding),
+  };
 
   if (user) {
     const userSites = await getUserSites(user.email, env);
@@ -242,7 +247,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   const hostingDays = limits.hostingDays;
   const expiresAt = new Date(now.getTime() + hostingDays * 86400_000).toISOString();
   const record: StoredProfileRecord = {
-    profile: cleanProfile,
+    profile: finalProfile,
     ...(user ? { ownerEmail: user.email } : {}),
     createdAt: existing?.createdAt ?? now.toISOString(),
     expiresAt,
@@ -250,8 +255,8 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   };
 
   const serialized = JSON.stringify(record);
-  if (serialized.length > 120_000) {
-    return jsonResponse(413, { error: "Profile payload is too large (max 120KB)." });
+  if (serialized.length > 260_000) {
+    return jsonResponse(413, { error: "Profile payload is too large (max 260KB)." });
   }
 
   const key = `profile:${slug}`;

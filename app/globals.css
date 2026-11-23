@@ -2195,3 +2195,110 @@ button {
     padding: 16px;
   }
 }
+
+/* ---------------- Brand Avatar, Subtitle & Avatar Picker ---------------- */
+.af-brand-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.af-brand-avatar-lg,
+.af-brand-mark-lg {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 16px;
+}
+
+.af-brand-sub {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.af-avatar-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.af-avatar-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed var(--line);
+  background: var(--surface-alt);
+  padding: 4px 12px 4px 4px;
+  border-radius: 14px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.af-avatar-trigger:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.af-avatar-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+}
+
+.af-avatar-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.af-avatar-presets {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.af-avatar-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.af-avatar-swatch:hover {
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.af-whitelabel-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}

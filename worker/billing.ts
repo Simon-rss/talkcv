@@ -21,8 +21,10 @@ export interface PlanRecord {
 }
 
 export interface PlanLimits {
-  dailyGenerateLimit: number;
-  dailyEditLimit: number;
+  generateLimit: number;
+  generatePeriod: "lifetime" | "month";
+  editLimit: number;
+  avatarGenLimit: number;
   dailyChatLimitPerSite: number;
   hostingDays: number;
   maxSites: number;
@@ -31,24 +33,30 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
-    dailyGenerateLimit: 3,
-    dailyEditLimit: 0,
+    generateLimit: 3,
+    generatePeriod: "lifetime",
+    editLimit: 0,
+    avatarGenLimit: 0,
     dailyChatLimitPerSite: 30,
     hostingDays: 30,
     maxSites: 2,
     aiLiveEdit: false,
   },
   pro: {
-    dailyGenerateLimit: 15,
-    dailyEditLimit: 30,
+    generateLimit: 30,
+    generatePeriod: "month",
+    editLimit: 100,
+    avatarGenLimit: 5,
     dailyChatLimitPerSite: 200,
     hostingDays: 365,
     maxSites: 10,
     aiLiveEdit: true,
   },
   max: {
-    dailyGenerateLimit: 50,
-    dailyEditLimit: 100,
+    generateLimit: 100,
+    generatePeriod: "month",
+    editLimit: 300,
+    avatarGenLimit: 20,
     dailyChatLimitPerSite: 600,
     hostingDays: 365,
     maxSites: 30,
@@ -57,13 +65,17 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
 };
 
 const memEditUsage = new Map<string, number>();
+const memAvatarUsage = new Map<string, number>();
 
-function editUsageKey(email: string): string {
-  const day = new Date().toISOString().slice(0, 10);
-  return `edit_usage:${email.trim().toLowerCase()}:${day}`;
+function currentMonthKey(): string {
+  return new Date().toISOString().slice(0, 7); // YYYY-MM
 }
 
-export async function getDailyEditUsage(email: string, env: BillingEnv): Promise<number> {
+function editUsageKey(email: string): string {
+  return `edit_usage_month:${email.trim().toLowerCase()}:${currentMonthKey()}`;
+}
+
+export async function getMonthlyEditUsage(email: string, env: BillingEnv): Promise<number> {
   const key = editUsageKey(email);
   if (env.PROFILES_KV) {
     const raw = await env.PROFILES_KV.get(key);
@@ -73,8 +85,8 @@ export async function getDailyEditUsage(email: string, env: BillingEnv): Promise
   return memEditUsage.get(key) ?? 0;
 }
 
-export async function incrementDailyEditUsage(email: string, env: BillingEnv): Promise<number> {
-  const current = await getDailyEditUsage(email, env);
+export async function incrementMonthlyEditUsage(email: string, env: BillingEnv): Promise<number> {
+  const current = await getMonthlyEditUsage(email, env);
   const next = current + 1;
   const key = editUsageKey(email);
   if (env.PROFILES_KV) {
@@ -85,7 +97,33 @@ export async function incrementDailyEditUsage(email: string, env: BillingEnv): P
   return next;
 }
 
-export const PRO_DAILY_GENERATE_LIMIT = PLAN_LIMITS.pro.dailyGenerateLimit;
+function avatarUsageKey(email: string): string {
+  return `avatar_usage_month:${email.trim().toLowerCase()}:${currentMonthKey()}`;
+}
+
+export async function getMonthlyAvatarUsage(email: string, env: BillingEnv): Promise<number> {
+  const key = avatarUsageKey(email);
+  if (env.PROFILES_KV) {
+    const raw = await env.PROFILES_KV.get(key);
+    const n = Number(raw ?? "0");
+    return Number.isFinite(n) ? n : 0;
+  }
+  return memAvatarUsage.get(key) ?? 0;
+}
+
+export async function incrementMonthlyAvatarUsage(email: string, env: BillingEnv): Promise<number> {
+  const current = await getMonthlyAvatarUsage(email, env);
+  const next = current + 1;
+  const key = avatarUsageKey(email);
+  if (env.PROFILES_KV) {
+    await env.PROFILES_KV.put(key, String(next));
+  } else {
+    memAvatarUsage.set(key, next);
+  }
+  return next;
+}
+
+export const PRO_DAILY_GENERATE_LIMIT = PLAN_LIMITS.pro.generateLimit;
 export const PRO_DAILY_CHAT_LIMIT_PER_SITE = PLAN_LIMITS.pro.dailyChatLimitPerSite;
 export const PRO_HOSTING_DAYS = PLAN_LIMITS.pro.hostingDays;
 export const PRO_MAX_SITES_PER_USER = PLAN_LIMITS.pro.maxSites;
@@ -598,7 +636,9 @@ export async function handleRedeemCodeRequest(request: Request, env: BillingEnv)
     plan: effectiveTier,
     isPro: true,
     isMax: effectiveTier === "max",
-    dailyLimit: PLAN_LIMITS[effectiveTier].dailyGenerateLimit,
+    dailyLimit: PLAN_LIMITS[effectiveTier].generateLimit,
+    quotaPeriod: PLAN_LIMITS[effectiveTier].generatePeriod,
+    editDailyLimit: PLAN_LIMITS[effectiveTier].editLimit,
     days: record.days,
     expiresAt: nextExpiresAt,
   });

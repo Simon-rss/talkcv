@@ -10,6 +10,9 @@ export const metadata: Metadata = {
     default: "TalkCV — A resume website that talks back",
     template: "%s | TalkCV",
   },
+  icons: {
+    icon: "/favicon.svg",
+  },
   description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
   alternates: {
     canonical: "/",

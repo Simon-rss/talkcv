@@ -14,6 +14,7 @@ import {
   handleRedeemCodeRequest,
   type BillingEnv,
 } from "./billing";
+import { handleGenerateAvatarRequest } from "./avatar";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleAiEditRequest } from "./edit";
 import { handleGenerateRequest } from "./generate";
@@ -67,6 +68,9 @@ const worker = {
     }
     if (url.pathname === "/api/edit") {
       return handleAiEditRequest(request, env);
+    }
+    if (url.pathname === "/api/avatar") {
+      return handleGenerateAvatarRequest(request, env);
     }
     if (url.pathname === "/api/publish") {
       return handlePublishRequest(request, env);

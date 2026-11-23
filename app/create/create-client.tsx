@@ -37,9 +37,39 @@ interface AuthUser {
   hasBilling?: boolean;
   usedToday: number;
   dailyLimit: number;
+  quotaPeriod?: "lifetime" | "month";
   editUsedToday?: number;
   editDailyLimit?: number;
   sites: string[];
+}
+
+function buildPresetAvatarSvg(initials: string, c1: string, c2: string): string {
+  const clean = (initials || "TC").slice(0, 2).replace(/[<>&"']/g, "");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs><rect width="128" height="128" rx="32" fill="url(#g)"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-weight="800" font-size="52">${clean}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const AVATAR_STYLES = [
+  { id: "emerald", label: "Emerald", c1: "#0d7a5f", c2: "#0284c7" },
+  { id: "indigo", label: "Indigo", c1: "#4f46e5", c2: "#9333ea" },
+  { id: "sunset", label: "Sunset", c1: "#ea580c", c2: "#db2777" },
+  { id: "slate", label: "Obsidian", c1: "#0f172a", c2: "#334155" },
+] as const;
+
+async function resizeImageToAvatarDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+  const minSide = Math.min(bitmap.width, bitmap.height);
+  const sx = (bitmap.width - minSide) / 2;
+  const sy = (bitmap.height - minSide) / 2;
+  ctx.drawImage(bitmap, sx, sy, minSide, minSide, 0, 0, size, size);
+  bitmap.close();
+  return canvas.toDataURL("image/webp", 0.85);
 }
 
 interface ChatMeta {
@@ -198,6 +228,9 @@ export function CreateStudioClient() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadNote, setUploadNote] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarErr, setAvatarErr] = useState<string | null>(null);
 
   const currentPlan: PlanTier = user?.plan ?? "free";
   const remainingEdits = user ? Math.max(0, (user.editDailyLimit ?? 0) - (user.editUsedToday ?? 0)) : 0;
@@ -632,6 +665,57 @@ export function CreateStudioClient() {
     await processResumeFile(file);
   };
 
+  const onAvatarFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAvatarErr(null);
+    if (!file.type.startsWith("image/")) {
+      setAvatarErr(lang === "zh" ? "请上传图片文件（PNG / JPG / WebP）。" : "Please upload an image file.");
+      return;
+    }
+    try {
+      const dataUrl = await resizeImageToAvatarDataUrl(file);
+      setGenerated((prev) => ({ ...prev, basics: { ...prev.basics, avatar: dataUrl } }));
+      setHasGenerated(true);
+      setAvatarMenuOpen(false);
+    } catch {
+      setAvatarErr(lang === "zh" ? "图片处理失败，请换一张重试。" : "Failed to process image.");
+    }
+  };
+
+  const generateAiAvatar = async () => {
+    if (!user?.isPro) {
+      setAvatarMenuOpen(false);
+      setPricingOpen(true);
+      return;
+    }
+    setAvatarBusy(true);
+    setAvatarErr(null);
+    try {
+      const res = await fetch("/api/avatar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: localize(generated.basics.name, lang),
+          role: localize(generated.basics.role, lang),
+          stylePrompt: stylePrompt.trim() || undefined,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; avatar?: string; error?: string };
+      if (!res.ok || !data.avatar) {
+        throw new Error(data.error || "AI avatar generation failed.");
+      }
+      setGenerated((prev) => ({ ...prev, basics: { ...prev.basics, avatar: data.avatar } }));
+      setHasGenerated(true);
+      setAvatarMenuOpen(false);
+    } catch (err) {
+      setAvatarErr(err instanceof Error ? err.message : "AI avatar generation failed.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const onGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (genMode === "hosted" && !user) {
@@ -797,7 +881,13 @@ export function CreateStudioClient() {
                   </em>
                 )}
                 <em>
-                  {lang === "zh" ? `今日剩 ${remaining}/${user.dailyLimit} 次` : `${remaining}/${user.dailyLimit} left`}
+                  {lang === "zh"
+                    ? user.quotaPeriod === "month"
+                      ? `本月剩 ${remaining}/${user.dailyLimit} 次`
+                      : `剩余 ${remaining}/${user.dailyLimit} 次`
+                    : user.quotaPeriod === "month"
+                      ? `${remaining}/${user.dailyLimit}/mo`
+                      : `${remaining}/${user.dailyLimit} left`}
                 </em>
                 <button type="button" onClick={logout} title={lang === "zh" ? "退出登录" : "Sign out"}>
                   <LogOut size={12} />
@@ -1263,6 +1353,26 @@ export function CreateStudioClient() {
                 </span>
               </button>
             </div>
+            <label className="af-whitelabel-row">
+              <input
+                type="checkbox"
+                checked={Boolean(generated.hideBranding)}
+                onChange={(e) => {
+                  if (!user?.isMax) {
+                    setPricingOpen(true);
+                    return;
+                  }
+                  setGenerated((prev) => ({ ...prev, hideBranding: e.target.checked }));
+                  setHasGenerated(true);
+                }}
+              />
+              <span>
+                {lang === "zh"
+                  ? "隐藏底部「由 TalkCV 托管」水印（Max 白标商用专属）"
+                  : "Hide 'Hosted with TalkCV' footer watermark (Max Agency)"}
+              </span>
+              {!user?.isMax && <Lock size={11} />}
+            </label>
             {publishError && <div className="af-ai-error">{publishError}</div>}
             {publishedUrl && (
               <div className="af-published-banner">
@@ -1347,6 +1457,95 @@ export function CreateStudioClient() {
           )}
 
           <div className="af-preview-canvas">
+            <div className="af-avatar-bar">
+              <button
+                type="button"
+                className="af-avatar-trigger"
+                onClick={() => {
+                  setAvatarErr(null);
+                  setAvatarMenuOpen((v) => !v);
+                }}
+                title={lang === "zh" ? "点击更换个人头像 / 标签页图标" : "Click to customize avatar & favicon"}
+              >
+                {generated.basics.avatar ? (
+                  <img
+                    className="af-brand-avatar af-brand-avatar-lg"
+                    src={generated.basics.avatar}
+                    alt={localize(generated.basics.name, lang)}
+                  />
+                ) : (
+                  <span className="af-brand-mark af-brand-mark-lg">{generated.basics.initials}</span>
+                )}
+                <span className="af-avatar-hint">
+                  {lang === "zh" ? "更换头像" : "Edit Avatar"}
+                </span>
+              </button>
+              {avatarMenuOpen && (
+                <div className="af-avatar-picker">
+                  <div className="af-avatar-picker-row">
+                    <label className="af-icon-pill" style={{ cursor: "pointer" }}>
+                      <FileUp size={12} />
+                      <span>{lang === "zh" ? "上传照片" : "Upload Photo"}</span>
+                      <input type="file" accept="image/*" onChange={onAvatarFileUpload} hidden />
+                    </label>
+                    <button
+                      type="button"
+                      className="af-icon-pill af-login-pill"
+                      onClick={generateAiAvatar}
+                      disabled={avatarBusy}
+                    >
+                      <Sparkles size={12} />
+                      <span>
+                        {avatarBusy
+                          ? lang === "zh"
+                            ? "AI 绘制中…"
+                            : "Generating…"
+                          : lang === "zh"
+                            ? user?.isPro
+                              ? "AI 生成头像"
+                              : "✨ AI 头像 (Pro)"
+                            : user?.isPro
+                              ? "AI Avatar"
+                              : "✨ AI Avatar (Pro)"}
+                      </span>
+                    </button>
+                    {generated.basics.avatar && (
+                      <button
+                        type="button"
+                        className="af-icon-pill"
+                        onClick={() => {
+                          setGenerated((prev) => ({ ...prev, basics: { ...prev.basics, avatar: undefined } }));
+                          setAvatarMenuOpen(false);
+                        }}
+                      >
+                        <Trash2 size={12} />
+                        <span>{lang === "zh" ? "恢复默认" : "Reset"}</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="af-avatar-presets">
+                    {AVATAR_STYLES.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        className="af-avatar-swatch"
+                        style={{ background: `linear-gradient(135deg, ${st.c1}, ${st.c2})` }}
+                        title={st.label}
+                        onClick={() => {
+                          const svgUrl = buildPresetAvatarSvg(generated.basics.initials, st.c1, st.c2);
+                          setGenerated((prev) => ({ ...prev, basics: { ...prev.basics, avatar: svgUrl } }));
+                          setHasGenerated(true);
+                          setAvatarMenuOpen(false);
+                        }}
+                      >
+                        {generated.basics.initials}
+                      </button>
+                    ))}
+                  </div>
+                  {avatarErr && <div className="af-ai-error">{avatarErr}</div>}
+                </div>
+              )}
+            </div>
             <p
               className="af-role af-editable"
               contentEditable

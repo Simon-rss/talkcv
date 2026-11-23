@@ -52,15 +52,15 @@ export function PricingModal({
       features: isZh
         ? [
             "DeepSeek Chat / GPT-4o mini 免费托管",
-            "每日 3 次 AI 简历生成",
-            "预览区所见即所得手动点改",
+            "每账号 3 次 AI 简历生成（终身体验）",
+            "免费所见即所得点改 + 上传自定义头像",
             "最多 2 个托管个人站（30 天有效）",
             "访客托管对话 30 次/天（自带 Key 无限）",
           ]
         : [
             "DeepSeek Chat & GPT-4o mini hosted",
-            "3 AI resume generations / day",
-            "Free inline click-to-edit preview",
+            "3 AI resume generations per account",
+            "Free inline click-to-edit + custom avatar upload",
             "Up to 2 hosted sites (30-day validity)",
             "30 hosted visitor chats/day (BYOK unlimited)",
           ],
@@ -68,22 +68,24 @@ export function PricingModal({
     {
       id: "pro" as const,
       name: "Pro",
-      tagline: isZh ? "求职季主力 · 解锁 AI 实时精修" : "Best for active job seekers",
+      tagline: isZh ? "求职季主力 · 解锁 AI 实时精修与头像" : "Best for active job seekers",
       priceMonth: "$20",
       priceYear: "$190",
       popular: true,
       features: isZh
         ? [
             "解锁 DeepSeek V4.1 Flash / R1 / GPT-4o / o3-mini",
-            "每日 15 次 AI 简历生成",
-            "专属「AI 多轮实时精修 + 版本回退」（30 次/天）",
+            "每月 30 次 AI 简历生成",
+            "专属「AI 多轮实时精修 + 版本回退」（100 次/月）",
+            "专属「AI 生成职业头像」（5 次/月）",
             "最多 10 个个人站 · 订阅期内永不过期",
             "访客托管 AI 对话 200 次/天",
           ]
         : [
             "Unlock DeepSeek V4.1 Flash, R1, GPT-4o, o3-mini",
-            "15 AI resume generations / day",
-            "Multi-turn AI Live Refine + rollback (30/day)",
+            "30 AI resume generations / month",
+            "Multi-turn AI Live Refine + rollback (100/month)",
+            "AI Portrait Avatar generator (5/month)",
             "Up to 10 sites · never expires while subscribed",
             "200 hosted visitor AI chats / day",
           ],
@@ -91,23 +93,25 @@ export function PricingModal({
     {
       id: "max" as const,
       name: "Max",
-      tagline: isZh ? "旗舰模型全开 · 工作室与高流量首选" : "Flagship models & maximum quotas",
+      tagline: isZh ? "旗舰模型全开 · 支持工作室白标接单商用" : "Flagship models & agency white-label",
       priceMonth: "$49",
       priceYear: "$469",
       popular: false,
       features: isZh
         ? [
             "解锁全部旗舰模型（GPT-6.2 Sol / 6.1 / 5.4）",
-            "每日 50 次 AI 简历生成",
-            "专属「AI 多轮实时精修 + 版本回退」（100 次/天）",
-            "最多 30 个个人站 · 订阅期内永不过期",
+            "每月 100 次 AI 简历生成 + 300 次 AI 精修/月",
+            "AI 生成职业头像（20 次/月）",
+            "白标商用：支持隐藏底部 TalkCV 水印",
+            "最多 30 个客户个人站 · 订阅期内永不过期",
             "访客托管 AI 对话 600 次/天 + 优先路由",
           ]
         : [
             "Unlock all flagship models (GPT-6.2 Sol, 6.1, 5.4)",
-            "50 AI resume generations / day",
-            "Multi-turn AI Live Refine + rollback (100/day)",
-            "Up to 30 sites · never expires while subscribed",
+            "100 generations/month + 300 AI refines/month",
+            "AI Portrait Avatar generator (20/month)",
+            "Agency White-label: hide TalkCV footer watermark",
+            "Up to 30 client sites · never expires while subscribed",
             "600 hosted visitor AI chats/day + priority routing",
           ],
     },

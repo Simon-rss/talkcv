@@ -70,6 +70,7 @@ export interface PortfolioProfile {
   siteUrl: string;
   stylePrompt?: string;
   designTokens?: DesignTokens;
+  hideBranding?: boolean;
   basics: {
     name: LocalizedText;
     initials: string;
@@ -77,6 +78,7 @@ export interface PortfolioProfile {
     location: LocalizedText;
     timezone: string;
     email: string;
+    avatar?: string;
     github?: string;
     linkedin?: string;
     headline: LocalizedText;

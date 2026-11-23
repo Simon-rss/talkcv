@@ -1,4 +1,4 @@
-import { getDailyEditUsage, getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
+import { getMonthlyEditUsage, getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
 import type { PublishEnv } from "./publish";
 
 export interface AuthEnv extends PublishEnv {
@@ -107,18 +107,23 @@ export async function getSessionUser(request: Request, env: AuthEnv): Promise<Se
   return { email, createdAt: new Date(exp - 30 * 86400_000).toISOString() };
 }
 
-export async function getCookieDailyUsage(
+function usageWindowToken(period: "lifetime" | "month"): string {
+  return period === "month" ? new Date().toISOString().slice(0, 7) : "lifetime";
+}
+
+async function getCookieUsage(
   request: Request,
   email: string,
+  period: "lifetime" | "month",
   env: AuthEnv,
 ): Promise<number> {
   const raw = parseCookies(request)["talkcv_usage"];
   if (!raw) return 0;
   const parts = raw.split("|");
   if (parts.length !== 4) return 0;
-  const [cEmail, cDate, cCountStr, sig] = parts;
-  if (cEmail !== email || cDate !== todayKey()) return 0;
-  const expected = await hmacHex(getSigningSecret(env), `usage:${cEmail}|${cDate}|${cCountStr}`);
+  const [cEmail, cWin, cCountStr, sig] = parts;
+  if (cEmail !== email || cWin !== usageWindowToken(period)) return 0;
+  const expected = await hmacHex(getSigningSecret(env), `usage:${cEmail}|${cWin}|${cCountStr}`);
   if (!timingSafeEqual(sig, expected)) return 0;
   const count = Number(cCountStr);
   return Number.isFinite(count) && count > 0 ? count : 0;
@@ -129,20 +134,24 @@ export async function buildUsageCookie(
   email: string,
   count: number,
   env: AuthEnv,
+  period: "lifetime" | "month" = "lifetime",
 ): Promise<string> {
-  const date = todayKey();
-  const sig = await hmacHex(getSigningSecret(env), `usage:${email}|${date}|${count}`);
-  const val = encodeURIComponent(`${email}|${date}|${count}|${sig}`);
+  const win = usageWindowToken(period);
+  const sig = await hmacHex(getSigningSecret(env), `usage:${email}|${win}|${count}`);
+  const val = encodeURIComponent(`${email}|${win}|${count}|${sig}`);
   const isHttps = request.url.startsWith("https://");
-  return `talkcv_usage=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${isHttps ? "; Secure" : ""}`;
+  const maxAge = period === "lifetime" ? 31536000 : 2678400;
+  return `talkcv_usage=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps ? "; Secure" : ""}`;
 }
 
 export async function getDailyUsage(
   email: string,
   env: AuthEnv,
   request?: Request,
+  period: "lifetime" | "month" = "lifetime",
 ): Promise<number> {
-  const key = `usage:${email}:${todayKey()}`;
+  const win = usageWindowToken(period);
+  const key = `usage:${email}:${win}`;
   let kvCount = 0;
   if (env.PROFILES_KV) {
     const raw = await env.PROFILES_KV.get(key);
@@ -151,7 +160,7 @@ export async function getDailyUsage(
   } else {
     kvCount = memUsage.get(key) ?? 0;
   }
-  const cookieCount = request ? await getCookieDailyUsage(request, email, env) : 0;
+  const cookieCount = request ? await getCookieUsage(request, email, period, env) : 0;
   return Math.max(kvCount, cookieCount);
 }
 
@@ -159,10 +168,12 @@ export async function incrementDailyUsage(
   email: string,
   env: AuthEnv,
   request?: Request,
+  period: "lifetime" | "month" = "lifetime",
 ): Promise<number> {
-  const current = await getDailyUsage(email, env, request);
+  const current = await getDailyUsage(email, env, request, period);
   const next = current + 1;
-  const key = `usage:${email}:${todayKey()}`;
+  const win = usageWindowToken(period);
+  const key = `usage:${email}:${win}`;
   if (env.PROFILES_KV) {
     await env.PROFILES_KV.put(key, String(next));
   } else {
@@ -292,10 +303,10 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
   const sessionSig = await hmacHex(getSigningSecret(env), `session:${email}|${sessionExp}`);
   const sessionValue = encodeURIComponent(`${email}|${sessionExp}|${sessionSig}`);
 
-  const usedToday = await getDailyUsage(email, env, request);
-  const editUsedToday = await getDailyEditUsage(email, env as BillingEnv);
-  const sites = await getUserSites(email, env);
   const { plan, isPro, isMax, limits } = await getUserPlan(email, env as BillingEnv);
+  const usedToday = await getDailyUsage(email, env, request, limits.generatePeriod);
+  const editUsedToday = await getMonthlyEditUsage(email, env as BillingEnv);
+  const sites = await getUserSites(email, env);
   const isHttps = request.url.startsWith("https://");
   const cookie = `talkcv_session=${sessionValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
 
@@ -310,9 +321,10 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
         isMax,
         hasBilling: isBillingConfigured(env as BillingEnv),
         usedToday,
-        dailyLimit: limits.dailyGenerateLimit,
+        dailyLimit: limits.generateLimit,
+        quotaPeriod: limits.generatePeriod,
         editUsedToday,
-        editDailyLimit: limits.dailyEditLimit,
+        editDailyLimit: limits.editLimit,
         sites,
       },
     },
@@ -325,10 +337,10 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
   if (!user) {
     return jsonResponse(200, { user: null });
   }
-  const usedToday = await getDailyUsage(user.email, env, request);
-  const editUsedToday = await getDailyEditUsage(user.email, env as BillingEnv);
-  const sites = await getUserSites(user.email, env);
   const { plan, isPro, isMax, limits } = await getUserPlan(user.email, env as BillingEnv);
+  const usedToday = await getDailyUsage(user.email, env, request, limits.generatePeriod);
+  const editUsedToday = await getMonthlyEditUsage(user.email, env as BillingEnv);
+  const sites = await getUserSites(user.email, env);
   return jsonResponse(200, {
     user: {
       email: user.email,
@@ -337,9 +349,10 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
       isMax,
       hasBilling: isBillingConfigured(env as BillingEnv),
       usedToday,
-      dailyLimit: limits.dailyGenerateLimit,
+      dailyLimit: limits.generateLimit,
+      quotaPeriod: limits.generatePeriod,
       editUsedToday,
-      editDailyLimit: limits.dailyEditLimit,
+      editDailyLimit: limits.editLimit,
       sites,
     },
   });

@@ -182,7 +182,16 @@ export function CreateStudioClient() {
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [redeemErr, setRedeemErr] = useState<string | null>(null);
+  const [redeemSuccess, setRedeemSuccess] = useState<{
+    plan: PlanTier;
+    days: number;
+    expiresAt: string;
+    dailyLimit: number;
+    editDailyLimit: number;
+  } | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [checkoutBusyTier, setCheckoutBusyTier] = useState<"pro" | "max" | null>(null);
+  const [pricingError, setPricingError] = useState<string | null>(null);
   const [refineOpen, setRefineOpen] = useState(false);
   const [editingSkills, setEditingSkills] = useState(false);
   const [skillsDraft, setSkillsDraft] = useState("");
@@ -224,22 +233,33 @@ export function CreateStudioClient() {
       setAuthModalOpen(true);
       return;
     }
-    setBillingBusy(true);
-    setError(null);
+    setCheckoutBusyTier(tier);
+    setPricingError(null);
     try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 12000);
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tier, interval }),
+        signal: controller.signal,
       });
-      const data = (await res.json()) as { checkoutUrl?: string; error?: string };
+      window.clearTimeout(timeout);
+      const data = (await res.json().catch(() => ({}))) as { checkoutUrl?: string; error?: string };
       if (!res.ok || !data.checkoutUrl) {
         throw new Error(data.error || "Could not start checkout.");
       }
       window.location.href = data.checkoutUrl;
+      // Reset busy state in case user cancels navigation or navigates back from bfcache
+      window.setTimeout(() => setCheckoutBusyTier(null), 4000);
     } catch (err) {
-      setError(localizeApiError(err instanceof Error ? err.message : "Could not start checkout.", lang));
-      setBillingBusy(false);
+      const rawMsg = err instanceof Error ? err.message : "Could not start checkout.";
+      const friendly =
+        lang === "zh"
+          ? `收银台暂不可用（${rawMsg}）。若支付通道仍在审核中，可先点右下角「兑换码」直接开通体验。`
+          : `Checkout unavailable (${rawMsg}). You can also redeem an invite code below.`;
+      setPricingError(friendly);
+      setCheckoutBusyTier(null);
     }
   };
 
@@ -286,21 +306,29 @@ export function CreateStudioClient() {
         throw new Error(data.error || "Invalid redemption code.");
       }
       const nextPlan: PlanTier = data.plan === "max" ? "max" : "pro";
+      const nextDailyLimit = data.dailyLimit ?? (nextPlan === "max" ? 50 : 15);
+      const nextEditLimit = nextPlan === "max" ? 100 : 30;
       setUser({
         ...user,
         plan: nextPlan,
         isPro: true,
         isMax: nextPlan === "max",
-        dailyLimit: data.dailyLimit ?? (nextPlan === "max" ? 50 : 15),
-        editDailyLimit: nextPlan === "max" ? 100 : 30,
+        dailyLimit: nextDailyLimit,
+        editDailyLimit: nextEditLimit,
       });
-      setRedeemModalOpen(false);
       setRedeemCode("");
       const expDate = data.expiresAt ? data.expiresAt.slice(0, 10) : "";
+      setRedeemSuccess({
+        plan: nextPlan,
+        days: data.days ?? 30,
+        expiresAt: expDate,
+        dailyLimit: nextDailyLimit,
+        editDailyLimit: nextEditLimit,
+      });
       setBillingBanner(
         lang === "zh"
-          ? `兑换成功！已开通 TalkCV Pro（+${data.days ?? 30} 天，有效期至 ${expDate}），全部 Pro 模型与高额度已解锁。`
-          : `Code redeemed! TalkCV Pro activated (+${data.days ?? 30} days, valid until ${expDate}).`,
+          ? `兑换成功！已开通 TalkCV ${nextPlan.toUpperCase()}（+${data.days ?? 30} 天，有效期至 ${expDate}）。`
+          : `Code redeemed! TalkCV ${nextPlan.toUpperCase()} activated (+${data.days ?? 30} days, valid until ${expDate}).`,
       );
     } catch (err) {
       setRedeemErr(localizeApiError(err instanceof Error ? err.message : "Redemption failed.", lang));
@@ -716,6 +744,7 @@ export function CreateStudioClient() {
                 className="af-icon-pill"
                 onClick={() => {
                   setRedeemErr(null);
+                  setRedeemSuccess(null);
                   setRedeemModalOpen(true);
                 }}
               >
@@ -1448,46 +1477,114 @@ export function CreateStudioClient() {
 
       <PricingModal
         open={pricingOpen}
-        onClose={() => setPricingOpen(false)}
+        onClose={() => {
+          setPricingOpen(false);
+          setCheckoutBusyTier(null);
+          setPricingError(null);
+        }}
         lang={lang}
         currentPlan={currentPlan}
-        busy={billingBusy}
+        busyTier={checkoutBusyTier}
+        error={pricingError}
         onSelectPlan={startPlanCheckout}
         onOpenRedeem={() => {
           setRedeemErr(null);
+          setRedeemSuccess(null);
           setRedeemModalOpen(true);
         }}
       />
 
       {redeemModalOpen && (
-        <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={() => setRedeemModalOpen(false)}>
+        <div
+          className="af-cmd-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setRedeemModalOpen(false);
+            setRedeemSuccess(null);
+          }}
+        >
           <div className="af-auth-modal" onClick={(e) => e.stopPropagation()}>
             <div className="af-auth-head">
               <strong>
-                <KeyRound size={15} /> {lang === "zh" ? "兑换 Pro 邀请码" : "Redeem Pro Invite Code"}
+                {redeemSuccess ? <Sparkles size={15} /> : <KeyRound size={15} />}{" "}
+                {redeemSuccess
+                  ? lang === "zh"
+                    ? `兑换成功 · TalkCV ${redeemSuccess.plan.toUpperCase()}`
+                    : `Redeemed · TalkCV ${redeemSuccess.plan.toUpperCase()}`
+                  : lang === "zh"
+                    ? "兑换会员邀请码"
+                    : "Redeem Invite Code"}
               </strong>
-              <button type="button" onClick={() => setRedeemModalOpen(false)} aria-label="Close">
+              <button
+                type="button"
+                onClick={() => {
+                  setRedeemModalOpen(false);
+                  setRedeemSuccess(null);
+                }}
+                aria-label="Close"
+              >
                 <X size={15} />
               </button>
             </div>
-            <form className="af-auth-form" onSubmit={submitRedeemCode}>
-              <p>
-                {lang === "zh"
-                  ? "输入内测或活动兑换码，立即解锁全部 Pro 高级模型、每日 30 次生成额度与 365 天托管。"
-                  : "Enter your invite code to unlock all Pro models, 30 daily generations, and 365-day hosting."}
-              </p>
-              <input
-                type="text"
-                required
-                value={redeemCode}
-                onChange={(e) => setRedeemCode(e.target.value.toUpperCase())}
-                placeholder="TALKCV-XXXX-XXXX"
-              />
-              {redeemErr && <div className="af-ai-error">{redeemErr}</div>}
-              <button type="submit" className="af-btn af-btn-primary" disabled={redeemBusy || !redeemCode.trim()}>
-                {redeemBusy ? (lang === "zh" ? "兑换中…" : "Redeeming…") : lang === "zh" ? "立即兑换" : "Redeem Now"}
-              </button>
-            </form>
+            {redeemSuccess ? (
+              <div className="af-auth-form">
+                <p style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
+                  🎉{" "}
+                  {lang === "zh"
+                    ? `欢迎加入 TalkCV ${redeemSuccess.plan.toUpperCase()}！`
+                    : `Welcome to TalkCV ${redeemSuccess.plan.toUpperCase()}!`}
+                </p>
+                <div className="af-quota-note" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span>
+                    ✓ {lang === "zh" ? `已增加 ${redeemSuccess.days} 天会员，有效期至 ${redeemSuccess.expiresAt}` : `+${redeemSuccess.days} days active until ${redeemSuccess.expiresAt}`}
+                  </span>
+                  <span>
+                    ✓ {lang === "zh" ? `每日简历生成提升至 ${redeemSuccess.dailyLimit} 次/天` : `${redeemSuccess.dailyLimit} AI generations / day`}
+                  </span>
+                  <span>
+                    ✓ {lang === "zh" ? `已解锁 AI 多轮实时精修（${redeemSuccess.editDailyLimit} 次/天）` : `AI Multi-turn Live Refine unlocked (${redeemSuccess.editDailyLimit}/day)`}
+                  </span>
+                  <span>
+                    ✓{" "}
+                    {lang === "zh"
+                      ? redeemSuccess.plan === "max"
+                        ? "全部旗舰模型（GPT-6.2 Sol / 6.1 / 5.4）与高级模型已解锁"
+                        : "DeepSeek V4.1 Flash / R1 / GPT-4o / o3-mini 已解锁"
+                      : "Premium hosted models are now unlocked"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="af-btn af-btn-primary"
+                  onClick={() => {
+                    setRedeemModalOpen(false);
+                    setRedeemSuccess(null);
+                  }}
+                >
+                  {lang === "zh" ? "太好了，开始体验 →" : "Awesome, let's build →"}
+                </button>
+              </div>
+            ) : (
+              <form className="af-auth-form" onSubmit={submitRedeemCode}>
+                <p>
+                  {lang === "zh"
+                    ? "输入内测或活动兑换码，立即解锁高级模型、AI 多轮实时精修与更高托管额度。"
+                    : "Enter your invite code to unlock premium models, AI Live Refine, and higher quotas."}
+                </p>
+                <input
+                  type="text"
+                  required
+                  value={redeemCode}
+                  onChange={(e) => setRedeemCode(e.target.value.toUpperCase())}
+                  placeholder="TALKCV-XXXX-XXXX"
+                />
+                {redeemErr && <div className="af-ai-error">{redeemErr}</div>}
+                <button type="submit" className="af-btn af-btn-primary" disabled={redeemBusy || !redeemCode.trim()}>
+                  {redeemBusy ? (lang === "zh" ? "兑换中…" : "Redeeming…") : lang === "zh" ? "立即兑换" : "Redeem Now"}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}

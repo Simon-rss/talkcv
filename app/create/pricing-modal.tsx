@@ -10,7 +10,8 @@ interface PricingModalProps {
   onClose: () => void;
   lang: Lang;
   currentPlan: PlanTier;
-  busy: boolean;
+  busyTier: "pro" | "max" | null;
+  error?: string | null;
   onSelectPlan: (tier: "pro" | "max", interval: "month" | "year") => void;
   onOpenRedeem: () => void;
 }
@@ -20,7 +21,8 @@ export function PricingModal({
   onClose,
   lang,
   currentPlan,
-  busy,
+  busyTier,
+  error,
   onSelectPlan,
   onOpenRedeem,
 }: PricingModalProps) {
@@ -175,14 +177,14 @@ export function PricingModal({
                   <button
                     type="button"
                     className={`af-btn ${t.popular ? "af-btn-primary" : "af-btn-secondary"} af-pricing-cta`}
-                    disabled={busy || isCurrent}
+                    disabled={busyTier !== null || isCurrent}
                     onClick={() => onSelectPlan(t.id, interval)}
                   >
                     {isCurrent
                       ? isZh
                         ? "当前方案"
                         : "Current Plan"
-                      : busy
+                      : busyTier === t.id
                         ? isZh
                           ? "正在跳转收银台…"
                           : "Opening checkout…"
@@ -195,6 +197,8 @@ export function PricingModal({
             );
           })}
         </div>
+
+        {error && <div className="af-ai-error">{error}</div>}
 
         <div className="af-pricing-footer">
           <span>

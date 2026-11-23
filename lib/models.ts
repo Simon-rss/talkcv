@@ -1,8 +1,10 @@
+export type PlanTier = "free" | "pro" | "max";
+
 export interface HostedModelOption {
   id: string;
   provider: "auto" | "deepseek" | "openai";
   label: { en: string; zh: string };
-  tier: "free" | "pro";
+  tier: PlanTier;
   apiModel?: string;
 }
 
@@ -21,40 +23,26 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     apiModel: "deepseek-chat",
   },
   {
-    id: "deepseek-v4.1-flash",
-    provider: "deepseek",
-    label: { en: "DeepSeek V4.1 Flash", zh: "DeepSeek V4.1 Flash（极速）" },
-    tier: "free",
-    apiModel: "deepseek-v4.1-flash",
-  },
-  {
     id: "gpt-4o-mini",
     provider: "openai",
     label: { en: "OpenAI GPT-4o mini", zh: "OpenAI GPT-4o mini" },
     tier: "free",
     apiModel: "gpt-4o-mini",
   },
-  // Pro tier models (locked until Pro plan; users with BYOK can use any model freely)
+  // Pro tier models ($9/mo)
   {
-    id: "gpt-6.2-sol",
-    provider: "openai",
-    label: { en: "OpenAI GPT-6.2 Sol", zh: "OpenAI GPT-6.2 Sol" },
+    id: "deepseek-v4.1-flash",
+    provider: "deepseek",
+    label: { en: "DeepSeek V4.1 Flash", zh: "DeepSeek V4.1 Flash（极速）" },
     tier: "pro",
-    apiModel: "gpt-6.2-sol",
+    apiModel: "deepseek-v4.1-flash",
   },
   {
-    id: "gpt-6.1",
-    provider: "openai",
-    label: { en: "OpenAI GPT-6.1", zh: "OpenAI GPT-6.1" },
+    id: "deepseek-reasoner",
+    provider: "deepseek",
+    label: { en: "DeepSeek Reasoner (R1)", zh: "DeepSeek Reasoner（深度推理）" },
     tier: "pro",
-    apiModel: "gpt-6.1",
-  },
-  {
-    id: "gpt-5.4",
-    provider: "openai",
-    label: { en: "OpenAI GPT-5.4", zh: "OpenAI GPT-5.4" },
-    tier: "pro",
-    apiModel: "gpt-5.4",
+    apiModel: "deepseek-reasoner",
   },
   {
     id: "gpt-4o",
@@ -70,18 +58,41 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     tier: "pro",
     apiModel: "o3-mini",
   },
+  // Max tier flagship models ($29/mo)
   {
-    id: "deepseek-reasoner",
-    provider: "deepseek",
-    label: { en: "DeepSeek Reasoner (R1)", zh: "DeepSeek Reasoner（深度推理）" },
-    tier: "pro",
-    apiModel: "deepseek-reasoner",
+    id: "gpt-6.2-sol",
+    provider: "openai",
+    label: { en: "OpenAI GPT-6.2 Sol", zh: "OpenAI GPT-6.2 Sol（旗舰）" },
+    tier: "max",
+    apiModel: "gpt-6.2-sol",
+  },
+  {
+    id: "gpt-6.1",
+    provider: "openai",
+    label: { en: "OpenAI GPT-6.1", zh: "OpenAI GPT-6.1（旗舰）" },
+    tier: "max",
+    apiModel: "gpt-6.1",
+  },
+  {
+    id: "gpt-5.4",
+    provider: "openai",
+    label: { en: "OpenAI GPT-5.4", zh: "OpenAI GPT-5.4（旗舰）" },
+    tier: "max",
+    apiModel: "gpt-5.4",
   },
 ];
 
 export const FREE_MODEL_IDS = new Set(
   HOSTED_MODELS.filter((m) => m.tier === "free").map((m) => m.id),
 );
+
+const TIER_RANK: Record<PlanTier, number> = { free: 0, pro: 1, max: 2 };
+
+export function canUseModel(modelId: string, userPlan: PlanTier): boolean {
+  const model = HOSTED_MODELS.find((m) => m.id === modelId);
+  if (!model) return false;
+  return TIER_RANK[userPlan] >= TIER_RANK[model.tier];
+}
 
 export function getHostedModel(id: string | undefined): HostedModelOption {
   return HOSTED_MODELS.find((m) => m.id === id) ?? HOSTED_MODELS[0];

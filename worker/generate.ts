@@ -1,4 +1,4 @@
-import { FREE_MODEL_IDS, getHostedModel } from "../lib/models";
+import { canUseModel, getHostedModel } from "../lib/models";
 import { profile as sampleProfile } from "../lib/profile";
 import {
   isValidTheme,
@@ -14,7 +14,7 @@ import {
   getSessionUser,
   incrementDailyUsage,
 } from "./auth";
-import { getUserPlan, PRO_DAILY_GENERATE_LIMIT, type BillingEnv } from "./billing";
+import { getUserPlan, type BillingEnv } from "./billing";
 import type { ChatEnv } from "./chat";
 
 const RATE_WINDOW_MS = 60_000;
@@ -303,12 +303,12 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
         error: "Please sign in with your email to use TalkCV's free daily AI quota (or paste your own API key).",
       });
     }
-    const { isPro } = await getUserPlan(user.email, env as BillingEnv);
-    const activeDailyLimit = isPro ? PRO_DAILY_GENERATE_LIMIT : DAILY_GENERATE_LIMIT;
+    const { plan, limits } = await getUserPlan(user.email, env as BillingEnv);
+    const activeDailyLimit = limits.dailyGenerateLimit;
     const used = await getDailyUsage(user.email, env, request);
     if (used >= activeDailyLimit) {
       return jsonResponse(429, {
-        error: `Daily free generation limit reached (${activeDailyLimit}/day). Try again tomorrow or use your own API key.`,
+        error: `Daily generation limit reached (${activeDailyLimit}/day). Try again tomorrow or upgrade your plan.`,
       });
     }
     hostedUserEmail = user.email;
@@ -320,9 +320,9 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
           ? "gpt-4o-mini"
           : "deepseek-chat";
 
-    if (!isPro && !FREE_MODEL_IDS.has(requestedId)) {
+    if (!canUseModel(requestedId, plan)) {
       return jsonResponse(403, {
-        error: `Model "${requestedId}" requires TalkCV Pro (or use BYOK with your own API key).`,
+        error: `Model "${requestedId}" requires TalkCV Pro or Max (or use BYOK with your own API key).`,
       });
     }
 

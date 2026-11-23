@@ -6,6 +6,7 @@ import {
   handleVerifyCodeRequest,
 } from "./auth";
 import {
+  getUserPlan,
   handleBillingCheckoutRequest,
   handleBillingPortalRequest,
   handleCreateRedeemCodesRequest,
@@ -14,6 +15,7 @@ import {
   type BillingEnv,
 } from "./billing";
 import { handleChatRequest, type ChatEnv } from "./chat";
+import { handleAiEditRequest } from "./edit";
 import { handleGenerateRequest } from "./generate";
 import { handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
 import {
@@ -63,6 +65,9 @@ const worker = {
     if (url.pathname === "/api/generate") {
       return handleGenerateRequest(request, env);
     }
+    if (url.pathname === "/api/edit") {
+      return handleAiEditRequest(request, env);
+    }
     if (url.pathname === "/api/publish") {
       return handlePublishRequest(request, env);
     }
@@ -93,7 +98,8 @@ const worker = {
         });
       }
       const expTs = Date.parse(record.expiresAt);
-      if (Number.isFinite(expTs) && Date.now() > expTs) {
+      const ownerPlan = record.ownerEmail ? await getUserPlan(record.ownerEmail, env) : { isPro: false };
+      if (!ownerPlan.isPro && Number.isFinite(expTs) && Date.now() > expTs) {
         return new Response(rendered.body, {
           status: 410,
           headers: rendered.headers,

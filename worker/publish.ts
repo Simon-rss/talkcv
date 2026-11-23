@@ -1,14 +1,13 @@
-import { FREE_MODEL_IDS } from "../lib/models";
+import { canUseModel } from "../lib/models";
 import { sanitizeDesignTokens, type PortfolioProfile } from "../lib/schema";
 import {
   FREE_HOSTING_DAYS,
   getSessionUser,
   getUserSites,
-  MAX_SITES_PER_USER,
   recordUserSite,
   type AuthEnv,
 } from "./auth";
-import { getUserPlan, PRO_HOSTING_DAYS, PRO_MAX_SITES_PER_USER, type BillingEnv } from "./billing";
+import { getUserPlan, type BillingEnv } from "./billing";
 import { encryptSecret, maskApiKey } from "./crypto";
 
 export interface KVNamespaceLike {
@@ -171,8 +170,8 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     });
   }
 
-  const { isPro } = await getUserPlan(user?.email, env as BillingEnv);
-  const maxSites = isPro ? PRO_MAX_SITES_PER_USER : MAX_SITES_PER_USER;
+  const { plan, limits } = await getUserPlan(user?.email, env as BillingEnv);
+  const maxSites = limits.maxSites;
 
   if (user) {
     const userSites = await getUserSites(user.email, env);
@@ -227,9 +226,9 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     } else {
       const modelId =
         typeof incomingChat.hostedModelId === "string" ? incomingChat.hostedModelId.trim() : "auto";
-      if (!isPro && !FREE_MODEL_IDS.has(modelId)) {
+      if (!canUseModel(modelId, plan)) {
         return jsonResponse(403, {
-          error: `Model "${modelId}" requires TalkCV Pro (or switch to BYOK with your own API key).`,
+          error: `Model "${modelId}" requires TalkCV Pro or Max (or switch to BYOK with your own API key).`,
         });
       }
       chatConfig = {
@@ -240,7 +239,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   }
 
   const now = new Date();
-  const hostingDays = isPro ? PRO_HOSTING_DAYS : FREE_HOSTING_DAYS;
+  const hostingDays = limits.hostingDays;
   const expiresAt = new Date(now.getTime() + hostingDays * 86400_000).toISOString();
   const record: StoredProfileRecord = {
     profile: cleanProfile,
@@ -293,7 +292,10 @@ export async function handleGetProfileRequest(
     return jsonResponse(404, { error: "Published TalkCV profile not found." });
   }
   const expTs = Date.parse(record.expiresAt);
-  if (Number.isFinite(expTs) && Date.now() > expTs) {
+  const ownerPlan = record.ownerEmail
+    ? await getUserPlan(record.ownerEmail, env as BillingEnv)
+    : { isPro: false };
+  if (!ownerPlan.isPro && Number.isFinite(expTs) && Date.now() > expTs) {
     return jsonResponse(410, {
       error: "Hosting period expired.",
       expired: true,

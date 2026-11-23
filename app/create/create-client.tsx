@@ -23,17 +23,22 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { HOSTED_MODELS } from "../../lib/models";
+import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
 import { profile as defaultProfile } from "../../lib/profile";
 import { localize, THEMES, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
+import { AiRefinePanel } from "./ai-refine-panel";
+import { PricingModal } from "./pricing-modal";
 
 interface AuthUser {
   email: string;
-  plan?: "free" | "pro";
+  plan?: PlanTier;
   isPro?: boolean;
+  isMax?: boolean;
   hasBilling?: boolean;
   usedToday: number;
   dailyLimit: number;
+  editUsedToday?: number;
+  editDailyLimit?: number;
   sites: string[];
 }
 
@@ -177,17 +182,25 @@ export function CreateStudioClient() {
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [redeemErr, setRedeemErr] = useState<string | null>(null);
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [editingSkills, setEditingSkills] = useState(false);
+  const [skillsDraft, setSkillsDraft] = useState("");
+
+  const currentPlan: PlanTier = user?.plan ?? "free";
+  const remainingEdits = user ? Math.max(0, (user.editDailyLimit ?? 0) - (user.editUsedToday ?? 0)) : 0;
 
   // Restore user session + check ?upgraded=1 return from Creem
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let rafId: number | null = null;
-    if (params.get("upgraded") === "1") {
+    if (params.get("upgraded")) {
+      const upgradedTier = params.get("upgraded") === "max" ? "Max" : "Pro";
       rafId = window.requestAnimationFrame(() => {
         setBillingBanner(
           lang === "zh"
-            ? "支付已完成！Pro 权益（全部高级模型 + 更高额度）正在同步生效。"
-            : "Payment received! Your TalkCV Pro models & higher quotas are now activating.",
+            ? `支付已完成！TalkCV ${upgradedTier} 权益（高级模型 + AI 实时精修 + 更高额度）正在同步生效。`
+            : `Payment received! Your TalkCV ${upgradedTier} models, AI Live Refine & higher quotas are activating.`,
         );
       });
       params.delete("upgraded");
@@ -205,15 +218,20 @@ export function CreateStudioClient() {
     };
   }, [lang]);
 
-  const startProCheckout = async () => {
+  const startPlanCheckout = async (tier: "pro" | "max", interval: "month" | "year") => {
     if (!user) {
+      setPricingOpen(false);
       setAuthModalOpen(true);
       return;
     }
     setBillingBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/billing/checkout", { method: "POST" });
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tier, interval }),
+      });
       const data = (await res.json()) as { checkoutUrl?: string; error?: string };
       if (!res.ok || !data.checkoutUrl) {
         throw new Error(data.error || "Could not start checkout.");
@@ -256,7 +274,9 @@ export function CreateStudioClient() {
       });
       const data = (await res.json()) as {
         ok?: boolean;
+        plan?: PlanTier;
         isPro?: boolean;
+        isMax?: boolean;
         dailyLimit?: number;
         days?: number;
         expiresAt?: string;
@@ -265,11 +285,14 @@ export function CreateStudioClient() {
       if (!res.ok || !data.ok) {
         throw new Error(data.error || "Invalid redemption code.");
       }
+      const nextPlan: PlanTier = data.plan === "max" ? "max" : "pro";
       setUser({
         ...user,
-        plan: "pro",
+        plan: nextPlan,
         isPro: true,
-        dailyLimit: data.dailyLimit ?? 30,
+        isMax: nextPlan === "max",
+        dailyLimit: data.dailyLimit ?? (nextPlan === "max" ? 50 : 15),
+        editDailyLimit: nextPlan === "max" ? 100 : 30,
       });
       setRedeemModalOpen(false);
       setRedeemCode("");
@@ -661,7 +684,11 @@ export function CreateStudioClient() {
               <div className="af-user-pill">
                 <User size={13} />
                 <span>{user.email}</span>
-                {user.isPro && <em style={{ background: "var(--accent)", color: "var(--accent-ink)", padding: "1px 6px", borderRadius: 999 }}>PRO</em>}
+                {user.isPro && (
+                  <em style={{ background: "var(--accent)", color: "var(--accent-ink)", padding: "1px 6px", borderRadius: 999 }}>
+                    {user.isMax ? "MAX" : "PRO"}
+                  </em>
+                )}
                 <em>
                   {lang === "zh" ? `今日剩 ${remaining}/${user.dailyLimit} 次` : `${remaining}/${user.dailyLimit} left`}
                 </em>
@@ -669,22 +696,20 @@ export function CreateStudioClient() {
                   <LogOut size={12} />
                 </button>
               </div>
-              {user.isPro ? (
+              {user.isPro && (
                 <button type="button" className="af-icon-pill" onClick={openBillingPortal} disabled={billingBusy}>
                   <span>{lang === "zh" ? "管理订阅" : "Billing"}</span>
                 </button>
-              ) : (
-                user.hasBilling && (
-                  <button
-                    type="button"
-                    className="af-icon-pill af-login-pill"
-                    onClick={startProCheckout}
-                    disabled={billingBusy}
-                  >
-                    <Sparkles size={13} />
-                    <span>{billingBusy ? "…" : lang === "zh" ? "升级 Pro ($9/月)" : "Upgrade Pro"}</span>
-                  </button>
-                )
+              )}
+              {!user.isMax && (
+                <button
+                  type="button"
+                  className="af-icon-pill af-login-pill"
+                  onClick={() => setPricingOpen(true)}
+                >
+                  <Sparkles size={13} />
+                  <span>{lang === "zh" ? (user.isPro ? "升级 Max" : "升级会员") : user.isPro ? "Upgrade Max" : "Upgrade"}</span>
+                </button>
               )}
               <button
                 type="button"
@@ -861,8 +886,13 @@ export function CreateStudioClient() {
                 aria-label="Generation model"
               >
                 {HOSTED_MODELS.filter((m) => m.id !== "auto").map((m) => (
-                  <option key={m.id} value={m.id} disabled={m.tier === "pro" && !user?.isPro}>
-                    {localize(m.label, lang)} {m.tier === "pro" ? (user?.isPro ? "★ Pro" : "🔒 Pro") : "· Free"}
+                  <option key={m.id} value={m.id} disabled={!canUseModel(m.id, currentPlan)}>
+                    {localize(m.label, lang)}{" "}
+                    {m.tier === "free"
+                      ? "· Free"
+                      : canUseModel(m.id, currentPlan)
+                        ? `★ ${m.tier.toUpperCase()}`
+                        : `🔒 ${m.tier.toUpperCase()}`}
                   </option>
                 ))}
               </select>
@@ -1004,8 +1034,13 @@ export function CreateStudioClient() {
                 aria-label="Visitor chat hosted model"
               >
                 {HOSTED_MODELS.map((m) => (
-                  <option key={m.id} value={m.id} disabled={m.tier === "pro" && !user?.isPro}>
-                    {localize(m.label, lang)} {m.tier === "pro" ? (user?.isPro ? "★ Pro" : "🔒 Pro") : "· Free"}
+                  <option key={m.id} value={m.id} disabled={!canUseModel(m.id, currentPlan)}>
+                    {localize(m.label, lang)}{" "}
+                    {m.tier === "free"
+                      ? "· Free"
+                      : canUseModel(m.id, currentPlan)
+                        ? `★ ${m.tier.toUpperCase()}`
+                        : `🔒 ${m.tier.toUpperCase()}`}
                   </option>
                 ))}
               </select>
@@ -1119,29 +1154,288 @@ export function CreateStudioClient() {
             )}
           </div>
 
-          <div className="af-preview-canvas">
-            <p className="af-role">{localize(generated.basics.role, lang)}</p>
-            <h2>{localize(generated.basics.name, lang)}</h2>
-            <p className="af-preview-headline">{localize(generated.basics.headline, lang)}</p>
-            <p className="af-card-summary">{localize(generated.basics.intro, lang)}</p>
+          <div className="af-edit-toolbar">
+            <span className="af-inline-edit-hint">
+              ✏️ {lang === "zh" ? "所见即所得：点击下方任意文字或指标即可直接编辑" : "WYSIWYG: Click any text or metric below to edit inline"}
+            </span>
+            <button
+              type="button"
+              className={`af-icon-pill ${refineOpen ? "af-login-pill" : ""}`}
+              onClick={() => {
+                const canAiEdit = Boolean(user?.isPro) || (genMode === "byok" && Boolean(genApiKey.trim()));
+                if (!canAiEdit) {
+                  setPricingOpen(true);
+                  return;
+                }
+                setRefineOpen((prev) => !prev);
+              }}
+            >
+              <Sparkles size={13} />
+              <span>
+                {lang === "zh"
+                  ? user?.isPro
+                    ? `AI 实时精修（剩 ${remainingEdits}/${user.editDailyLimit ?? 30}）`
+                    : "✨ AI 实时精修 (Pro/Max)"
+                  : user?.isPro
+                    ? `AI Refine (${remainingEdits}/${user.editDailyLimit ?? 30})`
+                    : "✨ AI Live Refine (Pro)"}
+              </span>
+            </button>
+          </div>
 
-            <div className="af-skill-strip">
-              {generated.skills.slice(0, 8).map((s) => (
-                <span key={s}>{s}</span>
-              ))}
-            </div>
+          {refineOpen && (
+            <AiRefinePanel
+              lang={lang}
+              profile={generated}
+              theme={theme}
+              hostedModelId={genModelId}
+              providerMode={genMode}
+              apiKey={genApiKey}
+              baseUrl={genBaseUrl}
+              byokModel={genModel}
+              remainingEdits={remainingEdits}
+              editDailyLimit={user?.editDailyLimit ?? 30}
+              onApplyProfile={(nextProfile, quota) => {
+                setGenerated(nextProfile);
+                setHasGenerated(true);
+                if (nextProfile.theme) setTheme(nextProfile.theme);
+                if (quota && user) {
+                  setUser({ ...user, editUsedToday: quota.usedToday, editDailyLimit: quota.dailyLimit });
+                }
+              }}
+              onClose={() => setRefineOpen(false)}
+            />
+          )}
+
+          <div className="af-preview-canvas">
+            <p
+              className="af-role af-editable"
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => {
+                const val = e.currentTarget.textContent?.trim() ?? "";
+                if (!val) return;
+                setGenerated((prev) => ({
+                  ...prev,
+                  basics: { ...prev.basics, role: { ...prev.basics.role, [lang]: val } },
+                }));
+                setHasGenerated(true);
+              }}
+            >
+              {localize(generated.basics.role, lang)}
+            </p>
+            <h2
+              className="af-editable"
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => {
+                const val = e.currentTarget.textContent?.trim() ?? "";
+                if (!val) return;
+                setGenerated((prev) => ({
+                  ...prev,
+                  basics: { ...prev.basics, name: { ...prev.basics.name, [lang]: val } },
+                }));
+                setHasGenerated(true);
+              }}
+            >
+              {localize(generated.basics.name, lang)}
+            </h2>
+            <p
+              className="af-preview-headline af-editable"
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => {
+                const val = e.currentTarget.textContent?.trim() ?? "";
+                if (!val) return;
+                setGenerated((prev) => ({
+                  ...prev,
+                  basics: { ...prev.basics, headline: { ...prev.basics.headline, [lang]: val } },
+                }));
+                setHasGenerated(true);
+              }}
+            >
+              {localize(generated.basics.headline, lang)}
+            </p>
+            <p
+              className="af-card-summary af-editable"
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => {
+                const val = e.currentTarget.textContent?.trim() ?? "";
+                if (!val) return;
+                setGenerated((prev) => ({
+                  ...prev,
+                  basics: { ...prev.basics, intro: { ...prev.basics.intro, [lang]: val } },
+                }));
+                setHasGenerated(true);
+              }}
+            >
+              {localize(generated.basics.intro, lang)}
+            </p>
+
+            {editingSkills ? (
+              <div className="af-skills-editor">
+                <input
+                  type="text"
+                  value={skillsDraft}
+                  onChange={(e) => setSkillsDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const next = skillsDraft
+                        .split(/[,，]/)
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                        .slice(0, 18);
+                      setGenerated((prev) => ({ ...prev, skills: next }));
+                      setHasGenerated(true);
+                      setEditingSkills(false);
+                    }
+                  }}
+                  placeholder={lang === "zh" ? "用逗号分隔技能，回车保存" : "Comma-separated skills, press Enter"}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="af-icon-pill"
+                  onClick={() => {
+                    const next = skillsDraft
+                      .split(/[,，]/)
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                      .slice(0, 18);
+                    setGenerated((prev) => ({ ...prev, skills: next }));
+                    setHasGenerated(true);
+                    setEditingSkills(false);
+                  }}
+                >
+                  <Check size={12} /> {lang === "zh" ? "保存" : "Save"}
+                </button>
+              </div>
+            ) : (
+              <div
+                className="af-skill-strip af-editable"
+                title={lang === "zh" ? "点击编辑技能标签" : "Click to edit skills"}
+                onClick={() => {
+                  setSkillsDraft(generated.skills.join(", "));
+                  setEditingSkills(true);
+                }}
+              >
+                {generated.skills.slice(0, 12).map((s) => (
+                  <span key={s}>{s}</span>
+                ))}
+              </div>
+            )}
 
             <div className="af-preview-projects">
-              {generated.projects.slice(0, 3).map((proj) => (
+              {generated.projects.slice(0, 3).map((proj, pIdx) => (
                 <article key={proj.slug} className="af-card">
-                  <span className="af-card-cat">{localize(proj.category, lang)}</span>
-                  <h3>{localize(proj.title, lang)}</h3>
-                  <p className="af-card-summary">{localize(proj.summary, lang)}</p>
+                  <span
+                    className="af-card-cat af-editable"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const val = e.currentTarget.textContent?.trim() ?? "";
+                      if (!val) return;
+                      setGenerated((prev) => ({
+                        ...prev,
+                        projects: prev.projects.map((item, idx) =>
+                          idx === pIdx ? { ...item, category: { ...item.category, [lang]: val } } : item,
+                        ),
+                      }));
+                      setHasGenerated(true);
+                    }}
+                  >
+                    {localize(proj.category, lang)}
+                  </span>
+                  <h3
+                    className="af-editable"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const val = e.currentTarget.textContent?.trim() ?? "";
+                      if (!val) return;
+                      setGenerated((prev) => ({
+                        ...prev,
+                        projects: prev.projects.map((item, idx) =>
+                          idx === pIdx ? { ...item, title: { ...item.title, [lang]: val } } : item,
+                        ),
+                      }));
+                      setHasGenerated(true);
+                    }}
+                  >
+                    {localize(proj.title, lang)}
+                  </h3>
+                  <p
+                    className="af-card-summary af-editable"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const val = e.currentTarget.textContent?.trim() ?? "";
+                      if (!val) return;
+                      setGenerated((prev) => ({
+                        ...prev,
+                        projects: prev.projects.map((item, idx) =>
+                          idx === pIdx ? { ...item, summary: { ...item.summary, [lang]: val } } : item,
+                        ),
+                      }));
+                      setHasGenerated(true);
+                    }}
+                  >
+                    {localize(proj.summary, lang)}
+                  </p>
                   <div className="af-facts">
-                    {proj.facts.slice(0, 3).map((f) => (
-                      <div key={f.value + f.label.en}>
-                        <strong>{f.value}</strong>
-                        <span>{localize(f.label, lang)}</span>
+                    {proj.facts.slice(0, 3).map((f, fIdx) => (
+                      <div key={fIdx}>
+                        <strong
+                          className="af-editable"
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={(e) => {
+                            const val = e.currentTarget.textContent?.trim() ?? "";
+                            if (!val) return;
+                            setGenerated((prev) => ({
+                              ...prev,
+                              projects: prev.projects.map((item, idx) =>
+                                idx === pIdx
+                                  ? {
+                                      ...item,
+                                      facts: item.facts.map((fact, fi) =>
+                                        fi === fIdx ? { ...fact, value: val } : fact,
+                                      ),
+                                    }
+                                  : item,
+                              ),
+                            }));
+                            setHasGenerated(true);
+                          }}
+                        >
+                          {f.value}
+                        </strong>
+                        <span
+                          className="af-editable"
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={(e) => {
+                            const val = e.currentTarget.textContent?.trim() ?? "";
+                            if (!val) return;
+                            setGenerated((prev) => ({
+                              ...prev,
+                              projects: prev.projects.map((item, idx) =>
+                                idx === pIdx
+                                  ? {
+                                      ...item,
+                                      facts: item.facts.map((fact, fi) =>
+                                        fi === fIdx ? { ...fact, label: { ...fact.label, [lang]: val } } : fact,
+                                      ),
+                                    }
+                                  : item,
+                              ),
+                            }));
+                            setHasGenerated(true);
+                          }}
+                        >
+                          {localize(f.label, lang)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1151,6 +1445,19 @@ export function CreateStudioClient() {
           </div>
         </section>
       </div>
+
+      <PricingModal
+        open={pricingOpen}
+        onClose={() => setPricingOpen(false)}
+        lang={lang}
+        currentPlan={currentPlan}
+        busy={billingBusy}
+        onSelectPlan={startPlanCheckout}
+        onOpenRedeem={() => {
+          setRedeemErr(null);
+          setRedeemModalOpen(true);
+        }}
+      />
 
       {redeemModalOpen && (
         <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={() => setRedeemModalOpen(false)}>

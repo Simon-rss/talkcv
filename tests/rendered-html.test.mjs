@@ -263,7 +263,22 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   );
   const meProJson = await meProRes.json();
   assert.equal(meProJson.user?.isPro, true);
-  assert.equal(meProJson.user?.dailyLimit, 30);
+  assert.equal(meProJson.user?.dailyLimit, 15);
+  assert.equal(meProJson.user?.editDailyLimit, 30);
+
+  // AI Live Edit requires Pro/Max when not using BYOK
+  const unauthEditRes = await worker.fetch(
+    new Request("http://localhost/api/edit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        profile: { basics: { name: { en: "Test", zh: "测试" } } },
+        instruction: "Make headline shorter",
+      }),
+    }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+  );
+  assert.equal(unauthEditRes.status, 401);
 
   // Admin mint redeem code & user redeem flow
   const mintBad = await worker.fetch(

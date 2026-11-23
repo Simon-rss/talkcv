@@ -1,4 +1,4 @@
-import { getUserPlan, isBillingConfigured, PRO_DAILY_GENERATE_LIMIT, type BillingEnv } from "./billing";
+import { getDailyEditUsage, getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
 import type { PublishEnv } from "./publish";
 
 export interface AuthEnv extends PublishEnv {
@@ -293,8 +293,9 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
   const sessionValue = encodeURIComponent(`${email}|${sessionExp}|${sessionSig}`);
 
   const usedToday = await getDailyUsage(email, env, request);
+  const editUsedToday = await getDailyEditUsage(email, env as BillingEnv);
   const sites = await getUserSites(email, env);
-  const { plan, isPro } = await getUserPlan(email, env as BillingEnv);
+  const { plan, isPro, isMax, limits } = await getUserPlan(email, env as BillingEnv);
   const isHttps = request.url.startsWith("https://");
   const cookie = `talkcv_session=${sessionValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
 
@@ -306,9 +307,12 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
         email,
         plan,
         isPro,
+        isMax,
         hasBilling: isBillingConfigured(env as BillingEnv),
         usedToday,
-        dailyLimit: isPro ? PRO_DAILY_GENERATE_LIMIT : DAILY_GENERATE_LIMIT,
+        dailyLimit: limits.dailyGenerateLimit,
+        editUsedToday,
+        editDailyLimit: limits.dailyEditLimit,
         sites,
       },
     },
@@ -322,16 +326,20 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
     return jsonResponse(200, { user: null });
   }
   const usedToday = await getDailyUsage(user.email, env, request);
+  const editUsedToday = await getDailyEditUsage(user.email, env as BillingEnv);
   const sites = await getUserSites(user.email, env);
-  const { plan, isPro } = await getUserPlan(user.email, env as BillingEnv);
+  const { plan, isPro, isMax, limits } = await getUserPlan(user.email, env as BillingEnv);
   return jsonResponse(200, {
     user: {
       email: user.email,
       plan,
       isPro,
+      isMax,
       hasBilling: isBillingConfigured(env as BillingEnv),
       usedToday,
-      dailyLimit: isPro ? PRO_DAILY_GENERATE_LIMIT : DAILY_GENERATE_LIMIT,
+      dailyLimit: limits.dailyGenerateLimit,
+      editUsedToday,
+      editDailyLimit: limits.dailyEditLimit,
       sites,
     },
   });

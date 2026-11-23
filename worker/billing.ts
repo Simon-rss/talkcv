@@ -1,14 +1,18 @@
+import type { PlanTier } from "../lib/models";
 import { getSessionUser, type AuthEnv } from "./auth";
 
 export interface BillingEnv extends AuthEnv {
   CREEM_API_KEY?: string;
   CREEM_WEBHOOK_SECRET?: string;
   CREEM_PRO_PRODUCT_ID?: string;
+  CREEM_PRO_YEARLY_PRODUCT_ID?: string;
+  CREEM_MAX_PRODUCT_ID?: string;
+  CREEM_MAX_YEARLY_PRODUCT_ID?: string;
   CREEM_API_BASE?: string;
 }
 
 export interface PlanRecord {
-  plan: "free" | "pro";
+  plan: PlanTier;
   status: string;
   customerId?: string;
   subscriptionId?: string;
@@ -16,13 +20,79 @@ export interface PlanRecord {
   expiresAt?: string;
 }
 
-export const PRO_DAILY_GENERATE_LIMIT = 30;
-export const PRO_DAILY_CHAT_LIMIT_PER_SITE = 500;
-export const PRO_HOSTING_DAYS = 365;
-export const PRO_MAX_SITES_PER_USER = 10;
+export interface PlanLimits {
+  dailyGenerateLimit: number;
+  dailyEditLimit: number;
+  dailyChatLimitPerSite: number;
+  hostingDays: number;
+  maxSites: number;
+  aiLiveEdit: boolean;
+}
+
+export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
+  free: {
+    dailyGenerateLimit: 3,
+    dailyEditLimit: 0,
+    dailyChatLimitPerSite: 30,
+    hostingDays: 30,
+    maxSites: 2,
+    aiLiveEdit: false,
+  },
+  pro: {
+    dailyGenerateLimit: 15,
+    dailyEditLimit: 30,
+    dailyChatLimitPerSite: 200,
+    hostingDays: 365,
+    maxSites: 10,
+    aiLiveEdit: true,
+  },
+  max: {
+    dailyGenerateLimit: 50,
+    dailyEditLimit: 100,
+    dailyChatLimitPerSite: 600,
+    hostingDays: 365,
+    maxSites: 30,
+    aiLiveEdit: true,
+  },
+};
+
+const memEditUsage = new Map<string, number>();
+
+function editUsageKey(email: string): string {
+  const day = new Date().toISOString().slice(0, 10);
+  return `edit_usage:${email.trim().toLowerCase()}:${day}`;
+}
+
+export async function getDailyEditUsage(email: string, env: BillingEnv): Promise<number> {
+  const key = editUsageKey(email);
+  if (env.PROFILES_KV) {
+    const raw = await env.PROFILES_KV.get(key);
+    const n = Number(raw ?? "0");
+    return Number.isFinite(n) ? n : 0;
+  }
+  return memEditUsage.get(key) ?? 0;
+}
+
+export async function incrementDailyEditUsage(email: string, env: BillingEnv): Promise<number> {
+  const current = await getDailyEditUsage(email, env);
+  const next = current + 1;
+  const key = editUsageKey(email);
+  if (env.PROFILES_KV) {
+    await env.PROFILES_KV.put(key, String(next));
+  } else {
+    memEditUsage.set(key, next);
+  }
+  return next;
+}
+
+export const PRO_DAILY_GENERATE_LIMIT = PLAN_LIMITS.pro.dailyGenerateLimit;
+export const PRO_DAILY_CHAT_LIMIT_PER_SITE = PLAN_LIMITS.pro.dailyChatLimitPerSite;
+export const PRO_HOSTING_DAYS = PLAN_LIMITS.pro.hostingDays;
+export const PRO_MAX_SITES_PER_USER = PLAN_LIMITS.pro.maxSites;
 
 interface RedeemCodeRecord {
   code: string;
+  plan?: PlanTier;
   days: number;
   maxUses: number;
   usedBy: string[];
@@ -122,19 +192,26 @@ async function hmacSha256Hex(secret: string, payload: string): Promise<string> {
 export async function getUserPlan(
   email: string | undefined,
   env: BillingEnv,
-): Promise<{ plan: "free" | "pro"; isPro: boolean; record: PlanRecord | null }> {
-  if (!email) return { plan: "free", isPro: false, record: null };
+): Promise<{ plan: PlanTier; isPro: boolean; isMax: boolean; limits: PlanLimits; record: PlanRecord | null }> {
+  if (!email) return { plan: "free", isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
   const key = `plan:${email.trim().toLowerCase()}`;
   const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : (memPlans.get(key) ?? null);
-  if (!raw) return { plan: "free", isPro: false, record: null };
+  if (!raw) return { plan: "free", isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
   try {
     const record = JSON.parse(raw) as PlanRecord;
     const isExpired =
       record.expiresAt && Number.isFinite(Date.parse(record.expiresAt)) && Date.now() > Date.parse(record.expiresAt);
-    const isPro = record.plan === "pro" && !isExpired;
-    return { plan: isPro ? "pro" : "free", isPro, record };
+    const activePlan: PlanTier =
+      !isExpired && (record.plan === "max" || record.plan === "pro") ? record.plan : "free";
+    return {
+      plan: activePlan,
+      isPro: activePlan === "pro" || activePlan === "max",
+      isMax: activePlan === "max",
+      limits: PLAN_LIMITS[activePlan],
+      record,
+    };
   } catch {
-    return { plan: "free", isPro: false, record: null };
+    return { plan: "free", isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
   }
 }
 
@@ -149,7 +226,13 @@ export async function setUserPlan(email: string, record: PlanRecord, env: Billin
 }
 
 export function isBillingConfigured(env: BillingEnv): boolean {
-  return Boolean(env.CREEM_API_KEY?.trim() && env.CREEM_PRO_PRODUCT_ID?.trim());
+  return Boolean(
+    env.CREEM_API_KEY?.trim() &&
+      (env.CREEM_PRO_PRODUCT_ID?.trim() ||
+        env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim() ||
+        env.CREEM_MAX_PRODUCT_ID?.trim() ||
+        env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim()),
+  );
 }
 
 export async function handleBillingCheckoutRequest(request: Request, env: BillingEnv): Promise<Response> {
@@ -157,13 +240,30 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
 
   const user = await getSessionUser(request, env);
   if (!user) {
-    return jsonResponse(401, { error: "Please sign in with your email before upgrading to Pro." });
+    return jsonResponse(401, { error: "Please sign in with your email before upgrading." });
   }
 
+  let body: { tier?: unknown; interval?: unknown } = {};
+  try {
+    body = (await request.json()) as { tier?: unknown; interval?: unknown };
+  } catch {
+    // default to pro monthly
+  }
+  const tier: "pro" | "max" = body.tier === "max" ? "max" : "pro";
+  const interval: "month" | "year" = body.interval === "year" ? "year" : "month";
+
   const apiKey = env.CREEM_API_KEY?.trim();
-  const productId = env.CREEM_PRO_PRODUCT_ID?.trim();
+  const productId =
+    tier === "max"
+      ? interval === "year"
+        ? env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim() || env.CREEM_MAX_PRODUCT_ID?.trim()
+        : env.CREEM_MAX_PRODUCT_ID?.trim()
+      : interval === "year"
+        ? env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim() || env.CREEM_PRO_PRODUCT_ID?.trim()
+        : env.CREEM_PRO_PRODUCT_ID?.trim();
+
   if (!apiKey || !productId) {
-    return jsonResponse(503, { error: "Billing is not configured on this server yet." });
+    return jsonResponse(503, { error: "Selected billing plan is not configured on this server yet." });
   }
 
   const origin = new URL(request.url).origin;
@@ -179,9 +279,9 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
       },
       body: JSON.stringify({
         product_id: productId,
-        success_url: `${origin}/create?upgraded=1`,
+        success_url: `${origin}/create?upgraded=${tier}`,
         customer: { email: user.email },
-        metadata: { email: user.email, plan: "pro" },
+        metadata: { email: user.email, plan: tier, interval },
       }),
     });
   } catch {
@@ -293,14 +393,12 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
   }
 
   const eventId = typeof payload.id === "string" ? payload.id.trim() : "";
-  if (eventId) {
-    const evtKey = `webhook_evt:${eventId}`;
+  const evtKey = eventId ? `webhook_evt:${eventId}` : "";
+  if (evtKey) {
     const seen = env.PROFILES_KV ? await env.PROFILES_KV.get(evtKey) : memEvents.has(evtKey) ? "1" : null;
     if (seen) {
       return jsonResponse(200, { ok: true, duplicate: true });
     }
-    if (env.PROFILES_KV) await env.PROFILES_KV.put(evtKey, new Date().toISOString());
-    else memEvents.add(evtKey);
   }
 
   const eventType = payload.eventType || payload.type || "";
@@ -334,12 +432,14 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
     obj?.current_period_end_date ||
     (obj?.subscription && typeof obj.subscription === "object" ? obj.subscription.current_period_end_date : undefined);
 
+  const grantedTier: PlanTier = obj?.metadata?.plan === "max" ? "max" : "pro";
+
   if (GRANT_EVENTS.has(eventType)) {
     const prev = await getUserPlan(email, env);
     await setUserPlan(
       email,
       {
-        plan: "pro",
+        plan: grantedTier,
         status: "active",
         customerId: customerId || prev.record?.customerId,
         subscriptionId: subscriptionId || prev.record?.subscriptionId,
@@ -363,6 +463,11 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
     );
   }
 
+  if (evtKey) {
+    if (env.PROFILES_KV) await env.PROFILES_KV.put(evtKey, new Date().toISOString());
+    else memEvents.add(evtKey);
+  }
+
   return jsonResponse(200, { ok: true, eventType, email });
 }
 
@@ -376,13 +481,14 @@ export async function handleCreateRedeemCodesRequest(request: Request, env: Bill
     return jsonResponse(401, { error: "Unauthorized." });
   }
 
-  let body: { count?: unknown; days?: unknown; maxUses?: unknown; code?: unknown; note?: unknown };
+  let body: { count?: unknown; days?: unknown; maxUses?: unknown; code?: unknown; note?: unknown; plan?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return jsonResponse(400, { error: "Invalid JSON body." });
   }
 
+  const plan: PlanTier = body.plan === "max" ? "max" : "pro";
   const days = Math.min(3650, Math.max(1, Math.floor(Number(body.days) || 30)));
   const maxUses = Math.min(1000, Math.max(1, Math.floor(Number(body.maxUses) || 1)));
   const count = Math.min(50, Math.max(1, Math.floor(Number(body.count) || 1)));
@@ -393,6 +499,7 @@ export async function handleCreateRedeemCodesRequest(request: Request, env: Bill
   if (customCode) {
     const rec: RedeemCodeRecord = {
       code: customCode,
+      plan,
       days,
       maxUses,
       usedBy: [],
@@ -405,6 +512,7 @@ export async function handleCreateRedeemCodesRequest(request: Request, env: Bill
     for (let i = 0; i < count; i++) {
       const rec: RedeemCodeRecord = {
         code: generateRandomCode("TALKCV"),
+        plan,
         days,
         maxUses,
         usedBy: [],
@@ -418,7 +526,7 @@ export async function handleCreateRedeemCodesRequest(request: Request, env: Bill
 
   return jsonResponse(200, {
     ok: true,
-    codes: created.map((c) => ({ code: c.code, days: c.days, maxUses: c.maxUses })),
+    codes: created.map((c) => ({ code: c.code, plan: c.plan ?? "pro", days: c.days, maxUses: c.maxUses })),
   });
 }
 
@@ -463,17 +571,19 @@ export async function handleRedeemCodeRequest(request: Request, env: BillingEnv)
     return jsonResponse(410, { error: "This redemption code has already been used." });
   }
 
+  const grantedTier: PlanTier = record.plan === "max" ? "max" : "pro";
   const prev = await getUserPlan(email, env);
   const prevExpMs = prev.record?.expiresAt ? Date.parse(prev.record.expiresAt) : 0;
   const baseMs = prev.isPro && Number.isFinite(prevExpMs) && prevExpMs > Date.now() ? prevExpMs : Date.now();
   const nextExpiresAt = new Date(baseMs + record.days * 86400_000).toISOString();
+  const effectiveTier: PlanTier = prev.isMax || grantedTier === "max" ? "max" : "pro";
 
   record.usedBy.push(email);
   await saveRedeemCode(record, env);
   await setUserPlan(
     email,
     {
-      plan: "pro",
+      plan: effectiveTier,
       status: "redeemed",
       customerId: prev.record?.customerId,
       subscriptionId: prev.record?.subscriptionId,
@@ -485,9 +595,10 @@ export async function handleRedeemCodeRequest(request: Request, env: BillingEnv)
 
   return jsonResponse(200, {
     ok: true,
-    plan: "pro",
+    plan: effectiveTier,
     isPro: true,
-    dailyLimit: PRO_DAILY_GENERATE_LIMIT,
+    isMax: effectiveTier === "max",
+    dailyLimit: PLAN_LIMITS[effectiveTier].dailyGenerateLimit,
     days: record.days,
     expiresAt: nextExpiresAt,
   });

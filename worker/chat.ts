@@ -1,8 +1,8 @@
-import { FREE_MODEL_IDS, getHostedModel } from "../lib/models";
+import { canUseModel, getHostedModel } from "../lib/models";
 import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
-import { getUserPlan, PRO_DAILY_CHAT_LIMIT_PER_SITE, type BillingEnv } from "./billing";
+import { getUserPlan, PLAN_LIMITS, type BillingEnv } from "./billing";
 import { decryptSecret } from "./crypto";
 import { getEncryptionMasterKey, loadStoredRecord } from "./publish";
 
@@ -196,8 +196,8 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
 
   const ownerPlan = storedRecord?.ownerEmail
     ? await getUserPlan(storedRecord.ownerEmail, env as BillingEnv)
-    : { plan: "free" as const, isPro: false, record: null };
-  const activeDailyChatLimit = ownerPlan.isPro ? PRO_DAILY_CHAT_LIMIT_PER_SITE : DAILY_CHAT_LIMIT_PER_SITE;
+    : { plan: "free" as const, isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
+  const activeDailyChatLimit = ownerPlan.limits.dailyChatLimitPerSite;
 
   if (!byokCreds) {
     const withinDailyQuota = await consumeSiteDailyChatQuota(siteKey, env, activeDailyChatLimit);
@@ -258,7 +258,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     const requestedModelId =
       siteChat?.mode === "hosted" &&
       siteChat.hostedModelId &&
-      (ownerPlan.isPro || FREE_MODEL_IDS.has(siteChat.hostedModelId))
+      canUseModel(siteChat.hostedModelId, ownerPlan.plan)
         ? siteChat.hostedModelId
         : "auto";
     const chosen = getHostedModel(requestedModelId);

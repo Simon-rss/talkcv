@@ -3,6 +3,9 @@ import type { PublishEnv } from "./publish";
 export interface AuthEnv extends PublishEnv {
   RESEND_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;
+  AUTH_SECRET?: string;
+  OPENAI_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
 }
 
 export interface SessionUser {
@@ -14,9 +17,8 @@ export const DAILY_GENERATE_LIMIT = 3;
 export const MAX_SITES_PER_USER = 2;
 export const FREE_HOSTING_DAYS = 30;
 
-const memOtp = new Map<string, { code: string; expiresAt: number }>();
-const memSession = new Map<string, SessionUser>();
 const memUsage = new Map<string, number>();
+const memUserSites = new Map<string, string[]>();
 
 function jsonResponse(status: number, body: Record<string, unknown>, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -45,10 +47,35 @@ function randomCode(): string {
   return String(100000 + (bytes[0] % 900000));
 }
 
-function randomToken(): string {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+function getSigningSecret(env: AuthEnv): string {
+  return (
+    env.AUTH_SECRET?.trim() ||
+    env.DEEPSEEK_API_KEY?.trim() ||
+    env.OPENAI_API_KEY?.trim() ||
+    "talkcv-local-dev-signing-secret"
+  );
+}
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 function parseCookies(request: Request): Record<string, string> {
@@ -65,19 +92,16 @@ function parseCookies(request: Request): Record<string, string> {
 }
 
 export async function getSessionUser(request: Request, env: AuthEnv): Promise<SessionUser | null> {
-  const token = parseCookies(request)["talkcv_session"];
-  if (!token || token.length < 24) return null;
-  const key = `session:${token}`;
-  if (env.PROFILES_KV) {
-    const raw = await env.PROFILES_KV.get(key);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as SessionUser;
-    } catch {
-      return null;
-    }
-  }
-  return memSession.get(key) ?? null;
+  const raw = parseCookies(request)["talkcv_session"];
+  if (!raw) return null;
+  const parts = raw.split("|");
+  if (parts.length !== 3) return null;
+  const [email, expStr, sig] = parts;
+  const exp = Number(expStr);
+  if (!email || !Number.isFinite(exp) || Date.now() > exp) return null;
+  const expected = await hmacHex(getSigningSecret(env), `session:${email}|${expStr}`);
+  if (!timingSafeEqual(sig, expected)) return null;
+  return { email, createdAt: new Date(exp - 30 * 86400_000).toISOString() };
 }
 
 export async function getDailyUsage(email: string, env: AuthEnv): Promise<number> {
@@ -104,21 +128,27 @@ export async function incrementDailyUsage(email: string, env: AuthEnv): Promise<
 
 export async function getUserSites(email: string, env: AuthEnv): Promise<string[]> {
   const key = `user_sites:${email}`;
-  const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : null;
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
+  if (env.PROFILES_KV) {
+    const raw = await env.PROFILES_KV.get(key);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
   }
+  return memUserSites.get(key) ?? [];
 }
 
 export async function recordUserSite(email: string, slug: string, env: AuthEnv): Promise<string[]> {
   const existing = await getUserSites(email, env);
   const next = existing.includes(slug) ? existing : [...existing, slug];
+  const key = `user_sites:${email}`;
   if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(`user_sites:${email}`, JSON.stringify(next));
+    await env.PROFILES_KV.put(key, JSON.stringify(next));
+  } else {
+    memUserSites.set(key, next);
   }
   return next;
 }
@@ -140,12 +170,8 @@ export async function handleSendCodeRequest(request: Request, env: AuthEnv): Pro
 
   const code = randomCode();
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  const key = `otp:${email}`;
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(key, JSON.stringify({ code, expiresAt }));
-  } else {
-    memOtp.set(key, { code, expiresAt });
-  }
+  const sig = await hmacHex(getSigningSecret(env), `otp:${email}|${code}|${expiresAt}`);
+  const challenge = `${expiresAt}.${sig}`;
 
   const resendKey = env.RESEND_API_KEY?.trim();
   if (resendKey) {
@@ -167,64 +193,53 @@ export async function handleSendCodeRequest(request: Request, env: AuthEnv): Pro
     if (!mailRes || !mailRes.ok) {
       return jsonResponse(502, { error: "Failed to send verification email. Please try again." });
     }
-    return jsonResponse(200, { ok: true, delivery: "email" });
+    return jsonResponse(200, { ok: true, delivery: "email", challenge });
   }
 
-  // Graceful instant-code mode when RESEND_API_KEY is not configured yet
   return jsonResponse(200, {
     ok: true,
     delivery: "instant",
     instantCode: code,
+    challenge,
   });
 }
 
 export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): Promise<Response> {
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
 
-  let body: { email?: unknown; code?: unknown };
+  let body: { email?: unknown; code?: unknown; challenge?: unknown };
   try {
-    body = (await request.json()) as { email?: unknown; code?: unknown };
+    body = (await request.json()) as { email?: unknown; code?: unknown; challenge?: unknown };
   } catch {
     return jsonResponse(400, { error: "Invalid JSON body." });
   }
 
   const email = normalizeEmail(body.email);
   const code = typeof body.code === "string" ? body.code.trim() : "";
-  if (!email || !/^\d{6}$/.test(code)) {
+  const challenge = typeof body.challenge === "string" ? body.challenge.trim() : "";
+  if (!email || !/^\d{6}$/.test(code) || !challenge.includes(".")) {
     return jsonResponse(400, { error: "Valid email and 6-digit code are required." });
   }
 
-  const key = `otp:${email}`;
-  let stored: { code: string; expiresAt: number } | null = null;
-  if (env.PROFILES_KV) {
-    const raw = await env.PROFILES_KV.get(key);
-    if (raw) {
-      try {
-        stored = JSON.parse(raw) as { code: string; expiresAt: number };
-      } catch {
-        stored = null;
-      }
-    }
-  } else {
-    stored = memOtp.get(key) ?? null;
+  const [expStr, sig] = challenge.split(".");
+  const expiresAt = Number(expStr);
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+    return jsonResponse(401, { error: "Verification code expired. Please request a new one." });
   }
 
-  if (!stored || stored.code !== code || Date.now() > stored.expiresAt) {
-    return jsonResponse(401, { error: "Invalid or expired verification code." });
+  const expected = await hmacHex(getSigningSecret(env), `otp:${email}|${code}|${expiresAt}`);
+  if (!timingSafeEqual(sig, expected)) {
+    return jsonResponse(401, { error: "Invalid verification code." });
   }
 
-  const token = randomToken();
-  const session: SessionUser = { email, createdAt: new Date().toISOString() };
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(`session:${token}`, JSON.stringify(session));
-  } else {
-    memSession.set(`session:${token}`, session);
-  }
+  const sessionExp = Date.now() + 30 * 86400_000;
+  const sessionSig = await hmacHex(getSigningSecret(env), `session:${email}|${sessionExp}`);
+  const sessionValue = encodeURIComponent(`${email}|${sessionExp}|${sessionSig}`);
 
   const usedToday = await getDailyUsage(email, env);
   const sites = await getUserSites(email, env);
   const isHttps = request.url.startsWith("https://");
-  const cookie = `talkcv_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
+  const cookie = `talkcv_session=${sessionValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
 
   return jsonResponse(
     200,

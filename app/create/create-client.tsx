@@ -43,6 +43,7 @@ export function CreateStudioClient() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authCode, setAuthCode] = useState("");
+  const [authChallenge, setAuthChallenge] = useState("");
   const [authStep, setAuthStep] = useState<"email" | "code">("email");
   const [authBusy, setAuthBusy] = useState(false);
   const [authMsg, setAuthMsg] = useState<string | null>(null);
@@ -94,9 +95,11 @@ export function CreateStudioClient() {
         ok?: boolean;
         delivery?: string;
         instantCode?: string;
+        challenge?: string;
         error?: string;
       };
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed to send code.");
+      setAuthChallenge(data.challenge || "");
       setAuthStep("code");
       if (data.instantCode) {
         setAuthCode(data.instantCode);
@@ -127,7 +130,7 @@ export function CreateStudioClient() {
       const res = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: authEmail, code: authCode }),
+        body: JSON.stringify({ email: authEmail, code: authCode, challenge: authChallenge }),
       });
       const data = (await res.json()) as { ok?: boolean; user?: AuthUser; error?: string };
       if (!res.ok || !data.user) throw new Error(data.error || "Invalid code.");

@@ -159,7 +159,11 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
     new Request("http://localhost/api/auth/verify", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "tester@example.com", code: sendJson.instantCode }),
+      body: JSON.stringify({
+        email: "tester@example.com",
+        code: sendJson.instantCode,
+        challenge: sendJson.challenge,
+      }),
     }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
   );

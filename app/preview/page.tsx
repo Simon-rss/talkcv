@@ -12,7 +12,7 @@ export default function PreviewDraftPage() {
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       try {
-        const raw = window.sessionStorage.getItem("talkcv-draft-profile");
+        const raw = window.localStorage.getItem("talkcv-draft-profile");
         if (raw) {
           setDraft(JSON.parse(raw) as PortfolioProfile);
         }

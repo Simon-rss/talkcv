@@ -239,7 +239,7 @@ export function CreateStudioClient() {
   };
 
   const openFullscreenPreview = () => {
-    window.sessionStorage.setItem(
+    window.localStorage.setItem(
       "talkcv-draft-profile",
       JSON.stringify({ ...generated, theme }),
     );

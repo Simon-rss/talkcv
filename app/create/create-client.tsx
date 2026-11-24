@@ -341,11 +341,11 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     };
   }, [lang, resetDraft]);
 
-  const startPlanCheckout = async (tier: "pro" | "max", interval: "month" | "year") => {
+  const startPlanCheckout = async (tier: "pro" | "max", interval: "month" | "year", discountCode?: string) => {
     setCheckoutBusyTier(tier);
     setPricingError(null);
     try {
-      const url = await requestCheckout(tier, interval, lang === "zh" ? "onetime" : "subscription");
+      const url = await requestCheckout(tier, interval, lang === "zh" ? "onetime" : "subscription", discountCode);
       if (url) {
         window.location.assign(url);
       } else {
@@ -353,8 +353,9 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         setPricingOpen(false);
         setAuthModalOpen(true);
       }
-    } catch {
-      setPricingError(lang === "zh" ? "暂时无法打开收银台，请稍后重试。" : "Checkout is unavailable. Please try again later.");
+    } catch (err) {
+      const msg = err instanceof Error && err.message ? err.message : "";
+      setPricingError(msg || (lang === "zh" ? "暂时无法打开收银台，请稍后重试。" : "Checkout is unavailable. Please try again later."));
       setPricingOpen(true);
     } finally {
       setCheckoutBusyTier(null);

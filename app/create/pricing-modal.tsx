@@ -14,7 +14,7 @@ interface PricingModalProps {
   isTrial?: boolean;
   busyTier: "pro" | "max" | null;
   error?: string | null;
-  onSelectPlan: (tier: "pro" | "max", interval: "month" | "year") => void;
+  onSelectPlan: (tier: "pro" | "max", interval: "month" | "year", discountCode?: string) => void;
   onOpenRedeem: () => void;
 }
 
@@ -24,11 +24,13 @@ export async function requestCheckout(
   tier: "pro" | "max",
   interval: "month" | "year",
   mode: "subscription" | "onetime" = "subscription",
+  discountCode?: string,
 ) {
+  const cleanCode = discountCode?.trim().toUpperCase() || undefined;
   const response = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tier, interval, mode }),
+    body: JSON.stringify({ tier, interval, mode, ...(cleanCode ? { discountCode: cleanCode } : {}) }),
     signal: AbortSignal.timeout(12000),
   });
   if (response.status === 401) return null;
@@ -39,6 +41,14 @@ export async function requestCheckout(
 
 export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, error, onSelectPlan }: PlansProps) {
   const [interval, setInterval] = useState<"month" | "year">("month");
+  const [discountCode, setDiscountCode] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const preset = params.get("coupon") || params.get("discount");
+    if (preset) setDiscountCode(preset.trim().toUpperCase());
+  }, []);
 
   const [available, setAvailable] = useState<Record<"pro" | "max", Record<"month" | "year", boolean>> | null>(null);
   useEffect(() => {
@@ -151,6 +161,27 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
         {creationPricing(lang)}
         {isZh ? " 中文页支持支付宝单次购买（账单地区选 China），不自动续费。" : ""}
       </p>
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, margin: "8px 0 14px", flexWrap: "wrap" }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
+          <span>{isZh ? "打折券码（可选）" : "Discount code (optional)"}</span>
+          <input
+            type="text"
+            value={discountCode}
+            onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+            placeholder={isZh ? "输入券码，如 OFF20-XXXX" : "e.g. OFF20-XXXX"}
+            style={{
+              width: 190,
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--ink)",
+              fontSize: 13,
+              fontFamily: "var(--font-mono, monospace)",
+            }}
+          />
+        </label>
+      </div>
       <div className="af-pricing-grid">
         {tiers.map((t) => {
           const isCurrent = !isTrial && currentPlan === t.id;
@@ -199,7 +230,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
                   type="button"
                   className={`af-btn ${t.popular ? "af-btn-primary" : "af-btn-secondary"} af-pricing-cta`}
                   disabled={busyTier !== null || isCurrent || unavailable}
-                  onClick={() => onSelectPlan(t.id, interval)}
+                  onClick={() => onSelectPlan(t.id, interval, discountCode.trim() || undefined)}
                 >
                   {action}
                 </button>

@@ -268,15 +268,19 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
     return jsonResponse(401, { error: "Please sign in with your email before upgrading." });
   }
 
-  let body: { tier?: unknown; interval?: unknown; mode?: unknown } = {};
+  let body: { tier?: unknown; interval?: unknown; mode?: unknown; discountCode?: unknown } = {};
   try {
-    body = (await request.json()) as { tier?: unknown; interval?: unknown; mode?: unknown };
+    body = (await request.json()) as { tier?: unknown; interval?: unknown; mode?: unknown; discountCode?: unknown };
   } catch {
     // default to pro monthly
   }
   const tier: "pro" | "max" = body.tier === "max" ? "max" : "pro";
   const interval: "month" | "year" = body.interval === "year" ? "year" : "month";
   const mode: "subscription" | "onetime" = body.mode === "onetime" ? "onetime" : "subscription";
+  const discountCode =
+    typeof body.discountCode === "string"
+      ? body.discountCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32)
+      : "";
 
   const apiKey = env.CREEM_API_KEY?.trim();
   const productId = billingProducts(env, mode)[tier][interval];
@@ -305,6 +309,7 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
         success_url: `${origin}/create?upgraded=${tier}`,
         customer: { email: user.email },
         metadata,
+        ...(discountCode ? { discount_code: discountCode } : {}),
       }),
     });
   } catch {

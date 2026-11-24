@@ -187,7 +187,7 @@ export function PromoAnnouncementCard({
 
       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: "#334155" }}>
         {isZh
-          ? "为了回馈大家，本站将一批即将到期的官方 OpenAI Token 全部拿出来做福利！活动期间，免费用户无需升级 Pro / Max，即可直接选用 OpenAI 全系旗舰模型（含最新上线的 GPT-6.2 Astra）进行简历生成、AI 精修与访客问答。免费账号自带 30 点体验额度，先到先得、用完恢复原档位限制。"
+          ? "限时福利回馈！活动期间，所有用户无需升级 Pro / Max，即可直接免费选用 OpenAI 全系旗舰模型（含最新上线的 GPT-6.2 Astra）进行简历生成、AI 精修与访客问答。免费账号自带 30 点体验额度，先到先得，活动额度用完后恢复原档位限制。"
           : "We're unlocking our entire OpenAI model lineup — including the flagship GPT-6.2 Astra — for all Free, Pro, and Max users during this limited-time event. Free accounts include 30 credits to generate and host a live résumé site using flagship OpenAI models while promo credits last."}
       </p>
 

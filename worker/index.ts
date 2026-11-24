@@ -20,7 +20,12 @@ import {
   handleRedeemCodeRequest,
   type BillingEnv,
 } from "./billing";
-import { handleAdminCreateCodeRequest, handleAdminOverviewRequest, type AdminEnv } from "./admin";
+import {
+  handleAdminCreateCodeRequest,
+  handleAdminCreateDiscountRequest,
+  handleAdminOverviewRequest,
+  type AdminEnv,
+} from "./admin";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleAiEditRequest } from "./edit";
 import { handleGenerateRequest } from "./generate";
@@ -74,6 +79,9 @@ const worker = {
     }
     if (url.pathname === "/api/admin/codes") {
       return handleAdminCreateCodeRequest(request, env);
+    }
+    if (url.pathname === "/api/admin/discounts") {
+      return handleAdminCreateDiscountRequest(request, env);
     }
     if (url.pathname === "/api/chat") {
       return handleChatRequest(request, env);

@@ -11,6 +11,50 @@ export interface AdminEnv extends AuthEnv, BillingEnv {
   ADMIN_ALLOW_DEV_AUTH?: string;
 }
 
+export interface DiscountCouponRecord {
+  id: string;
+  code: string;
+  discountRate: number;
+  percentage: number;
+  duration: "once" | "forever";
+  maxRedemptions: number;
+  expiresAt?: string;
+  note?: string;
+  createdAt: string;
+}
+
+const memDiscounts = new Map<string, string>();
+
+function allCreemProductIds(env: BillingEnv): string[] {
+  return Array.from(
+    new Set(
+      [
+        env.CREEM_PRO_PRODUCT_ID,
+        env.CREEM_PRO_YEARLY_PRODUCT_ID,
+        env.CREEM_MAX_PRODUCT_ID,
+        env.CREEM_MAX_YEARLY_PRODUCT_ID,
+        env.CREEM_PRO_ONETIME_PRODUCT_ID,
+        env.CREEM_PRO_YEARLY_ONETIME_PRODUCT_ID,
+        env.CREEM_MAX_ONETIME_PRODUCT_ID,
+        env.CREEM_MAX_YEARLY_ONETIME_PRODUCT_ID,
+      ]
+        .map((v) => v?.trim() || "")
+        .filter(Boolean),
+    ),
+  );
+}
+
+function generateDiscountCode(percentage: number): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  let suffix = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    suffix += alphabet[bytes[i] % alphabet.length];
+  }
+  return `OFF${percentage}-${suffix}`;
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -75,7 +119,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
   const gate = await requireAdmin(request, env);
   if (!gate.ok) return gate.response;
 
-  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, creditRows, insightRows, codeRows, totalLeads] =
+  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, creditRows, insightRows, codeRows, discountRows, totalLeads] =
     await Promise.all([
       listByPrefix("profile:", env, 5000),
       listByPrefix("user_sites:", env, 5000),
@@ -86,6 +130,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
       listCreditRows("credits:", env),
       listByPrefix("insights:", env, 5000),
       listByPrefix("redeem:", env, 1000),
+      listByPrefix("discount:", env, 1000),
       countLeads(env),
     ]);
 
@@ -284,6 +329,13 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
     }))
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
+  const rawDiscounts = discountRows.length > 0
+    ? discountRows.map((row) => safeParse<DiscountCouponRecord>(row.value))
+    : Array.from(memDiscounts.values()).map((raw) => safeParse<DiscountCouponRecord>(raw));
+  const discounts = rawDiscounts
+    .filter((d): d is DiscountCouponRecord => Boolean(d?.code))
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
   return jsonResponse(200, {
     adminEmail: gate.email,
     summary: {
@@ -299,6 +351,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
     users,
     sites,
     codes,
+    discounts,
   });
 }
 
@@ -318,4 +371,106 @@ export async function handleAdminCreateCodeRequest(request: Request, env: AdminE
     body: bodyText,
   });
   return handleCreateRedeemCodesRequest(internalReq, env);
+}
+
+export async function handleAdminCreateDiscountRequest(request: Request, env: AdminEnv): Promise<Response> {
+  if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
+  const gate = await requireAdmin(request, env);
+  if (!gate.ok) return gate.response;
+
+  const apiKey = env.CREEM_API_KEY?.trim();
+  const products = allCreemProductIds(env);
+  if (!apiKey || products.length === 0) {
+    return jsonResponse(503, { error: "Creem API 密钥或商品尚未配置。" });
+  }
+
+  let body: {
+    discountRate?: unknown;
+    code?: unknown;
+    maxRedemptions?: unknown;
+    duration?: unknown;
+    expiryDays?: unknown;
+    note?: unknown;
+  };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return jsonResponse(400, { error: "请求体格式无效。" });
+  }
+
+  const rawRate = Number(body.discountRate);
+  if (!Number.isFinite(rawRate) || rawRate <= 0 || rawRate >= 10) {
+    return jsonResponse(400, { error: "折扣请输入 0.1 到 9.9 之间的数字（例如 8 表示 8 折，减免 20%）。" });
+  }
+  const discountRate = Math.round(rawRate * 10) / 10;
+  const percentage = Math.min(99, Math.max(1, Math.round((10 - discountRate) * 10)));
+  const maxRedemptions = Math.min(10000, Math.max(1, Math.floor(Number(body.maxRedemptions) || 10)));
+  const duration: "once" | "forever" = body.duration === "forever" ? "forever" : "once";
+  const expiryDays = Math.min(3650, Math.max(0, Math.floor(Number(body.expiryDays) || 0)));
+  const expiresAt = expiryDays > 0 ? new Date(Date.now() + expiryDays * 86_400_000).toISOString() : undefined;
+  const note = typeof body.note === "string" ? body.note.trim().slice(0, 80) : "";
+
+  const customCode =
+    typeof body.code === "string"
+      ? body.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32)
+      : "";
+  const code = customCode || generateDiscountCode(percentage);
+  const name = note ? `${note} (${discountRate}折)` : `TalkCV ${discountRate}折券 (-${percentage}%)`;
+  const baseUrl = (env.CREEM_API_BASE?.trim() || "https://api.creem.io").replace(/\/+$/, "");
+
+  const payload: Record<string, unknown> = {
+    name,
+    code,
+    type: "percentage",
+    percentage,
+    duration,
+    applies_to_products: products,
+    max_redemptions: maxRedemptions,
+    ...(expiresAt ? { expiry_date: expiresAt } : {}),
+  };
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${baseUrl}/v1/discounts`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return jsonResponse(502, { error: "无法连接 Creem 折扣服务，请稍后重试。" });
+  }
+
+  const data = (await upstream.json().catch(() => null)) as {
+    id?: string;
+    code?: string;
+    message?: string | string[];
+    error?: string;
+  } | null;
+
+  if (!upstream.ok || !data?.id) {
+    const msg = Array.isArray(data?.message) ? data.message.join("; ") : data?.message || data?.error;
+    return jsonResponse(502, { error: msg || `Creem 创建打折券失败 (HTTP ${upstream.status})` });
+  }
+
+  const record: DiscountCouponRecord = {
+    id: data.id,
+    code: data.code || code,
+    discountRate,
+    percentage,
+    duration,
+    maxRedemptions,
+    ...(expiresAt ? { expiresAt } : {}),
+    ...(note ? { note } : {}),
+    createdAt: new Date().toISOString(),
+  };
+
+  const key = `discount:${record.code}`;
+  const serialized = JSON.stringify(record);
+  if (env.PROFILES_KV) await env.PROFILES_KV.put(key, serialized);
+  else memDiscounts.set(key, serialized);
+
+  return jsonResponse(200, { ok: true, discount: record });
 }

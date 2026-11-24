@@ -9,6 +9,7 @@ import {
   KeyRound,
   Lock,
   MessageSquare,
+  Percent,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -60,6 +61,18 @@ interface AdminCodeRow {
   createdAt: string;
 }
 
+interface AdminDiscountRow {
+  id: string;
+  code: string;
+  discountRate: number;
+  percentage: number;
+  duration: "once" | "forever";
+  maxRedemptions: number;
+  expiresAt?: string;
+  note?: string;
+  createdAt: string;
+}
+
 interface AdminOverview {
   adminEmail: string;
   summary: {
@@ -75,6 +88,7 @@ interface AdminOverview {
   users: AdminUserRow[];
   sites: AdminSiteRow[];
   codes: AdminCodeRow[];
+  discounts?: AdminDiscountRow[];
 }
 
 function fmtTime(iso: string | null | undefined): string {
@@ -110,6 +124,16 @@ export function AdminClient() {
   const [codeNote, setCodeNote] = useState("");
   const [creatingCode, setCreatingCode] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Discount coupon generator form (Creem real discount)
+  const [discountRate, setDiscountRate] = useState(8);
+  const [discountCode, setDiscountCode] = useState("");
+  const [discountMaxUses, setDiscountMaxUses] = useState(10);
+  const [discountExpiryDays, setDiscountExpiryDays] = useState(30);
+  const [discountDuration, setDiscountDuration] = useState<"once" | "forever">("once");
+  const [discountNote, setDiscountNote] = useState("");
+  const [creatingDiscount, setCreatingDiscount] = useState(false);
+  const [discountError, setDiscountError] = useState("");
 
   const applyResponse = useCallback(async (res: Response) => {
     if (res.status === 401) {
@@ -205,6 +229,38 @@ export function AdminClient() {
     }
   };
 
+  const createDiscount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingDiscount(true);
+    setDiscountError("");
+    try {
+      const res = await fetch("/api/admin/discounts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          discountRate,
+          code: discountCode.trim() || undefined,
+          maxRedemptions: discountMaxUses,
+          expiryDays: discountExpiryDays,
+          duration: discountDuration,
+          note: discountNote.trim() || undefined,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setDiscountError(json.error || `创建失败 (HTTP ${res.status})`);
+        return;
+      }
+      setDiscountCode("");
+      setDiscountNote("");
+      await loadOverview();
+    } catch {
+      setDiscountError("网络错误，请稍后重试。");
+    } finally {
+      setCreatingDiscount(false);
+    }
+  };
+
   if (status === "loading") {
     return (
       <main className="af-admin-wrap">
@@ -292,7 +348,7 @@ export function AdminClient() {
             已发布站点 ({data.sites.length})
           </button>
           <button type="button" role="tab" aria-selected={tab === "codes"} className={tab === "codes" ? "active" : ""} onClick={() => setTab("codes")}>
-            兑换码 ({data.codes.length})
+            兑换码 &amp; 打折券 ({data.codes.length + (data.discounts?.length ?? 0)})
           </button>
         </div>
         {tab !== "codes" && (
@@ -430,6 +486,108 @@ export function AdminClient() {
 
       {tab === "codes" && (
         <div className="af-admin-codes-section">
+          <form className="af-admin-code-form" onSubmit={createDiscount}>
+            <span className="af-admin-form-title"><Percent size={14} /> 一键生成打折券</span>
+            <label>
+              折扣（折）
+              <input
+                type="number"
+                min={0.1}
+                max={9.9}
+                step={0.1}
+                value={discountRate}
+                onChange={(e) => setDiscountRate(Number(e.target.value))}
+              />
+            </label>
+            <span className="af-admin-muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+              减免 {Math.min(99, Math.max(1, Math.round((10 - (Number(discountRate) || 8)) * 10)))}% · Pro ${(20 * ((Number(discountRate) || 8) / 10)).toFixed(2)}
+            </span>
+            <label>
+              可用次数
+              <input type="number" min={1} max={10000} value={discountMaxUses} onChange={(e) => setDiscountMaxUses(Number(e.target.value))} />
+            </label>
+            <label>
+              有效天数
+              <input
+                type="number"
+                min={0}
+                max={3650}
+                value={discountExpiryDays}
+                title="填 0 表示长期有效"
+                onChange={(e) => setDiscountExpiryDays(Number(e.target.value))}
+              />
+            </label>
+            <select value={discountDuration} onChange={(e) => setDiscountDuration(e.target.value as "once" | "forever")}>
+              <option value="once">首单/单次生效</option>
+              <option value="forever">续费永久生效</option>
+            </select>
+            <input
+              type="text"
+              placeholder="自定义券码（可选，如 XHS80）"
+              value={discountCode}
+              onChange={(e) => setDiscountCode(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="备注（可选，如：小红书 8 折）"
+              value={discountNote}
+              onChange={(e) => setDiscountNote(e.target.value)}
+            />
+            <button type="submit" className="af-btn af-btn-primary" disabled={creatingDiscount}>
+              <Sparkles size={13} /> {creatingDiscount ? "创建中…" : "生成打折券"}
+            </button>
+          </form>
+          {discountError && (
+            <p style={{ color: "#dc2626", fontSize: 13, margin: "4px 0 8px" }}>{discountError}</p>
+          )}
+
+          {(data.discounts?.length ?? 0) > 0 && (
+            <div className="af-admin-table-wrap" style={{ marginBottom: 18 }}>
+              <table className="af-admin-table">
+                <thead>
+                  <tr>
+                    <th>打折券码（Creem 结账输入）</th>
+                    <th>折扣力度</th>
+                    <th>适用规则</th>
+                    <th>上限次数</th>
+                    <th>有效期至</th>
+                    <th>备注</th>
+                    <th>创建时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.discounts ?? []).map((d) => (
+                    <tr key={d.code}>
+                      <td>
+                        <button
+                          type="button"
+                          className="af-admin-code-btn"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(d.code);
+                            setCopiedCode(d.code);
+                            window.setTimeout(() => setCopiedCode(null), 1500);
+                          }}
+                        >
+                          <code>{d.code}</code>
+                          {copiedCode === d.code ? <Check size={12} /> : <Copy size={12} />}
+                        </button>
+                      </td>
+                      <td>
+                        <span className="af-admin-badge tier-pro">{d.discountRate} 折</span>{" "}
+                        <span className="af-admin-muted">(-{d.percentage}%)</span>
+                      </td>
+                      <td className="af-admin-muted">{d.duration === "forever" ? "续费永久" : "首单/单次"}</td>
+                      <td>{d.maxRedemptions} 次</td>
+                      <td className="af-admin-muted">{d.expiresAt ? fmtDate(d.expiresAt) : "长期有效"}</td>
+                      <td className="af-admin-muted">{d.note || "—"}</td>
+                      <td className="af-admin-muted">{fmtTime(d.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <form className="af-admin-code-form" onSubmit={createCodes}>
             <span className="af-admin-form-title"><KeyRound size={14} /> 一键生成兑换码</span>
             <select value={codePlan} onChange={(e) => setCodePlan(e.target.value as "pro" | "max")}>

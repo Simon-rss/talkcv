@@ -1,5 +1,6 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { PortfolioProfile } from "../../../lib/schema";
@@ -74,14 +75,41 @@ export function PublishedProfileClient({ slug, initialStatus }: { slug: string; 
         } catch { setError("network"); }
         finally { setBusy(false); }
       }}>
-        <div className="af-auth-head"><strong>TalkCV</strong>{languageButton}</div>
-        <h1>{zh ? "此简历需要访问口令" : "This résumé is passcode protected"}</h1>
-        <label className="af-field-label">{zh ? "输入作者分享的口令" : "Enter the passcode from the owner"}
-          <input type="password" autoComplete="off" required maxLength={8} value={passcode} onChange={(e) => setPasscode(e.target.value)} />
-        </label>
-        {error && <p role="alert">{error === "limited" ? (zh ? "尝试过于频繁，请在 10 分钟后重试。" : "Too many attempts. Try again in 10 minutes.") :
-          error === "network" ? (zh ? "连接失败，请重试。" : "Connection failed. Please try again.") : (zh ? "口令不正确。" : "Incorrect passcode.")}</p>}
-        <button className="af-btn af-btn-primary" disabled={busy}>{zh ? "解锁简历" : "Unlock résumé"}</button>
+        <div className="af-auth-head">
+          <strong><Lock size={14} /> TalkCV</strong>
+          {languageButton}
+        </div>
+        <div className="af-auth-form af-passcode-body">
+          <div className="af-passcode-copy">
+            <h1>{zh ? "此简历需要访问口令" : "Passcode required"}</h1>
+            <p>{zh ? "作者为这份简历开启了隐私保护，请输入分享的 4–8 位口令继续查看。" : "This résumé is protected. Enter the 4–8 character passcode from the owner to continue."}</p>
+          </div>
+          <label className="af-passcode-field">
+            <span>{zh ? "访问口令" : "Access passcode"}</span>
+            <input
+              type="password"
+              autoComplete="off"
+              autoFocus
+              required
+              maxLength={8}
+              placeholder={zh ? "输入 4–8 位口令" : "4–8 characters"}
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+            />
+          </label>
+          {error && (
+            <p className="af-ai-error" role="alert">
+              {error === "limited"
+                ? zh ? "尝试过于频繁，请在 10 分钟后重试。" : "Too many attempts. Try again in 10 minutes."
+                : error === "network"
+                  ? zh ? "连接失败，请重试。" : "Connection failed. Please try again."
+                  : zh ? "口令不正确，请核对后重试。" : "Incorrect passcode. Please try again."}
+            </p>
+          )}
+          <button type="submit" className="af-btn af-btn-primary af-passcode-submit" disabled={busy}>
+            {busy ? (zh ? "正在验证…" : "Verifying…") : zh ? "解锁简历" : "Unlock résumé"}
+          </button>
+        </div>
       </form>
     </main>;
   }

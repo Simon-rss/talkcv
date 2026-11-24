@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { Lang } from "../../lib/schema";
 import type { PlanTier } from "../../lib/models";
+import { readSession } from "../../lib/login";
 import { PricingPlans, requestCheckout } from "../create/pricing-modal";
 
 export function PublicPlans({ lang }: { lang: Lang }) {
@@ -10,13 +11,15 @@ export function PublicPlans({ lang }: { lang: Lang }) {
   const [busy, setBusy] = useState<"pro" | "max" | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then(({ user }) => {
+    const controller = new AbortController();
+    readSession(controller.signal)
+      .then((user) => {
+        if (controller.signal.aborted) return;
         setPlan(user?.plan ?? "free");
         setIsTrial(Boolean(user?.isTrial));
       })
       .catch(() => {});
+    return () => controller.abort();
   }, []);
   return <PricingPlans lang={lang} currentPlan={currentPlan} isTrial={isTrial} busyTier={busy} error={error} onSelectPlan={async (tier, interval) => {
     setBusy(tier);

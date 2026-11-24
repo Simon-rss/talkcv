@@ -95,10 +95,10 @@ export function prefersReducedMotion(): boolean {
 }
 
 function buildMailtoHref(email: string, subject: string, body: string): string {
-  const params = new URLSearchParams();
-  if (subject) params.set("subject", subject);
-  if (body) params.set("body", body);
-  return `mailto:${email}?${params.toString()}`;
+  const parts: string[] = [];
+  if (subject) parts.push(`subject=${encodeURIComponent(subject)}`);
+  if (body) parts.push(`body=${encodeURIComponent(body)}`);
+  return parts.length ? `mailto:${email}?${parts.join("&")}` : `mailto:${email}`;
 }
 
 export function PortfolioAIProvider({

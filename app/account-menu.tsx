@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { readSession, type AuthUser } from "../lib/login";
+import { clearStudioDraftStorage, readSession, type AuthUser } from "../lib/login";
 import type { Lang } from "../lib/schema";
 
 export function AccountMenu({ lang }: { lang: Lang }) {
@@ -58,6 +58,7 @@ export function AccountMenu({ lang }: { lang: Lang }) {
         try {
           const res = await fetch("/api/auth/logout", { method: "POST" });
           if (!res.ok) throw new Error();
+          clearStudioDraftStorage();
           setOpen(false); setUser(null); window.location.reload();
         } catch { setFailed(true); setSigningOut(false); }
       }}>{zh ? "退出登录" : "Sign out"}</button>

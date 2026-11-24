@@ -31,7 +31,9 @@ export function safeLoginNext(value: unknown): string {
   const base = "https://talkcv.invalid";
   try {
     const url = new URL(value, base);
-    return url.origin === base && !url.pathname.startsWith("//") ? value : "/create";
+    return url.origin === base && !url.pathname.startsWith("//")
+      ? `${url.pathname}${url.search}${url.hash}`
+      : "/create";
   } catch { return "/create"; }
 }
 
@@ -49,8 +51,27 @@ export function clearPendingReferral() {
   try { localStorage.removeItem(referralKey); } catch { /* Storage can be unavailable in private browsing. */ }
 }
 
+export function clearStudioDraftStorage() {
+  try {
+    localStorage.removeItem("talkcv-studio-draft");
+    localStorage.removeItem("talkcv-draft-profile");
+  } catch { /* Storage can be unavailable in private browsing. */ }
+}
+
+let inFlightSession: Promise<AuthUser | null> | null = null;
+
 export async function readSession(signal?: AbortSignal): Promise<AuthUser | null> {
-  const res = await fetch("/api/auth/me", { cache: "no-store", signal });
-  if (!res.ok) throw new Error("Could not read session");
-  return (await res.json()).user ?? null;
+  if (!inFlightSession) {
+    inFlightSession = fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Could not read session");
+        return ((await res.json()) as { user?: AuthUser | null }).user ?? null;
+      })
+      .finally(() => {
+        inFlightSession = null;
+      });
+  }
+  const user = await inFlightSession;
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  return user;
 }

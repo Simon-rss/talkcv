@@ -2846,3 +2846,64 @@ button {
   cursor: pointer;
   font-size: 12.5px;
 }
+
+/* Passcode unlock card polish */
+.af-passcode-body {
+  padding: 22px 20px 24px;
+  gap: 16px;
+}
+
+.af-passcode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.af-passcode-copy h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.af-passcode-copy p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.af-passcode-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.af-passcode-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  color: var(--ink);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.af-passcode-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.af-passcode-submit {
+  width: 100%;
+  justify-content: center;
+  padding: 11px 16px;
+}

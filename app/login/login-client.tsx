@@ -114,16 +114,23 @@ export function LoginClient({ initialLang, next, referral }: { initialLang: Lang
   const zh = lang === "zh";
   useEffect(() => {
     const controller = new AbortController();
-    const code = captureReferral(referral);
     const frame = requestAnimationFrame(() => {
-      setReferralCode(code);
       let saved: string | null = null;
       try { saved = localStorage.getItem("talkcv-theme"); } catch { /* Use the system theme. */ }
       setTheme(isValidTheme(saved) ? saved : matchMedia("(prefers-color-scheme: dark)").matches ? "terminal" : "editorial");
     });
-    readSession(controller.signal).then((user) => {
-      if (user && !controller.signal.aborted) window.location.replace(destination);
-    }).catch(() => {});
+    readSession(controller.signal)
+      .then((user) => {
+        if (controller.signal.aborted) return;
+        if (user) {
+          window.location.replace(destination);
+          return;
+        }
+        setReferralCode(captureReferral(referral));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setReferralCode(captureReferral(referral));
+      });
     return () => { controller.abort(); cancelAnimationFrame(frame); };
   }, [referral, destination]);
 

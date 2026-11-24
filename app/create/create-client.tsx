@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
 import { captureReferral, readSession, type AuthUser } from "../../lib/login";
 import { profile as defaultProfile } from "../../lib/profile";
@@ -186,6 +186,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [generated, setGenerated] = useState<PortfolioProfile>(defaultProfile);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
+  const draftOwnerRef = useRef<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
 
   // Visitor AI Chat config (independent from generation model!)
@@ -257,6 +258,29 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
+
+  const resetDraft = useCallback(() => {
+    setBriefDraft(undefined);
+    setResumeText("");
+    setStylePrompt("");
+    setGenerated(defaultProfile);
+    setHasGenerated(false);
+    setHandle(DEFAULT_HANDLE);
+    setNoindex(undefined);
+    setProtectedSite(undefined);
+    setPasscode("");
+    setSavedPasscodeSlug("");
+    setPublishedUrl(null);
+    setSavedByokMask("");
+    setChatByokApiKey("");
+    setClearByokKey(false);
+    try {
+      window.localStorage.removeItem(STUDIO_DRAFT_KEY);
+      window.localStorage.removeItem("talkcv-draft-profile");
+    } catch {
+      // ignore
+    }
+  }, []);
   const [pendingRefCode, setPendingRefCode] = useState<string>("");
   const [copiedRef, setCopiedRef] = useState(false);
 
@@ -288,14 +312,34 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       }
     }
     const controller = new AbortController();
-    readSession(controller.signal)
-      .then((current) => { if (current && !controller.signal.aborted) setUser(current); })
-      .catch(() => {});
+    const syncSession = () =>
+      readSession(controller.signal)
+        .then((current) => {
+          if (controller.signal.aborted) return;
+          const nextEmail = current?.email;
+          if (draftOwnerRef.current && nextEmail !== draftOwnerRef.current) {
+            draftOwnerRef.current = nextEmail;
+            resetDraft();
+          } else if (nextEmail && !draftOwnerRef.current) {
+            draftOwnerRef.current = nextEmail;
+          }
+          setUser(current);
+        })
+        .catch(() => {});
+    void syncSession();
+    const onFocus = () => void syncSession();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void syncSession();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       controller.abort();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
-  }, [lang]);
+  }, [lang, resetDraft]);
 
   const startPlanCheckout = async (tier: "pro" | "max", interval: "month" | "year") => {
     setCheckoutBusyTier(tier);
@@ -409,6 +453,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         const raw = window.localStorage.getItem(STUDIO_DRAFT_KEY);
         if (raw) {
           const d = JSON.parse(raw) as {
+            ownerEmail?: string;
             resumeText?: string;
             stylePrompt?: string;
             theme?: ThemeId;
@@ -423,6 +468,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             chatMode?: "hosted" | "byok";
             chatHostedModelId?: string;
           };
+          if (typeof d.ownerEmail === "string" && d.ownerEmail) draftOwnerRef.current = d.ownerEmail;
           if (typeof d.resumeText === "string") setResumeText(d.resumeText);
           if (typeof d.stylePrompt === "string") setStylePrompt(d.stylePrompt);
           if (d.theme === "editorial" || d.theme === "terminal" || d.theme === "bento") setTheme(d.theme);
@@ -465,6 +511,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       window.localStorage.setItem(
         STUDIO_DRAFT_KEY,
         JSON.stringify({
+          ownerEmail: user?.email ?? draftOwnerRef.current,
           resumeText,
           stylePrompt,
           theme,
@@ -486,6 +533,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     }
   }, [
     draftHydrated,
+    user?.email,
     noindex, protectedSite, savedPasscodeSlug,
     resumeText,
     stylePrompt,
@@ -498,29 +546,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     chatMode,
     chatHostedModelId,
   ]);
-
-  const resetDraft = () => {
-    setBriefDraft(undefined);
-    setResumeText("");
-    setStylePrompt("");
-    setGenerated(defaultProfile);
-    setHasGenerated(false);
-    setHandle(DEFAULT_HANDLE);
-    setNoindex(undefined);
-    setProtectedSite(undefined);
-    setPasscode("");
-    setSavedPasscodeSlug("");
-    setPublishedUrl(null);
-    setSavedByokMask("");
-    setChatByokApiKey("");
-    setClearByokKey(false);
-    try {
-      window.localStorage.removeItem(STUDIO_DRAFT_KEY);
-      window.localStorage.removeItem("talkcv-draft-profile");
-    } catch {
-      // ignore
-    }
-  };
 
   const loadExistingSite = async (slug: string) => {
     setLoadingSiteSlug(slug);
@@ -588,6 +613,10 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   };
 
   function authenticated(account: AuthUser) {
+    if (draftOwnerRef.current && draftOwnerRef.current !== account.email) {
+      resetDraft();
+    }
+    draftOwnerRef.current = account.email;
     setUser(account);
     setPendingRefCode("");
     setAuthModalOpen(false);
@@ -615,7 +644,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   };
 
   const logout = async () => {
-    setBriefDraft(undefined);
+    draftOwnerRef.current = undefined;
+    resetDraft();
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setUser(null);
   };
@@ -788,13 +818,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       setGenerated(data.profile);
       setHasGenerated(true);
       setPublishedUrl(null);
-      if (!keepDraftSettings) {
-        setBriefDraft(undefined);
-        setNoindex(undefined);
-        setProtectedSite(undefined);
-        setSavedPasscodeSlug("");
-        setPasscode("");
-      }
       const quota = data.quota;
       if (quota) setUser((current) => current?.email === account.email ? { ...current, ...quota } : current);
       const suggested = data.profile.basics.name.en

@@ -24,7 +24,7 @@ function targetFor(step: Step) {
 
 export function OnboardingTour({ email, lang, blocked }: { email?: string; lang: Lang; blocked: boolean }) {
   const [tour, setTour] = useState<Tour | null>(null);
-  const checked = useRef(false);
+  const checkedKey = useRef<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const card = useRef<HTMLElement>(null);
   const hole = useRef<HTMLDivElement>(null);
@@ -40,15 +40,15 @@ export function OnboardingTour({ email, lang, blocked }: { email?: string; lang:
   const finish = useCallback(() => {
     if (storageKey) {
       try { localStorage.setItem(storageKey, "1"); } catch { /* Keep the dismissal for this visit. */ }
+      checkedKey.current = storageKey;
     }
-    checked.current = true;
     setTour(null);
   }, [storageKey]);
 
   useEffect(() => {
-    if (!storageKey || blocked || checked.current) return;
+    if (!storageKey || blocked || checkedKey.current === storageKey) return;
     const frame = requestAnimationFrame(() => {
-      checked.current = true;
+      checkedKey.current = storageKey;
       try { if (localStorage.getItem(storageKey)) return; } catch { /* The tour can still run. */ }
       start();
     });

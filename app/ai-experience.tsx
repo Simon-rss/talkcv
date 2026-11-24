@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 import { getSiteUrl, profile as defaultProfile } from "../lib/profile";
+import { parseCitations } from "../lib/citations";
 import {
   isValidTheme,
   localize,
@@ -519,24 +520,43 @@ export function CommandPalette({
 }
 
 /* ---------------- Lightweight Markdown Renderer ---------------- */
-function renderInline(text: string): React.ReactNode[] {
+function renderInline(text: string, evidence: (part: string) => React.ReactNode): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const tokenRe = /(\*\*[^*]+\*\*|`[^`]+`)/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let k = 0;
   while ((match = tokenRe.exec(text)) !== null) {
-    if (match.index > last) nodes.push(text.slice(last, match.index));
+    if (match.index > last) nodes.push(evidence(text.slice(last, match.index)));
     const tok = match[0];
-    if (tok.startsWith("**")) nodes.push(<strong key={k++}>{tok.slice(2, -2)}</strong>);
-    else if (tok.startsWith("`")) nodes.push(<code key={k++} className="af-inline-code">{tok.slice(1, -1)}</code>);
+    if (tok.startsWith("**")) nodes.push(<strong key={k++}>{evidence(tok.slice(2, -2))}</strong>);
+    else if (tok.startsWith("`")) nodes.push(<code key={k++} className="af-inline-code">{evidence(tok.slice(1, -1))}</code>);
     last = match.index + tok.length;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < text.length) nodes.push(evidence(text.slice(last)));
   return nodes;
 }
 
-function SimpleMarkdown({ text }: { text: string }) {
+function SimpleMarkdown({ text, lang }: { text: string; lang: Lang }) {
+  const { activeProfile, profileSlug, executeTool, setChatOpen } = usePortfolioAI();
+  const evidence = (part: string) => parseCitations(part, activeProfile).map((item, index) => {
+    if (typeof item === "string") return item;
+    const project = item.kind === "project";
+    const id = `${project ? "project" : "experience"}-${item.id}`;
+    const label = project ? (lang === "zh" ? "项目" : "Project") : (lang === "zh" ? "经历" : "Experience");
+    return <a className="af-citation" key={index} href={`${profileSlug ? "" : "/"}#${id}`} onClick={(event) => {
+      const target = document.getElementById(id);
+      setChatOpen(false);
+      if (target) {
+        event.preventDefault();
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" });
+      } else if (project) {
+        event.preventDefault();
+        executeTool({ name: "open_project", args: { slug: item.id } });
+      }
+    }}>{label} · {localize(item.title, lang)}</a>;
+  });
   const lines = text.replace(/\r\n/g, "\n").split("\n").filter((l) => l.trim().length > 0);
   return (
     <div className="af-md">
@@ -544,18 +564,18 @@ function SimpleMarkdown({ text }: { text: string }) {
         const headingMatch = line.match(/^\s*(#{1,4})\s+(.+)$/);
         if (headingMatch) {
           const level = headingMatch[1].length;
-          const content = renderInline(headingMatch[2]);
+          const content = renderInline(headingMatch[2], evidence);
           if (level <= 2) return <h3 key={idx} className="af-md-h">{content}</h3>;
           return <h4 key={idx} className="af-md-h af-md-h-sub">{content}</h4>;
         }
         if (/^\s*[-*•]\s+/.test(line)) {
           return (
             <p key={idx} className="af-md-bullet">
-              • {renderInline(line.replace(/^\s*[-*•]\s+/, ""))}
+              • {renderInline(line.replace(/^\s*[-*•]\s+/, ""), evidence)}
             </p>
           );
         }
-        return <p key={idx}>{renderInline(line)}</p>;
+        return <p key={idx}>{renderInline(line, evidence)}</p>;
       })}
     </div>
   );
@@ -614,6 +634,41 @@ function EditableEmailCard({
 }
 
 /* ---------------- AI Chat Drawer ---------------- */
+function RecruiterLeadForm({ slug, lang }: { slug: string; lang: Lang }) {
+  const zh = lang === "zh";
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(0);
+  const failures: Record<number, string> = {
+    400: zh ? "请检查微信号或邮箱及字段长度。" : "Check the WeChat ID or email and the field lengths.",
+    401: zh ? "请刷新并重新解锁此站点。" : "Refresh and unlock this site first.",
+    404: zh ? "此站点已下线。" : "This site is no longer available.",
+    410: zh ? "此站点已到期。" : "This site has expired.",
+    429: zh ? "提交过于频繁，请在 10 分钟后重试。" : "Too many submissions. Try again in 10 minutes.",
+  };
+  if (status === 201) return <p className="af-lead-form" role="status">{zh ? "已送达，感谢你留下联系方式。" : "Delivered. Thank you for leaving your contact details."}</p>;
+  return <form className="af-lead-form" onSubmit={async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    const fields = Object.fromEntries(new FormData(event.currentTarget));
+    setBusy(true);
+    setStatus(0);
+    try {
+      const res = await fetch(`/api/profiles/${encodeURIComponent(slug)}/leads`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(fields),
+      });
+      setStatus(res.status);
+    } catch { setStatus(503); }
+    finally { setBusy(false); }
+  }}>
+    <label>{zh ? "称呼" : "Your name"}<input name="name" autoComplete="name" maxLength={80} /></label>
+    <label>{zh ? "公司" : "Company"}<input name="company" autoComplete="organization" maxLength={120} /></label>
+    <label>{zh ? "微信或邮箱（必填）" : "WeChat ID or email (required)"}<input name="contact" required maxLength={160} /></label>
+    <label>{zh ? "岗位或留言（选填）" : "Role or message (optional)"}<textarea name="note" rows={2} maxLength={1000} /></label>
+    {status !== 0 && <p role="alert">{failures[status] ?? (zh ? "提交失败，请重试。" : "Could not send. Please try again.")}</p>}
+    <button className="af-jd-submit" disabled={busy}>{busy ? (zh ? "正在提交…" : "Sending…") : (zh ? "发送给候选人" : "Send to candidate")}</button>
+  </form>;
+}
+
 export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   const {
     activeProfile: profile,
@@ -635,7 +690,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydratedChat, setHydratedChat] = useState(false);
   const [input, setInput] = useState("");
-  const [jdMode, setJdMode] = useState(false);
+  const [panel, setPanel] = useState<"chat" | "jd" | "leads">("chat");
   const [jdText, setJdText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -671,7 +726,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   useEffect(() => {
     if (!prefillPrompt) return;
     const raf = window.requestAnimationFrame(() => {
-      setJdMode(false);
+      setPanel("chat");
       setInput(prefillPrompt);
       clearPrefillPrompt();
     });
@@ -681,7 +736,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   useEffect(() => {
     if (!pendingJd) return;
     const raf = window.requestAnimationFrame(() => {
-      setJdMode(true);
+      setPanel("jd");
       setJdText(pendingJd);
       clearPendingJd();
     });
@@ -709,7 +764,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
     setMessages(nextHistory);
     setInput("");
     setQuote("");
-    setJdMode(false);
+    setPanel("chat");
     setError(null);
     setLoading(true);
 
@@ -869,15 +924,19 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
             </div>
             <button
               type="button"
-              className={`af-jd-btn ${jdMode ? "active" : ""}`}
-              onClick={() => setJdMode((v) => !v)}
+              className={`af-jd-btn ${panel === "jd" ? "active" : ""}`}
+              onClick={() => setPanel(panel === "jd" ? "chat" : "jd")}
             >
               <BriefcaseBusiness size={12} />
               <span>{lang === "zh" ? "贴 JD 测匹配" : "Match JD"}</span>
             </button>
+            {profileSlug && profileSlug !== "__draft__" && <button type="button" className={`af-jd-btn ${panel === "leads" ? "active" : ""}`}
+              aria-expanded={panel === "leads"} onClick={() => setPanel(panel === "leads" ? "chat" : "leads")}>
+              <Mail size={12} />{lang === "zh" ? "约面 / 留联系方式" : "Invite / leave contact"}
+            </button>}
           </div>
 
-          {jdMode ? (
+          {panel === "leads" && profileSlug ? <RecruiterLeadForm key={profileSlug} slug={profileSlug} lang={lang} /> : panel === "jd" ? (
             <div className="af-jd-panel">
               <textarea
                 value={jdText}
@@ -939,7 +998,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
                   )}
                   <div className={`af-bubble ${msg.role === "user" ? "af-bubble-user" : "af-bubble-bot"}`}>
                     {msg.role === "assistant" ? (
-                      msg.content ? <SimpleMarkdown text={msg.content} /> : "…"
+                      msg.content ? <SimpleMarkdown text={msg.content} lang={lang} /> : "…"
                     ) : (
                       msg.content
                     )}
@@ -972,7 +1031,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
             </div>
           )}
 
-          {quote && !jdMode && (
+          {quote && panel === "chat" && (
             <div className="af-quote-banner">
               <Quote size={12} />
               <span>{quote}</span>
@@ -982,7 +1041,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
             </div>
           )}
 
-          <form
+          {panel !== "leads" && <form
             className="af-ai-form"
             onSubmit={(e) => {
               e.preventDefault();
@@ -1007,7 +1066,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
             <button type="submit" disabled={loading || (!input.trim() && !quote)} aria-label="Send">
               <Send size={15} />
             </button>
-          </form>
+          </form>}
         </section>
       )}
 

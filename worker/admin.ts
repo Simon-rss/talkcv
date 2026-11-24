@@ -1,6 +1,7 @@
 import { getSessionUser, type AuthEnv } from "./auth";
 import { handleCreateRedeemCodesRequest, type BillingEnv, type PlanRecord, type RedeemCodeRecord } from "./billing";
 import type { StoredProfileRecord } from "./publish";
+import { countLeads } from "./leads";
 import { isTrialActive, type ReferralRecord } from "./referral";
 
 export interface AdminEnv extends AuthEnv, BillingEnv {
@@ -72,7 +73,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
   const gate = await requireAdmin(request, env);
   if (!gate.ok) return gate.response;
 
-  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, insightRows, codeRows] =
+  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, insightRows, codeRows, totalLeads] =
     await Promise.all([
       listByPrefix("profile:", env, 5000),
       listByPrefix("user_sites:", env, 5000),
@@ -82,6 +83,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
       listByPrefix("edit_usage_month:", env, 10000),
       listByPrefix("insights:", env, 5000),
       listByPrefix("redeem:", env, 1000),
+      countLeads(env),
     ]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -134,6 +136,8 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
   const refByEmail = new Map<string, ReferralRecord>();
   const lifetimeUsageByEmail = new Map<string, number>();
   const monthlyUsageByEmail = new Map<string, number>();
+  const legacyDailyUsageByEmail = new Map<string, number>();
+  const legacyMonthDailyUsageByEmail = new Map<string, number>();
   const monthlyEditByEmail = new Map<string, number>();
   const updatedByEmail = new Map<string, string>();
 
@@ -191,6 +195,12 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
     bumpUpdated(email, row.updatedAt);
     if (win === "lifetime") lifetimeUsageByEmail.set(email, count);
     else if (win === currentMonth) monthlyUsageByEmail.set(email, count);
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(win)) {
+      legacyDailyUsageByEmail.set(email, (legacyDailyUsageByEmail.get(email) ?? 0) + count);
+      if (win.startsWith(`${currentMonth}-`)) {
+        legacyMonthDailyUsageByEmail.set(email, (legacyMonthDailyUsageByEmail.get(email) ?? 0) + count);
+      }
+    }
   }
 
   for (const row of editUsageRows) {
@@ -233,8 +243,8 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
         planSource: isPaidActive ? (planRec?.subscriptionId ? "creem" : "redeem") : trialOn ? "referral" : "free",
         sites: sitesByEmail.get(email) ?? [],
         generatedCount: isPaidActive
-          ? (monthlyUsageByEmail.get(email) ?? 0)
-          : (lifetimeUsageByEmail.get(email) ?? 0),
+          ? (monthlyUsageByEmail.get(email) ?? 0) + (legacyMonthDailyUsageByEmail.get(email) ?? 0)
+          : (lifetimeUsageByEmail.get(email) ?? 0) + (legacyDailyUsageByEmail.get(email) ?? 0),
         editCount: monthlyEditByEmail.get(email) ?? 0,
         bonusGenerates: refRec?.bonusGenerates ?? 0,
         bonusEdits: refRec?.bonusEdits ?? 0,
@@ -271,6 +281,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
       totalReferrals,
       totalViews,
       totalQuestions,
+      totalLeads,
     },
     users,
     sites,

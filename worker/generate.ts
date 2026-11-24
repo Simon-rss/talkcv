@@ -1,5 +1,5 @@
 import { normalizeContacts } from "../lib/contacts.mjs";
-import { canUseModel, getHostedModel } from "../lib/models";
+import { canUseModel, getHostedModel, type PlanTier } from "../lib/models";
 import { profile as sampleProfile } from "../lib/profile";
 import {
   isValidTheme,
@@ -198,7 +198,7 @@ function normalizeGeneratedProfile(
     skills: Array.isArray(raw.skills) ? raw.skills.map(String).slice(0, 18) : [],
     capabilities,
     experiences,
-    projects: projects.length > 0 ? projects : sampleProfile.projects.slice(0, 1),
+    projects,
     ai: {
       enabled: true,
       ...(cleanStylePrompt ? { stylePrompt: cleanStylePrompt } : {}),
@@ -224,6 +224,36 @@ function normalizeGeneratedProfile(
       },
     },
   };
+}
+
+interface ModelSettings {
+  hostedModelId?: unknown;
+  apiKey?: unknown;
+  baseUrl?: unknown;
+  model?: unknown;
+}
+
+export function resolveStudioModel(body: ModelSettings, mode: string, plan: PlanTier, env: ChatEnv) {
+  if (mode === "byok") {
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    if (!apiKey) return jsonResponse(401, { error: "An OpenAI-compatible API key is required for BYOK mode." });
+    return {
+      apiKey,
+      baseUrl: ((typeof body.baseUrl === "string" && body.baseUrl.trim()) || "https://api.openai.com/v1").replace(/\/+$/, ""),
+      model: (typeof body.model === "string" && body.model.trim()) || "gpt-4o-mini",
+    };
+  }
+  const requested = (typeof body.hostedModelId === "string" && body.hostedModelId.trim()) ||
+    (mode === "hosted-openai" ? "gpt-4o-mini" : "deepseek-chat");
+  if (!canUseModel(requested, plan)) {
+    return jsonResponse(403, { error: `Model "${requested}" requires TalkCV Pro or Max (or use BYOK with your own API key).` });
+  }
+  const chosen = getHostedModel(requested === "auto" ? "deepseek-chat" : requested);
+  const deepseek = chosen.provider === "deepseek";
+  const apiKey = (deepseek ? env.DEEPSEEK_API_KEY : env.OPENAI_API_KEY)?.trim();
+  if (!apiKey) return jsonResponse(503, { error: `Hosted ${chosen.provider} is not configured on this server.` });
+  return { apiKey, model: chosen.apiModel || (deepseek ? "deepseek-chat" : env.OPENAI_MODEL?.trim() || "gpt-4o-mini"),
+    baseUrl: deepseek ? "https://api.deepseek.com/v1" : (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "") };
 }
 
 export async function handleGenerateRequest(request: Request, env: ChatEnv): Promise<Response> {
@@ -274,9 +304,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
         ? "byok"
         : "hosted";
 
-  let apiKey = "";
-  let baseUrl = "https://api.openai.com/v1";
-  let model = "gpt-4o-mini";
+  let modelPlan: PlanTier = "free";
   let hostedUserEmail: string | null = null;
   let activeQuotaPeriod: "lifetime" | "month" = "lifetime";
   let activeBaseLimit = DAILY_GENERATE_LIMIT;
@@ -284,19 +312,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   let activeBonusGenerates = 0;
   let reservedBonusGenerate = false;
 
-  if (mode === "byok") {
-    if (!byokKey) {
-      return jsonResponse(401, {
-        error: "An OpenAI-compatible API key is required for BYOK mode (or sign in to use TalkCV's free daily quota).",
-      });
-    }
-    apiKey = byokKey;
-    baseUrl = ((typeof body.baseUrl === "string" && body.baseUrl.trim()) || "https://api.openai.com/v1").replace(
-      /\/+$/,
-      "",
-    );
-    model = (typeof body.model === "string" && body.model.trim()) || "gpt-4o-mini";
-  } else {
+  if (mode !== "byok") {
     const user = await getSessionUser(request, env);
     if (!user) {
       return jsonResponse(401, {
@@ -304,6 +320,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
       });
     }
     const { plan, limits, baseLimits, bonusGenerates } = await getUserPlan(user.email, env as BillingEnv);
+    modelPlan = plan;
     activeBaseLimit = baseLimits.generateLimit;
     activeQuotaPeriod = limits.generatePeriod;
     activeBonusGenerates = bonusGenerates;
@@ -320,50 +337,22 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
       });
     }
     hostedUserEmail = user.email;
-
-    const requestedId =
-      typeof body.hostedModelId === "string" && body.hostedModelId.trim()
-        ? body.hostedModelId.trim()
-        : mode === "hosted-openai"
-          ? "gpt-4o-mini"
-          : "deepseek-chat";
-
-    if (!canUseModel(requestedId, plan)) {
-      return jsonResponse(403, {
-        error: `Model "${requestedId}" requires TalkCV Pro or Max (or use BYOK with your own API key).`,
+  }
+  const provider = resolveStudioModel(body, mode, modelPlan, env);
+  if (provider instanceof Response) return provider;
+  const { apiKey, baseUrl, model } = provider;
+  if (hostedUserEmail && activeUsedBefore >= activeBaseLimit) {
+    const deducted = await consumeReferralBonus(hostedUserEmail, "generate", env);
+    if (!deducted) {
+      const displayLimit = Math.max(activeBaseLimit, activeUsedBefore);
+      return jsonResponse(429, {
+        error:
+          activeQuotaPeriod === "lifetime"
+            ? `Free account generation quota reached (${displayLimit} total). Upgrade to Pro (30/month) or use your own API key.`
+            : `Monthly generation limit reached (${displayLimit}/month). Upgrade to Max or use your own API key.`,
       });
     }
-
-    const chosen = getHostedModel(requestedId === "auto" ? "deepseek-chat" : requestedId);
-    if (chosen.provider === "deepseek") {
-      apiKey = env.DEEPSEEK_API_KEY?.trim() || "";
-      baseUrl = "https://api.deepseek.com/v1";
-      model = chosen.apiModel || "deepseek-chat";
-    } else {
-      apiKey = env.OPENAI_API_KEY?.trim() || "";
-      baseUrl = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
-      model = chosen.apiModel || env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
-    }
-
-    if (!apiKey) {
-      return jsonResponse(503, {
-        error: `Hosted ${chosen.provider} is not configured on this server.`,
-      });
-    }
-
-    if (activeUsedBefore >= activeBaseLimit) {
-      const deducted = await consumeReferralBonus(user.email, "generate", env);
-      if (!deducted) {
-        const displayLimit = Math.max(activeBaseLimit, activeUsedBefore);
-        return jsonResponse(429, {
-          error:
-            activeQuotaPeriod === "lifetime"
-              ? `Free account generation quota reached (${displayLimit} total). Upgrade to Pro (30/month) or use your own API key.`
-              : `Monthly generation limit reached (${displayLimit}/month). Upgrade to Max or use your own API key.`,
-        });
-      }
-      reservedBonusGenerate = true;
-    }
+    reservedBonusGenerate = true;
   }
 
   const theme: ThemeId = isValidTheme(body.theme) ? body.theme : "editorial";
@@ -385,7 +374,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   const systemPrompt = `You are a precise resume-to-portfolio compiler for TalkCV. Convert the resume into a valid JSON object matching this exact schema (output ONLY raw JSON, no markdown fences).
 Rules:
 - Populate BOTH "en" and "zh" for every localized field (translate faithfully if the resume is single-language).
-- Extract 2-5 featured projects with concrete metrics in facts[], crisp architecture sections[], and workflow[] steps.
+- Extract up to 5 featured projects actually described in the résumé. If it lists none, return projects: []. Use only its own metrics, architecture details and workflow steps.
 - STRICT VERBATIM NUMERICAL FIDELITY: NEVER alter, round, recalculate, or invent any number, duration, percentage, or metric from the resume (e.g. if the resume says "27 -> 8 minutes", facts[] and summary MUST say "27 -> 8", NEVER change 27 to another number).
 - NEVER invent companies, skills, or URLs not present in the resume. Copy only explicitly supplied contact details into basics.email, github, wechat (ID), linkedin and portfolio (blog or personal URL). Use absolute HTTP(S) links and omit missing contacts.
 - Use lowercase ASCII kebab-case slugs.${styleInstruction}

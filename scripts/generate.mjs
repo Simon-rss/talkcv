@@ -80,8 +80,8 @@ export function validateProfile(data) {
     }
     if (!data.basics.headline?.en) errors.push("basics.headline.en is required");
   }
-  if (!Array.isArray(data.projects) || data.projects.length === 0) {
-    errors.push("projects must be a non-empty array");
+  if (!Array.isArray(data.projects)) {
+    errors.push("projects must be an array");
   } else {
     const seen = new Set();
     for (const [idx, project] of data.projects.entries()) {
@@ -294,7 +294,7 @@ Rules:
 Copy only contact details from the resume to basics.email, github, wechat (ID), linkedin and portfolio (blog or personal URL). Omit missing contacts.
 1. Output ONLY valid JSON (no markdown fences, no commentary).
 2. Every localized field must have both "en" and "zh" strings. Translate faithfully if the source resume is in only one language.
-3. Extract 2 to 6 featured projects with concrete metrics in facts[], crisp architecture sections[], and workflow[] steps.
+3. Extract up to 6 projects actually described in the résumé, with its own metrics, architecture details and workflow steps. If there are none, return projects: [].
 4. NEVER fabricate metrics, companies, or skills not supported by the resume.
 5. Keep slugs lowercase kebab-case ASCII (e.g. "realtime-order-engine").
 

@@ -1,4 +1,6 @@
 export type Lang = "en" | "zh";
+export const AI_BRIEF_LIMITS = { expectedSalary: 160, availability: 160, workMode: 240, notes: 1000, redLines: 1000 } as const;
+export type AiBrief = Partial<Record<keyof typeof AI_BRIEF_LIMITS, string>>;
 export type ThemeId = "editorial" | "terminal" | "bento";
 export type ProjectAccent = "mint" | "blue" | "coral" | "amber";
 

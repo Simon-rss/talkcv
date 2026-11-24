@@ -71,6 +71,7 @@ interface AdminOverview {
     totalReferrals: number;
     totalViews: number;
     totalQuestions: number;
+    totalLeads: number;
   };
   users: AdminUserRow[];
   sites: AdminSiteRow[];
@@ -279,7 +280,7 @@ export function AdminClient() {
         <div className="af-admin-kpi">
           <span className="af-admin-kpi-label"><MessageSquare size={13} /> 访客 AI 提问</span>
           <strong>{data.summary.totalQuestions}</strong>
-          <small>所有个人站合计</small>
+          <small>累计约面线索 / Recruiter leads · {data.summary.totalLeads}</small>
         </div>
       </section>
 

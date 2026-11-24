@@ -25,9 +25,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
 import { profile as defaultProfile } from "../../lib/profile";
-import { localize, normalizeSlug, THEMES, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
+import { AI_BRIEF_LIMITS, localize, normalizeSlug, THEMES, type AiBrief, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
 import { SiteInsights } from "./site-insights";
 import { AiRefinePanel } from "./ai-refine-panel";
+import { OutreachPanel } from "./outreach-panel";
 import { SharePoster } from "../share-poster";
 import { ContactLinks } from "../contact-links";
 import { SiteLinks } from "../public-navigation";
@@ -40,6 +41,7 @@ interface AuthUser {
   isMax?: boolean;
   isTrial?: boolean;
   hasBilling?: boolean;
+  hasBillingPortal?: boolean;
   usedToday: number;
   dailyLimit: number;
   quotaPeriod?: "lifetime" | "month";
@@ -126,6 +128,11 @@ const BYOK_PRESETS = [
 ] as const;
 
 const STUDIO_DRAFT_KEY = "talkcv-studio-draft";
+const BRIEF_LABELS = {
+  expectedSalary: ["期望薪资", "Expected salary"], availability: ["最快到岗时间", "Earliest start date"],
+  workMode: ["城市 / 远程偏好", "Location / remote preference"], notes: ["补充说明", "Additional notes"],
+  redLines: ["禁止回答的话题", "Topics the AI must decline"],
+} as const;
 
 function localizeApiError(raw: string, lang: Lang): string {
   if (lang !== "zh") return raw;
@@ -155,6 +162,8 @@ function localizeApiError(raw: string, lang: Lang): string {
     return "API Key 无效，请检查后重试。";
   }
   if (/Check the email address and contact links/i.test(s)) return "请检查邮箱、GitHub、LinkedIn 及博客网址后再发布。";
+  if (/Invalid AI brief/i.test(s)) return "请检查求职备忘的内容和字段长度。";
+  if (/Profile payload is too large/i.test(s)) return "简历和备忘的总大小超过 260 KB，请精简后再发布。";
   if (/Handle must be/i.test(s)) {
     return "自定义网址仅支持 3–32 位小写字母、数字和连字符。";
   }
@@ -219,6 +228,27 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
 
   // Publishing state
   const [handle, setHandle] = useState("alex-chen");
+  const [briefDraft, setBriefDraft] = useState<{ owner?: string; slug?: string; values: AiBrief }>();
+  const briefSlug = normalizeSlug(handle);
+  const briefOwner = user?.email;
+  const existingBrief = Boolean(user?.sites.includes(briefSlug));
+  const aiBrief = briefDraft?.owner === briefOwner && (briefDraft?.slug === briefSlug || (!existingBrief && !briefDraft?.slug))
+    ? briefDraft?.values : undefined;
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefReadError, setBriefReadError] = useState(false);
+  const needsBrief = existingBrief && !aiBrief;
+  useEffect(() => {
+    if (!briefOpen || !needsBrief) return;
+    const controller = new AbortController();
+    fetch(`/api/profiles/${encodeURIComponent(briefSlug)}?edit=1`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (!controller.signal.aborted) setBriefDraft({ owner: briefOwner, slug: briefSlug, values: data.aiBrief ?? {} });
+      })
+      .catch(() => { if (!controller.signal.aborted) setBriefReadError(true); });
+    return () => controller.abort();
+  }, [briefOpen, needsBrief, briefOwner, briefSlug]);
   const [noindex, setNoindex] = useState<boolean>();
   const [protectedSite, setProtectedSite] = useState<boolean>();
   const [passcode, setPasscode] = useState("");
@@ -332,7 +362,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       if (!res.ok || !data.portalUrl) throw new Error(data.error || "Could not open billing portal.");
       window.open(data.portalUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
-      setError(localizeApiError(err instanceof Error ? err.message : "Could not open billing portal.", lang));
+      setBillingBanner(localizeApiError(err instanceof Error ? err.message : "Could not open billing portal.", lang));
     } finally {
       setBillingBusy(false);
     }
@@ -507,6 +537,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   ]);
 
   const resetDraft = () => {
+    setBriefDraft(undefined);
     setResumeText("");
     setStylePrompt("");
     setGenerated(defaultProfile);
@@ -537,6 +568,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         profile?: PortfolioProfile;
         expiresAt?: string;
         privacy?: { noindex: boolean; protected: boolean };
+        aiBrief?: AiBrief;
         chatMeta?: ChatMeta;
         error?: string;
       };
@@ -546,6 +578,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       setTheme(data.profile.theme || "editorial");
       setStylePrompt(data.profile.stylePrompt || data.profile.ai?.stylePrompt || "");
       setHandle(slug);
+      setBriefDraft({ owner: user?.email, slug, values: data.aiBrief ?? {} });
       setPublishedProfile(data.profile);
       setPublishedUrl(`${window.location.origin}/u/${slug}`);
       setPublishedExpires(data.expiresAt ? data.expiresAt.slice(0, 10) : null);
@@ -580,6 +613,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       const { sites } = await res.json();
       setUser((previous) => previous && { ...previous, sites });
       if (publishedUrl?.endsWith(`/u/${slug}`)) {
+        setBriefDraft(undefined);
         setPublishedUrl(null);
         setPublishedExpires(null);
       }
@@ -680,6 +714,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   };
 
   const logout = async () => {
+    setBriefDraft(undefined);
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setUser(null);
   };
@@ -857,6 +892,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       setGenerated(data.profile);
       setHasGenerated(true);
       setPublishedUrl(null);
+      setBriefDraft(undefined);
       setNoindex(undefined);
       setProtectedSite(undefined);
       setSavedPasscodeSlug("");
@@ -924,6 +960,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           slug: handle,
+          aiBrief,
           privacy: { noindex, protected: protectedSite, passcode: protectedSite && passcode ? passcode : undefined },
           profile: { ...generated, theme, ...(stylePrompt.trim() ? { stylePrompt: stylePrompt.trim() } : {}) },
           chatConfig:
@@ -955,6 +992,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         throw new Error(data.error || "Publish failed.");
       }
       if (data.slug) setHandle(data.slug);
+      if (aiBrief && data.slug) setBriefDraft({ owner: user.email, slug: data.slug, values: aiBrief });
       setPublishedProfile(generated);
       setPublishedUrl(data.url);
       setNoindex(Boolean(data.privacy?.noindex));
@@ -994,7 +1032,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     }
   };
 
-  const selectedSite = user?.sites.find((slug) => publishedUrl?.endsWith(`/u/${slug}`)) ?? user?.sites[0];
+  const selectedSite = user?.sites.find((slug) => publishedUrl?.endsWith(`/u/${slug}`))
+    ?? user?.sites.find((slug) => slug === normalizeSlug(handle)) ?? user?.sites[0];
   const remaining = user ? Math.max(0, user.dailyLimit - user.usedToday) : 3;
   const previewStyleVars: React.CSSProperties = {
     ...(generated.designTokens?.accent ? ({ "--accent": generated.designTokens.accent } as React.CSSProperties) : {}),
@@ -1034,7 +1073,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   <LogOut size={12} />
                 </button>
               </div>
-              {user.isPro && !user.isTrial && (
+              {user.isPro && !user.isTrial && user.hasBillingPortal && (
                 <button type="button" className="af-icon-pill" onClick={openBillingPortal} disabled={billingBusy}>
                   <span>{lang === "zh" ? "管理订阅" : "Billing"}</span>
                 </button>
@@ -1109,7 +1148,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       )}
 
       {user?.referral && (
-        <div className="af-shell af-mysites-bar">
+        <div id="studio-referral" className="af-shell af-mysites-bar">
           <span className="af-mysites-label">
             <Sparkles size={13} />{" "}
             {lang === "zh"
@@ -1545,6 +1584,23 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                 <input type="password" autoComplete="new-password" maxLength={8} value={passcode} onChange={(e) => setPasscode(e.target.value)} />
               </label>}
             </fieldset>
+            <details className="af-brief" onToggle={(event) => { setBriefOpen(event.currentTarget.open); setBriefReadError(false); }}>
+              <summary>{lang === "zh" ? "AI 回答边界与求职备忘" : "Private AI brief & answer boundaries"}</summary>
+              <p>{lang === "zh" ? "备忘不展示在个人站。AI 可在访客提问时使用你授权的答案，遇到红线会请对方直接联系你。" :
+                "The brief stays off your public page. AI may share these answers with visitors and refers restricted topics to you."}</p>
+              {!user ? <button type="button" className="af-icon-pill" onClick={() => setAuthModalOpen(true)}>{lang === "zh" ? "登录后设置" : "Sign in to edit"}</button> :
+                needsBrief ? <p role="status">{briefReadError ? (lang === "zh" ? "读取失败，请重新打开此面板。" : "Reopen this panel to retry.") :
+                  (lang === "zh" ? "正在读取站点备忘…" : "Loading the site brief…")}</p> :
+                (Object.keys(BRIEF_LABELS) as (keyof AiBrief)[]).map((field) => {
+                  const props = { maxLength: AI_BRIEF_LIMITS[field], value: aiBrief?.[field] ?? "",
+                    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                      setBriefDraft({ owner: user.email, slug: existingBrief ? briefSlug : undefined,
+                        values: { ...aiBrief, [field]: e.target.value } }) };
+                  return <label key={field}>{BRIEF_LABELS[field][lang === "zh" ? 0 : 1]}
+                    {field === "notes" || field === "redLines" ? <textarea rows={2} {...props} /> : <input {...props} />}
+                  </label>;
+                })}
+            </details>
             <div className="af-publish-row">
               <div className="af-handle-input">
                 <span>/u/</span>
@@ -1660,6 +1716,11 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               </span>
             </button>
           </div>
+
+          <OutreachPanel key={`${user?.email ?? ""}:${lang}`} lang={lang} signedIn={Boolean(user)}
+            profile={hasGenerated ? generated : undefined} onSignIn={() => setAuthModalOpen(true)}
+            provider={{ providerMode: genMode, hostedModelId: genModelId,
+              ...(genMode === "byok" && { apiKey: genApiKey, baseUrl: genBaseUrl, model: genModel }) }} />
 
           {refineOpen && (
             <AiRefinePanel

@@ -1,7 +1,8 @@
 import { deleteSiteTraffic } from "./insights";
+import { deleteLeads } from "./leads";
 import { normalizeContacts } from "../lib/contacts.mjs";
 import { canUseModel } from "../lib/models";
-import { normalizeSlug, sanitizeDesignTokens, type PortfolioProfile } from "../lib/schema";
+import { AI_BRIEF_LIMITS, normalizeSlug, sanitizeDesignTokens, type AiBrief, type PortfolioProfile } from "../lib/schema";
 import {
   FREE_HOSTING_DAYS,
   getSessionUser,
@@ -55,6 +56,7 @@ function chatMetadata(config?: SiteChatConfig) {
 
 export interface StoredProfileRecord {
   profile: PortfolioProfile;
+  aiBrief?: AiBrief;
   ownerEmail?: string;
   ownerRefCode?: string;
   createdAt: string;
@@ -80,6 +82,8 @@ const RESERVED_SLUGS = new Set([
 ]);
 
 const memoryStore = new Map<string, string>();
+const MAX_PROFILE_BYTES = 260_000;
+const payloadTooLarge = () => jsonResponse(413, { error: "Profile payload is too large (max 260KB)." });
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -124,6 +128,7 @@ export async function loadStoredRecord(
 interface PublishBody {
   slug?: unknown;
   profile?: unknown;
+  aiBrief?: unknown;
   privacy?: { noindex?: boolean; protected?: boolean; passcode?: string };
   chatConfig?: {
     mode?: unknown;
@@ -151,11 +156,30 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     return jsonResponse(405, { error: "Method not allowed." });
   }
 
+  if (!request.body) return jsonResponse(400, { error: "Invalid JSON body." });
+  if (Number(request.headers.get("content-length")) > MAX_PROFILE_BYTES) return payloadTooLarge();
+  const reader = request.body.getReader();
   let body: PublishBody;
   try {
-    body = (await request.json()) as typeof body;
+    let bytes = 0;
+    let text = "";
+    const decoder = new TextDecoder();
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > MAX_PROFILE_BYTES) {
+        await reader.cancel();
+        return payloadTooLarge();
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    body = JSON.parse(text + decoder.decode());
+    if (!body || typeof body !== "object") return jsonResponse(400, { error: "Invalid JSON body." });
   } catch {
     return jsonResponse(400, { error: "Invalid JSON body." });
+  } finally {
+    reader.releaseLock();
   }
 
   const slug = normalizeSlug(typeof body.slug === "string" ? body.slug : "");
@@ -174,6 +198,9 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   }
 
   const contacts = normalizeContacts(profileObj.basics);
+  if ("aiBrief" in profileObj) {
+    return jsonResponse(400, { error: "Send the private AI brief separately from the public profile." });
+  }
   for (const key of Object.keys(contacts) as (keyof typeof contacts)[]) {
     if (profileObj.basics[key] && !contacts[key]) {
       return jsonResponse(400, { error: "Check the email address and contact links before publishing." });
@@ -187,7 +214,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   };
 
   const user = await getSessionUser(request, env);
-  if (!user && (env.PROFILES_KV || body.privacy?.protected || body.privacy?.noindex)) {
+  if (!user && (env.PROFILES_KV || body.privacy?.protected || body.privacy?.noindex || body.aiBrief !== undefined)) {
     return jsonResponse(401, {
       error: "Please sign in with your email before publishing a TalkCV site.",
     });
@@ -318,6 +345,22 @@ async function saveProfile(
   }
 
   const privacy = body.privacy;
+  let aiBrief = existing?.aiBrief;
+  if (body.aiBrief !== undefined) {
+    const input = body.aiBrief;
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return { ok: false, response: jsonResponse(400, { error: "Invalid AI brief." }) };
+    }
+    const clean: AiBrief = {};
+    for (const [field, value] of Object.entries(input)) {
+      const key = field as keyof AiBrief;
+      if (!Object.hasOwn(AI_BRIEF_LIMITS, key) || typeof value !== "string" || value.length > AI_BRIEF_LIMITS[key]) {
+        return { ok: false, response: jsonResponse(400, { error: "Invalid AI brief field or length." }) };
+      }
+      if (value.trim()) clean[key] = value.trim();
+    }
+    aiBrief = Object.keys(clean).length ? clean : undefined;
+  }
   let passcode = existing?.passcode;
   if (privacy?.protected === false) passcode = undefined;
   if (privacy?.protected === true && (privacy.passcode || !passcode)) {
@@ -335,6 +378,7 @@ async function saveProfile(
   const ownerRef = user ? await getOrCreateReferralRecord(user.email, env) : null;
   const record: StoredProfileRecord = {
     profile: finalProfile,
+    aiBrief,
     noindex: privacy?.noindex ?? existing?.noindex ?? false,
     passcode,
     ...(user ? { ownerEmail: user.email, ownerRefCode: ownerRef?.code } : {}),
@@ -344,11 +388,8 @@ async function saveProfile(
   };
 
   const serialized = JSON.stringify(record);
-  if (serialized.length > 260_000) {
-    return {
-      ok: false,
-      response: jsonResponse(413, { error: "Profile payload is too large (max 260KB)." }),
-    };
+  if (new TextEncoder().encode(serialized).length > MAX_PROFILE_BYTES) {
+    return { ok: false, response: payloadTooLarge() };
   }
 
   const key = `profile:${slug}`;
@@ -388,6 +429,7 @@ export async function handleDeleteProfileRequest(request: Request, rawSlug: stri
     if (lockedEnv.PROFILES_KV) await lockedEnv.PROFILES_KV.delete(`profile:${slug}`);
     else memoryStore.delete(`profile:${slug}`);
     await deleteSiteTraffic(slug, lockedEnv);
+    await deleteLeads(slug, lockedEnv);
     const sites = await updateUserSites(user.email, slug, false, lockedEnv);
     return jsonResponse(200, { sites });
   });
@@ -423,8 +465,11 @@ export async function handleGetProfileRequest(
   const ownerRefCode =
     record.ownerRefCode ||
     (record.ownerEmail ? (await getOrCreateReferralRecord(record.ownerEmail, env)).code : undefined);
+  const publicProfile = { ...record.profile };
+  if ("aiBrief" in publicProfile) delete publicProfile.aiBrief;
   return jsonResponse(200, {
-    profile: record.profile,
+    profile: publicProfile,
+    ...(editing && record.aiBrief ? { aiBrief: record.aiBrief } : {}),
     expiresAt: record.expiresAt,
     ...(ownerRefCode ? { ownerRefCode } : {}),
     chatMeta: chatMetadata(record.chatConfig),

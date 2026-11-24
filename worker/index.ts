@@ -1,5 +1,7 @@
 import { normalizeSlug } from "../lib/schema";
 import { getSiteInsights, recordVisit } from "./insights";
+import { handleLeads } from "./leads";
+import { handleOutreach } from "./outreach";
 import { siteUnlocked, unlockSite } from "./site-access";
 import handler from "vinext/server/app-router-entry";
 import {
@@ -36,7 +38,7 @@ interface WorkerEnv extends ChatEnv, BillingEnv, AdminEnv {
 }
 
 const worker = {
-  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+  async fetch(request: Request, env: WorkerEnv, ctx?: { waitUntil(task: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/api/auth/send-code") {
       return handleSendCodeRequest(request, env);
@@ -83,12 +85,15 @@ const worker = {
     if (url.pathname === "/api/edit") {
       return handleAiEditRequest(request, env);
     }
+    if (url.pathname === "/api/outreach") return handleOutreach(request, env);
     if (url.pathname === "/api/avatar") {
       return handleGenerateAvatarRequest(request, env);
     }
     if (url.pathname === "/api/publish") {
       return handlePublishRequest(request, env);
     }
+    const leads = /^\/api\/profiles\/([a-z0-9-]+)\/leads$/.exec(url.pathname);
+    if (leads) return handleLeads(request, leads[1], env, ctx);
     const insights = /^\/api\/profiles\/([a-z0-9-]+)\/insights$/.exec(url.pathname);
     if (insights && request.method === "GET") return getSiteInsights(request, insights[1], env);
     const unlock = /^\/api\/profiles\/([a-z0-9-]+)\/unlock$/.exec(url.pathname);

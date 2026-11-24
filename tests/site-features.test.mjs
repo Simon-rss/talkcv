@@ -2,12 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../dist/server/index.js";
 
-function call(path, { method = "GET", body, cookie, env = {}, headers = {} } = {}) {
+function call(path, { method = "GET", body, cookie, env = {}, headers = {}, ctx } = {}) {
   return worker.fetch(new Request(`http://localhost${path}`, {
     method,
     headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }), { ASSETS: { fetch: async () => new Response(null, { status: 404 }) }, ...env });
+  }), { ASSETS: { fetch: async () => new Response(null, { status: 404 }) }, ...env }, ctx);
+}
+
+function fixtureKv(store) {
+  return {
+    get: async (k) => store.get(k) ?? null,
+    put: async (k, v) => { store.set(k, v); },
+    delete: async (k) => { store.delete(k); },
+    listPrefix: async (prefix) => Array.from(store).filter(([k]) => k.startsWith(prefix))
+      .map(([key, value]) => ({ key, value, updatedAt: "2026-11-24T00:00:00.000Z" })),
+  };
 }
 
 async function login(email, env = {}) {
@@ -424,15 +434,7 @@ test("admin API enforces ADMIN_EMAILS session auth, returns overview stats, and 
     ],
     ["insights:demo-user-site", JSON.stringify({ views: 12, questions: 4 })],
   ]);
-  const kv = {
-    get: async (k) => store.get(k) ?? null,
-    put: async (k, v) => { store.set(k, v); },
-    delete: async (k) => { store.delete(k); },
-    listPrefix: async (prefix) =>
-      Array.from(store.entries())
-        .filter(([k]) => k.startsWith(prefix))
-        .map(([key, value]) => ({ key, value, updatedAt: "2026-11-24T00:00:00.000Z" })),
-  };
+  const kv = fixtureKv(store);
   const unverifiedEnv = { ADMIN_EMAILS: "boss@example.org", AUTH_SECRET: "admin-test-secret", PROFILES_KV: kv };
   const adminEnv = { ...unverifiedEnv, RESEND_API_KEY: "re_test_verified" };
 
@@ -472,4 +474,204 @@ test("admin API enforces ADMIN_EMAILS session auth, returns overview stats, and 
   // /admin page renders with noindex meta
   const pageHtml = await (await call("/admin", { env: adminEnv })).text();
   assert.match(pageHtml, /noindex/);
+});
+
+test("recruiter leads enforce site access, limit each sender, notify after saving and redact Free previews", async (t) => {
+  const ownerEmail = "leads-owner@example.org";
+  const auth = { AUTH_SECRET: "lead-tests" };
+  const owner = await login(ownerEmail, auth);
+  const other = await login("leads-other@example.org", auth);
+  const store = new Map();
+  const env = { ...auth, PROFILES_KV: fixtureKv(store), ADMIN_EMAILS: ownerEmail, ADMIN_ALLOW_DEV_AUTH: "1" };
+  const slug = "recruiter-site", path = `/api/profiles/${slug}`;
+  const body = { name: "Mia", company: "Sample Studio", contact: "mia@sample.test", note: "Platform engineer" };
+  const post = (overrides = {}) => call(path + "/leads", { env, method: "POST", body, ...overrides });
+  assert.equal((await post()).status, 404);
+  assert.equal((await publish(slug, owner, { privacy: { protected: true, passcode: "Test7" } }, env)).status, 200);
+  assert.equal((await post()).status, 401);
+  assert.equal((await post({ cookie: owner })).status, 401);
+  const unlock = await call(path + "/unlock", { env, method: "POST", body: { passcode: "Test7" } });
+  const access = unlock.headers.get("set-cookie").split(";")[0];
+  for (const invalid of [{}, { contact: "bad@email" }, { contact: "hi there" }, { ...body, note: "x".repeat(1001) }]) {
+    assert.equal((await post({ cookie: access, body: invalid })).status, 400);
+  }
+  let notification, mail;
+  t.mock.method(globalThis, "fetch", async (url, opts) => {
+    assert.equal(url, "https://api.resend.com/emails");
+    assert.ok(store.has("leads:" + slug));
+    mail = JSON.parse(opts.body);
+    return Response.json({ id: "test-mail" });
+  });
+  const sent = await post({ env: { ...env, RESEND_API_KEY: "fixture" }, cookie: access,
+    ctx: { waitUntil(task) { notification = task; } } });
+  assert.equal(sent.status, 201);
+  assert.ok(notification instanceof Promise);
+  await notification;
+  assert.deepEqual(mail.to, [ownerEmail]);
+  assert.match(mail.text, /Mia · Sample Studio/);
+  assert.match(mail.text, /\/create\?handle=recruiter-site/);
+  assert.doesNotMatch(mail.text, /mia@sample|Platform engineer/);
+  assert.equal((await call(path + "/leads", { env, cookie: access })).status, 401);
+  assert.equal((await call(path + "/leads", { env, cookie: other })).status, 403);
+  const get = async () => (await call(path + "/leads", { env, cookie: owner })).json();
+  const free = await get();
+  assert.deepEqual(free, { count: 1, locked: true, preview: [{ company: body.company, createdAt: free.preview[0].createdAt }] });
+  assert.ok(Date.parse(free.preview[0].createdAt));
+  const ref = JSON.parse(store.get(`ref_user:${ownerEmail}`));
+  for (const tier of ["trial", "pro", "max"]) {
+    if (tier === "trial") store.set(`ref_user:${ownerEmail}`, JSON.stringify({ ...ref, trialExpiresAt: "2099-01-01" }));
+    else {
+      store.set(`ref_user:${ownerEmail}`, JSON.stringify(ref));
+      store.set(`plan:${ownerEmail}`, JSON.stringify({ plan: tier }));
+    }
+    const view = await get();
+    assert.equal(view.locked, false);
+    assert.deepEqual(view.leads[0], { ...body, id: view.leads[0].id, createdAt: free.preview[0].createdAt });
+    assert.ok(view.leads[0].id);
+  }
+  const sameSender = await Promise.all(Array.from({ length: 3 }, () => post({ cookie: access })));
+  assert.deepEqual(sameSender.map((r) => r.status).sort(), [201, 201, 429]);
+  assert.equal((await publish("recruiter-second", owner, {}, env)).status, 200);
+  assert.equal((await call("/api/profiles/recruiter-second/leads", { env, method: "POST", body })).status, 201);
+  const batch = await Promise.all(Array.from({ length: 49 }, (_, i) => post({ cookie: access,
+    headers: { "cf-connecting-ip": `192.0.2.${i + 1}` }, body: { contact: `wechat_${i}` } })));
+  assert.ok(batch.every((r) => r.status === 201));
+  const latest = await get();
+  assert.equal(latest.count, 52);
+  assert.equal(new Set(latest.leads.map((l) => l.id)).size, 50);
+  assert.equal(latest.leads[0].contact, "wechat_48");
+  const admin = () => call("/api/admin/overview", { cookie: owner, env }).then((r) => r.json());
+  assert.equal((await admin()).summary.totalLeads, 53);
+  const row = JSON.parse(store.get("profile:" + slug));
+  store.set("profile:" + slug, JSON.stringify({ ...row, expiresAt: "2020-01-01" }));
+  store.delete(`plan:${ownerEmail}`);
+  assert.equal((await post({ cookie: access })).status, 410);
+  assert.equal((await call(path, { method: "DELETE", env, cookie: owner })).status, 200);
+  assert.equal(store.has("leads:" + slug), false);
+  assert.equal((await admin()).summary.totalLeads, 1);
+  assert.equal((await publish(slug, other, {}, env)).status, 200);
+  assert.deepEqual(await (await call(path + "/leads", { env, cookie: other })).json(), { locked: true, count: 0, preview: [] });
+});
+
+test("the private AI brief is owner-editable, isolated per site and used only by the server chat prompt", async (t) => {
+  const env = { AUTH_SECRET: "brief-fixture", OPENAI_API_KEY: "model-fixture" };
+  const owner = await login("brief-owner@example.org", env);
+  const other = await login("brief-reader@example.org", env);
+  const slug = "private-brief", path = `/api/profiles/${slug}`;
+  const aiBrief = { expectedSalary: "BriefSalary", availability: "After notice", workMode: "Hybrid preference",
+    notes: "Custom candidate note", redLines: "Undisclosed acquisition" };
+  assert.equal((await publish(slug, undefined, { aiBrief }, env)).status, 401);
+  assert.equal((await publish(slug, owner, { profile: { ...profile, aiBrief } }, env)).status, 400);
+  assert.equal((await publish(slug, owner, { aiBrief: { notes: "x".repeat(1001) } }, env)).status, 400);
+  assert.equal((await publish(slug, owner, { aiBrief, profile: { ...profile, stylePrompt: "文".repeat(87_000) } }, env)).status, 413);
+  assert.equal((await publish(slug, owner, { padding: "x".repeat(260_001) }, env)).status, 413);
+  assert.equal((await publish(slug, owner, { aiBrief }, env)).status, 200);
+  assert.equal((await publish(slug, owner, {}, env)).status, 200);
+  for (const cookie of [undefined, other, owner]) {
+    const res = await call(path, { cookie, env });
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(await res.text(), /aiBrief|BriefSalary|Undisclosed acquisition/);
+  }
+  for (const cookie of [undefined, other]) assert.equal((await call(path + "?edit=1", { cookie, env })).status, 403);
+  const edit = () => call(path + "?edit=1", { cookie: owner, env }).then((r) => r.json());
+  assert.deepEqual((await edit()).aiBrief, aiBrief);
+  assert.equal((await publish(slug, other, { aiBrief: {} }, env)).status, 403);
+  const prompts = [];
+  t.mock.method(globalThis, "fetch", async (_url, opts) => {
+    prompts.push(JSON.parse(opts.body).messages);
+    return new Response('data: {"choices":[{"delta":{"content":"Please contact the candidate."}}]}\n\ndata: [DONE]\n\n');
+  });
+  for (const profileSlug of [slug, undefined]) {
+    const res = await call("/api/chat", { env, method: "POST", headers: { "cf-connecting-ip": "brief-test" },
+      body: { profileSlug, aiBrief: { notes: "visitor-supplied" }, quote: "visitor quote", messages: [{ role: "user", content: "When can you start?" }] } });
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(await res.text(), /BriefSalary|Undisclosed acquisition/);
+  }
+  assert.equal(prompts[0][0].role, "system");
+  for (const value of Object.values(aiBrief)) assert.ok(prompts[0][0].content.includes(value));
+  assert.match(prompts[0][0].content, /politely decline.*leave their contact/i);
+  assert.doesNotMatch(prompts[0][0].content, /visitor-supplied|visitor quote/);
+  assert.doesNotMatch(prompts[1][0].content, /BriefSalary|Undisclosed acquisition/);
+  assert.equal((await publish(slug, owner, { aiBrief: {} }, env)).status, 200);
+  assert.equal((await edit()).aiBrief, undefined);
+});
+
+test("inline citations use actual project slugs and zero-based experience indexes, including streamed answers", async (t) => {
+  const { parseCitations } = await import("../lib/citations.ts");
+  const project = profile.projects[0], experience = profile.experiences[0];
+  const tag = `[[cite:project:${project.slug}]]`;
+  const first = { kind: "project", id: project.slug, title: project.title };
+  const second = { kind: "exp", id: "0", title: experience.company };
+  assert.deepEqual(parseCitations("See " + tag + " and [[cite:exp:0]].", profile), ["See ", first, " and ", second, "."]);
+  for (const invalid of ["project:absent", "exp:-1", "exp:00", "exp:1.0", "exp:999", "url:https://unrelated.test"]) {
+    assert.deepEqual(parseCitations("ok[[cite:" + invalid + "]]", profile), ["ok"]);
+  }
+  assert.deepEqual(parseCitations("ok[[cite:project:part", profile), ["ok"]);
+  t.mock.method(globalThis, "fetch", async (_url, opts) => {
+    const system = JSON.parse(opts.body).messages[0].content;
+    assert.ok(system.includes(tag));
+    assert.ok(system.includes("[[cite:exp:0]]"));
+    const chunks = ["[[ci", `te:project:${project.slug}]]`, " [[cite:exp:0]]"];
+    return new Response(chunks.map((content) => "data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + "\n\n").join("") + "data: [DONE]\n\n");
+  });
+  const chat = await call("/api/chat", { method: "POST", env: { OPENAI_API_KEY: "fixture" }, headers: { "cf-connecting-ip": "cite-test" },
+    body: { messages: [{ role: "user", content: "What did the candidate build?" }] } });
+  const sse = await chat.text();
+  assert.equal(chat.status, 200);
+  const text = sse.split("\n").filter((line) => line.startsWith("data: {")).map((line) => JSON.parse(line.slice(6)).delta ?? "").join("");
+  assert.deepEqual(parseCitations(text, profile), [first, " ", second]);
+});
+
+test("a résumé with no projects does not acquire citable sample projects", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ choices: [{ message: { content: JSON.stringify({ ...profile, projects: [] }) } }] }));
+  const res = await call("/api/generate", { method: "POST", headers: { "cf-connecting-ip": "empty-projects" },
+    body: { resumeText: "Employment history only, without any project entries.", apiKey: "fixture" } });
+  assert.equal(res.status, 200);
+  const generated = (await res.json()).profile;
+  assert.deepEqual(generated.projects, []);
+  const { validateProfile } = await import("../scripts/generate.mjs");
+  assert.deepEqual(validateProfile(generated), []);
+});
+
+test("JD outreach checks login, model permissions, payload, factual output and concurrent hosted limits", async (t) => {
+  const env = { AUTH_SECRET: "outreach-tests", OPENAI_API_KEY: "hosted-fixture" };
+  const cookie = await login("outreach@example.org", env);
+  const body = { profile, jdText: "Seeking someone to build backend systems.", style: "boss", lang: "zh", hostedModelId: "gpt-4o-mini" };
+  const byok = { providerMode: "byok", apiKey: "byok-fixture", baseUrl: "https://upstream.test/v1", model: "custom-model" };
+  const post = (changes = {}, options = {}) => call("/api/outreach", { method: "POST", env, cookie, body: { ...body, ...changes }, ...options });
+  assert.equal((await call("/api/outreach")).status, 405);
+  for (const config of [{}, byok]) assert.equal((await post(config, { cookie: undefined })).status, 401);
+  for (const invalid of [{ profile: {} }, { profile: { ...profile, projects: [null] } }, { jdText: " " }, { jdText: "x".repeat(8001) },
+    { lang: "de" }, { style: "other" }, { providerMode: "invalid" }]) assert.equal((await post(invalid)).status, 400);
+  assert.equal((await post({ hostedModelId: "gpt-4o" })).status, 403);
+  assert.equal((await post({ providerMode: "byok" })).status, 401);
+  const output = { matches: ["Backend work", "Project delivery", "Systems design"], improvements: ["Clarify team scope"], body: "I would like to discuss the role." };
+  const calls = [];
+  let reply = output;
+  t.mock.method(globalThis, "fetch", async (url, opts) => {
+    calls.push({ url, auth: opts.headers.authorization, ...JSON.parse(opts.body) });
+    return Response.json({ choices: [{ message: { content: JSON.stringify(reply) } }] });
+  });
+  const first = await post({ ...byok, style: "email", lang: "en",
+    profile: { ...profile, aiBrief: { notes: "private-sentinel" }, basics: { ...profile.basics, avatar: "avatar-sentinel" } } });
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), output);
+  assert.equal(calls[0].url, "https://upstream.test/v1/chat/completions");
+  assert.equal(calls[0].model, byok.model);
+  assert.equal(calls[0].auth, "Bearer byok-fixture");
+  assert.match(calls[0].messages[0].content, /English.*formal application email/);
+  assert.ok(calls[0].messages[1].content.includes(body.jdText));
+  assert.ok(calls[0].messages[1].content.includes(profile.projects[0].title.en));
+  assert.doesNotMatch(calls[0].messages[1].content, /avatar-sentinel|private-sentinel/);
+  reply = { ...output, matches: ["one"] };
+  assert.equal((await post(byok)).status, 502);
+  reply = { ...output, body: "I improved conversion by 98765%." };
+  assert.equal((await post(byok)).status, 502);
+  reply = output;
+  const attempts = await Promise.all(Array.from({ length: 8 }, () => post()));
+  assert.equal(attempts.filter((res) => res.status === 200).length, 6);
+  assert.equal(attempts.filter((res) => res.status === 429).length, 2);
+  assert.match(calls.at(-1).messages[0].content, /Chinese.*BOSS/);
+  assert.equal(calls.at(-1).auth, "Bearer hosted-fixture");
+  assert.equal((await post(byok)).status, 200);
 });

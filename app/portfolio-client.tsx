@@ -551,7 +551,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
 
         <div className="af-projects-grid">
           {visibleProjects.map((project) => (
-            <article key={project.slug} className={`af-card accent-${project.accent}`}>
+            <article key={project.slug} id={`project-${project.slug}`} tabIndex={-1} className={`af-card accent-${project.accent}`}>
               <div className="af-card-top">
                 <span className="af-card-cat">{localize(project.category, lang)}</span>
                 <div className="af-card-tags">
@@ -632,8 +632,8 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
             </p>
           </div>
           <div className="af-timeline">
-            {profile.experiences.map((exp) => (
-              <article key={exp.period + exp.company.en} className="af-timeline-item">
+            {profile.experiences.map((exp, index) => (
+              <article key={exp.period + exp.company.en} id={`experience-${index}`} tabIndex={-1} className="af-timeline-item">
                 <time>{exp.period}</time>
                 <div>
                   <h3>{localize(exp.company, lang)}</h3>

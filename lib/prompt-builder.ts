@@ -19,14 +19,14 @@ export function buildSystemPrompt(
   const experienceLines = profile.experiences
     .map(
       (exp, idx) =>
-        `${idx + 1}. ${exp.period} | ${exp.company.en} | ${exp.role.en}\n   - ${exp.summary.en}`,
+        `[[cite:exp:${idx}]] ${exp.period} | ${exp.company.en} | ${exp.role.en}\n   - ${exp.summary.en}`,
     )
     .join("\n");
 
   const projectLines = profile.projects
     .map((p) => {
       const facts = p.facts.map((f) => `${f.value} (${f.label.en})`).join(", ");
-      return `- **${p.title.en}** (slug: ${p.slug}, role: ${p.role.en})\n  - Summary: ${p.summary.en}\n  - Outcome: ${p.outcome.en}\n  - Key Metrics: ${facts}\n  - Tags: ${p.tags.join(", ")}`;
+      return `- **${p.title.en}** [[cite:project:${p.slug}]] (role: ${p.role.en})\n  - Summary: ${p.summary.en}\n  - Outcome: ${p.outcome.en}\n  - Key Metrics: ${facts}\n  - Tags: ${p.tags.join(", ")}`;
     })
     .join("\n");
 
@@ -59,6 +59,9 @@ ${experienceLines}
 
 ## Featured Projects
 ${projectLines}
+
+## Inline evidence
+For each claim about a particular project or job, append its exact [[cite:project:<slug>]] or [[cite:exp:<index>]] marker from the entries above, immediately after the supported claim. Experience indexes start at zero. Use plain inline markers without backticks. Only cite entries that exist and support the claim. If no entry supports it, leave it out.
 
 ## Using UI Tools (Live Browser Actions)
 You can directly control the visitor's browser by outputting ONE directive tag at the VERY BEGINNING of your reply (on its own first line) when the visitor asks to view a project, jump to a section, switch language, or reach out:

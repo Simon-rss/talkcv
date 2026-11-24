@@ -189,13 +189,18 @@ const server = createServer(async (req, res) => {
       else if (Array.isArray(v)) headers.set(k, v.join(", "));
     }
 
+    if (!headers.has("x-forwarded-for") && req.socket.remoteAddress) {
+      headers.set("x-forwarded-for", req.socket.remoteAddress);
+    }
     const webReq = new Request(url.href, {
       method: req.method,
       headers,
       body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
     });
 
-    const webRes = await worker.fetch(webReq, env);
+    const webRes = await worker.fetch(webReq, env, {
+      waitUntil(task) { void task.catch(() => console.error("[talkcv] background task failed")); },
+    });
 
     const outHeaders = {};
     const setCookies = typeof webRes.headers.getSetCookie === "function" ? webRes.headers.getSetCookie() : [];

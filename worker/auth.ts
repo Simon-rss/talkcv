@@ -218,6 +218,18 @@ export async function updateUserSites(email: string, slug: string, add: boolean,
   return next;
 }
 
+export async function sendEmail(env: AuthEnv, email: string, subject: string, text: string): Promise<boolean> {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RESEND_API_KEY?.trim()}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      from: env.AUTH_EMAIL_FROM?.trim() || "TalkCV <onboarding@resend.dev>",
+      to: [email], subject, text,
+    }),
+  }).catch(() => null);
+  return Boolean(response?.ok);
+}
+
 export async function handleSendCodeRequest(request: Request, env: AuthEnv): Promise<Response> {
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
 
@@ -251,24 +263,8 @@ export async function handleSendCodeRequest(request: Request, env: AuthEnv): Pro
   const sig = await hmacHex(getSigningSecret(env), `otp:${email}|${code}|${expiresAt}`);
   const challenge = `${expiresAt}.${sig}`;
 
-  const resendKey = env.RESEND_API_KEY?.trim();
-  if (resendKey) {
-    const from = env.AUTH_EMAIL_FROM?.trim() || "TalkCV <onboarding@resend.dev>";
-    const mailRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${resendKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: [email],
-        subject: `Your TalkCV login code: ${code}`,
-        text: `Your TalkCV verification code is ${code}. It expires in 10 minutes.`,
-      }),
-    }).catch(() => null);
-
-    if (!mailRes || !mailRes.ok) {
+  if (env.RESEND_API_KEY?.trim()) {
+    if (!await sendEmail(env, email, `Your TalkCV login code: ${code}`, `Your TalkCV verification code is ${code}. It expires in 10 minutes.`)) {
       return jsonResponse(502, { error: "Failed to send verification email. Please try again." });
     }
     return jsonResponse(200, { ok: true, delivery: "email", challenge });
@@ -323,7 +319,7 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
     existingSites.length > 0 || existingLifetimeUsage > 0 || (existingPlan.isPro && !existingPlan.isTrial);
 
   const refRec = await bindReferralOnLogin(email, body.referralCode, env, { isExistingUser });
-  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits } = await getUserPlan(
+  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits, record } = await getUserPlan(
     email,
     env as BillingEnv,
   );
@@ -346,6 +342,7 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
         isMax,
         isTrial,
         hasBilling: isBillingConfigured(env as BillingEnv),
+        hasBillingPortal: Boolean(record?.customerId),
         maxSites: limits.maxSites,
         usedToday,
         dailyLimit: effectiveDailyLimit,
@@ -374,7 +371,7 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
     return jsonResponse(200, { user: null });
   }
   const refRec = await getOrCreateReferralRecord(user.email, env);
-  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits } = await getUserPlan(
+  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits, record } = await getUserPlan(
     user.email,
     env as BillingEnv,
   );
@@ -391,6 +388,7 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
       isMax,
       isTrial,
       hasBilling: isBillingConfigured(env as BillingEnv),
+      hasBillingPortal: Boolean(record?.customerId),
       maxSites: limits.maxSites,
       usedToday,
       dailyLimit: effectiveDailyLimit,

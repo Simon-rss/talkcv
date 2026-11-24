@@ -12,6 +12,10 @@ export interface BillingEnv extends AuthEnv {
   CREEM_PRO_YEARLY_PRODUCT_ID?: string;
   CREEM_MAX_PRODUCT_ID?: string;
   CREEM_MAX_YEARLY_PRODUCT_ID?: string;
+  CREEM_PRO_ONETIME_PRODUCT_ID?: string;
+  CREEM_PRO_YEARLY_ONETIME_PRODUCT_ID?: string;
+  CREEM_MAX_ONETIME_PRODUCT_ID?: string;
+  CREEM_MAX_YEARLY_ONETIME_PRODUCT_ID?: string;
   CREEM_API_BASE?: string;
 }
 
@@ -217,7 +221,19 @@ export async function setUserPlan(email: string, record: PlanRecord, env: Billin
   });
 }
 
-function billingProducts(env: BillingEnv) {
+function billingProducts(env: BillingEnv, mode: "subscription" | "onetime" = "subscription") {
+  if (mode === "onetime") {
+    return {
+      pro: {
+        month: env.CREEM_PRO_ONETIME_PRODUCT_ID?.trim() || env.CREEM_PRO_PRODUCT_ID?.trim(),
+        year: env.CREEM_PRO_YEARLY_ONETIME_PRODUCT_ID?.trim() || env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim(),
+      },
+      max: {
+        month: env.CREEM_MAX_ONETIME_PRODUCT_ID?.trim() || env.CREEM_MAX_PRODUCT_ID?.trim(),
+        year: env.CREEM_MAX_YEARLY_ONETIME_PRODUCT_ID?.trim() || env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim(),
+      },
+    };
+  }
   return {
     pro: { month: env.CREEM_PRO_PRODUCT_ID?.trim(), year: env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim() },
     max: { month: env.CREEM_MAX_PRODUCT_ID?.trim(), year: env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim() },
@@ -225,11 +241,18 @@ function billingProducts(env: BillingEnv) {
 }
 
 export function billingAvailability(env: BillingEnv) {
-  const { pro, max } = billingProducts(env);
+  const sub = billingProducts(env, "subscription");
+  const one = billingProducts(env, "onetime");
   const enabled = Boolean(env.CREEM_API_KEY?.trim());
   return {
-    pro: { month: enabled && Boolean(pro.month), year: enabled && Boolean(pro.year) },
-    max: { month: enabled && Boolean(max.month), year: enabled && Boolean(max.year) },
+    pro: {
+      month: enabled && Boolean(sub.pro.month || one.pro.month),
+      year: enabled && Boolean(sub.pro.year || one.pro.year),
+    },
+    max: {
+      month: enabled && Boolean(sub.max.month || one.max.month),
+      year: enabled && Boolean(sub.max.year || one.max.year),
+    },
   };
 }
 
@@ -245,17 +268,18 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
     return jsonResponse(401, { error: "Please sign in with your email before upgrading." });
   }
 
-  let body: { tier?: unknown; interval?: unknown } = {};
+  let body: { tier?: unknown; interval?: unknown; mode?: unknown } = {};
   try {
-    body = (await request.json()) as { tier?: unknown; interval?: unknown };
+    body = (await request.json()) as { tier?: unknown; interval?: unknown; mode?: unknown };
   } catch {
     // default to pro monthly
   }
   const tier: "pro" | "max" = body.tier === "max" ? "max" : "pro";
   const interval: "month" | "year" = body.interval === "year" ? "year" : "month";
+  const mode: "subscription" | "onetime" = body.mode === "onetime" ? "onetime" : "subscription";
 
   const apiKey = env.CREEM_API_KEY?.trim();
-  const productId = billingProducts(env)[tier][interval];
+  const productId = billingProducts(env, mode)[tier][interval];
 
   if (!apiKey || !productId) {
     return jsonResponse(503, { error: "Selected billing plan is not configured on this server yet." });
@@ -263,6 +287,10 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
 
   const origin = new URL(request.url).origin;
   const baseUrl = getCreemBaseUrl(env);
+  const metadata: Record<string, unknown> = { email: user.email, plan: tier, interval, mode };
+  if (mode === "onetime") {
+    metadata.days = interval === "year" ? 365 : 30;
+  }
 
   let upstream: Response;
   try {
@@ -276,7 +304,7 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
         product_id: productId,
         success_url: `${origin}/create?upgraded=${tier}`,
         customer: { email: user.email },
-        metadata: { email: user.email, plan: tier, interval },
+        metadata,
       }),
     });
   } catch {
@@ -431,6 +459,23 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
 
   if (GRANT_EVENTS.has(eventType)) {
     const prev = await getUserPlan(email, env);
+    const metaMode = obj?.metadata?.mode;
+    const metaDays = Number(obj?.metadata?.days);
+    let expiresAt = periodEnd;
+    if (!expiresAt && (metaMode === "onetime" || (Number.isFinite(metaDays) && metaDays > 0))) {
+      const days =
+        Number.isFinite(metaDays) && metaDays > 0
+          ? Math.min(3650, Math.floor(metaDays))
+          : obj?.metadata?.interval === "year"
+            ? 365
+            : 30;
+      const prevExpiry =
+        prev.record?.plan === grantedTier && prev.record.expiresAt && Number.isFinite(Date.parse(prev.record.expiresAt))
+          ? Date.parse(prev.record.expiresAt)
+          : 0;
+      const baseMs = Math.max(Date.now(), prevExpiry);
+      expiresAt = new Date(baseMs + days * 86_400_000).toISOString();
+    }
     await setUserPlan(
       email,
       {
@@ -439,7 +484,7 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
         customerId: customerId || prev.record?.customerId,
         subscriptionId: subscriptionId || prev.record?.subscriptionId,
         updatedAt: new Date().toISOString(),
-        ...(periodEnd ? { expiresAt: periodEnd } : {}),
+        ...(expiresAt ? { expiresAt } : {}),
       },
       env,
     );

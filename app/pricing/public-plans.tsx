@@ -25,7 +25,7 @@ export function PublicPlans({ lang }: { lang: Lang }) {
     setBusy(tier);
     setError("");
     try {
-      const url = await requestCheckout(tier, interval);
+      const url = await requestCheckout(tier, interval, lang === "zh" ? "onetime" : "subscription");
       window.location.assign(url ?? `/create?lang=${lang}&plan=${tier}&interval=${interval}`);
     } catch {
       setError(lang === "en" ? "Checkout is unavailable. Please try again later." : "暂时无法打开收银台，请稍后重试。");

@@ -345,7 +345,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     setCheckoutBusyTier(tier);
     setPricingError(null);
     try {
-      const url = await requestCheckout(tier, interval);
+      const url = await requestCheckout(tier, interval, lang === "zh" ? "onetime" : "subscription");
       if (url) {
         window.location.assign(url);
       } else {

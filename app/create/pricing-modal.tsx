@@ -20,11 +20,15 @@ interface PricingModalProps {
 
 type PlansProps = Pick<PricingModalProps, "lang" | "currentPlan" | "isTrial" | "busyTier" | "error" | "onSelectPlan">;
 
-export async function requestCheckout(tier: "pro" | "max", interval: "month" | "year") {
+export async function requestCheckout(
+  tier: "pro" | "max",
+  interval: "month" | "year",
+  mode: "subscription" | "onetime" = "subscription",
+) {
   const response = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tier, interval }),
+    body: JSON.stringify({ tier, interval, mode }),
     signal: AbortSignal.timeout(12000),
   });
   if (response.status === 401) return null;
@@ -84,7 +88,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
             "解锁 DeepSeek V4.1 Flash / R1 / GPT-4o / o3-mini",
             `每个自然月 ${PLAN_CREDITS.pro} 点`,
             "专属「AI 多轮实时精修 + 版本回退」",
-            "最多 10 个个人站 · 订阅期内永不过期",
+            "最多 10 个个人站 · 有效期内永不过期",
             "访客托管 AI 对话 200 次/天",
           ]
         : [
@@ -108,7 +112,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
             `每个自然月 ${PLAN_CREDITS.max.toLocaleString("en-US")} 点`,
             "AI 多轮实时精修与版本回退",
             "白标商用：支持隐藏底部 TalkCV 水印",
-            "最多 30 个客户个人站 · 订阅期内永不过期",
+            "最多 30 个客户个人站 · 有效期内永不过期",
             "访客托管 AI 对话 600 次/天 + 优先路由",
           ]
         : [
@@ -131,7 +135,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
           className={interval === "month" ? "active" : ""}
           onClick={() => setInterval("month")}
         >
-          {isZh ? "按月订阅" : "Monthly"}
+          {isZh ? "30 天单次买" : "Monthly"}
         </button>
         <button
           type="button"
@@ -139,11 +143,14 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
           className={interval === "year" ? "active" : ""}
           onClick={() => setInterval("year")}
         >
-          {isZh ? "按年订阅" : "Yearly"}
+          {isZh ? "365 天年付" : "Yearly"}
         </button>
       </div>
 
-      <p className="af-quota-note">{creationPricing(lang)}</p>
+      <p className="af-quota-note">
+        {creationPricing(lang)}
+        {isZh ? " 中文页支持支付宝单次购买（账单地区选 China），不自动续费。" : ""}
+      </p>
       <div className="af-pricing-grid">
         {tiers.map((t) => {
           const isCurrent = !isTrial && currentPlan === t.id;
@@ -161,7 +168,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
           else if (unavailable) action = isZh ? "暂未开放月付" : "Monthly billing unavailable";
           else if (busyTier === t.id) action = isZh ? "正在跳转收银台…" : "Opening checkout…";
           const price = interval === "year" ? t.priceYear : t.priceMonth;
-          const unit = t.id === "free" ? "" : interval === "year" ? (isZh ? "/年" : "/yr") : isZh ? "/月" : "/mo";
+          const unit = t.id === "free" ? "" : interval === "year" ? (isZh ? "/365天" : "/yr") : isZh ? "/30天" : "/mo";
           return (
             <div key={t.id} className={`af-pricing-card${t.popular ? " is-popular" : ""}`}>
               {t.popular && (

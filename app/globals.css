@@ -2907,3 +2907,232 @@ button {
   justify-content: center;
   padding: 11px 16px;
 }
+
+/* ===== AI Dynamic Layout Plan Styles (heroStyle / projectLayout / fontPair) ===== */
+
+/* Font Pairs */
+[data-font="serif-editorial"] h1,
+[data-font="serif-editorial"] h2,
+[data-font="serif-editorial"] h3 {
+  font-family: "Songti SC", "Noto Serif SC", Georgia, "Times New Roman", serif;
+  letter-spacing: -0.015em;
+}
+
+[data-font="mono-tech"] h1,
+[data-font="mono-tech"] h2,
+[data-font="mono-tech"] .af-eyebrow,
+[data-font="mono-tech"] .af-role {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace);
+  letter-spacing: -0.02em;
+}
+
+/* Hero Style: Centered Minimal */
+[data-hero="centered-minimal"] .af-hero {
+  text-align: center;
+  padding-top: 72px;
+  padding-bottom: 56px;
+}
+
+[data-hero="centered-minimal"] .af-hero h1 {
+  margin-inline: auto;
+  max-width: 18ch;
+}
+
+[data-hero="centered-minimal"] .af-intro {
+  margin-inline: auto;
+  max-width: 62ch;
+}
+
+[data-hero="centered-minimal"] .af-actions,
+[data-hero="centered-minimal"] .af-skill-strip {
+  justify-content: center;
+}
+
+/* Hero Style: Terminal Tech */
+.af-terminal-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  margin-bottom: 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.af-term-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.af-term-dot:nth-child(2) { opacity: 0.45; }
+.af-term-dot:nth-child(3) { opacity: 0.25; }
+
+/* Hero Style: Sidebar Dossier */
+.af-dossier-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  padding-top: 28px;
+}
+
+.af-dossier-aside {
+  position: sticky;
+  top: 84px;
+}
+
+.af-dossier-aside .af-hero {
+  padding: 0;
+  border-bottom: none;
+}
+
+.af-dossier-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 18px);
+  padding: 24px;
+  box-shadow: 0 12px 32px -20px rgba(15, 23, 42, 0.16);
+}
+
+.af-dossier-card h1 {
+  font-size: clamp(24px, 2.5vw, 32px);
+  line-height: 1.22;
+}
+
+.af-dossier-edu {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.af-dossier-main .af-shell {
+  max-width: none;
+  padding-inline: 0;
+}
+
+.af-dossier-main .af-section:first-child {
+  padding-top: 0;
+}
+
+.af-dossier-main .af-band {
+  border-radius: var(--radius, 18px);
+  padding: 28px 24px;
+  margin-block: 24px;
+}
+
+@media (max-width: 960px) {
+  .af-dossier-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .af-dossier-aside {
+    position: static;
+  }
+}
+
+/* Project Layout: Bento Grid (First card featured wide) */
+[data-project-layout="bento-grid"] .af-projects-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+[data-project-layout="bento-grid"] .af-projects-grid > .af-card:first-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  [data-project-layout="bento-grid"] .af-projects-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Project Layout: Editorial Rows */
+[data-project-layout="editorial-rows"] .af-projects-grid {
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+[data-project-layout="editorial-rows"] .af-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: start;
+}
+
+[data-project-layout="editorial-rows"] .af-card-top,
+[data-project-layout="editorial-rows"] .af-card-cta {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  [data-project-layout="editorial-rows"] .af-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Project Layout: Timeline Cases */
+[data-project-layout="timeline-cases"] .af-projects-grid {
+  grid-template-columns: 1fr;
+  position: relative;
+  padding-left: 24px;
+  border-left: 2px solid var(--line);
+  gap: 20px;
+}
+
+[data-project-layout="timeline-cases"] .af-card {
+  position: relative;
+}
+
+[data-project-layout="timeline-cases"] .af-card::before {
+  content: "";
+  position: absolute;
+  left: -31px;
+  top: 24px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+}
+
+/* Studio Preview Layout Bar */
+.af-layout-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.af-layout-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.af-layout-bar select {
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 12px;
+}

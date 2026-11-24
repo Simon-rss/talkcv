@@ -2,7 +2,14 @@ import { deleteSiteTraffic } from "./insights";
 import { deleteLeads } from "./leads";
 import { normalizeContacts } from "../lib/contacts.mjs";
 import { canUseModel } from "../lib/models";
-import { AI_BRIEF_LIMITS, normalizeSlug, sanitizeDesignTokens, type AiBrief, type PortfolioProfile } from "../lib/schema";
+import {
+  AI_BRIEF_LIMITS,
+  normalizeSlug,
+  sanitizeDesignTokens,
+  sanitizeLayoutPlan,
+  type AiBrief,
+  type PortfolioProfile,
+} from "../lib/schema";
 import {
   FREE_HOSTING_DAYS,
   getSessionUser,
@@ -211,6 +218,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     ...(profileObj as PortfolioProfile),
     basics: { ...profileObj.basics, ...contacts },
     designTokens: sanitizeDesignTokens(profileObj.designTokens),
+    layoutPlan: sanitizeLayoutPlan(profileObj.layoutPlan),
   };
 
   const user = await getSessionUser(request, env);

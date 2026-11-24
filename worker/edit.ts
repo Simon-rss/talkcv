@@ -2,7 +2,7 @@ import { CREDIT_COST } from "../lib/credits";
 import { isReasoningOrNextGenOpenAI } from "../lib/models";
 import { resolveStudioModel } from "./generate";
 import { withCreationCredits } from "./credits";
-import { isValidTheme, sanitizeDesignTokens, type PortfolioProfile, type ThemeId } from "../lib/schema";
+import { isValidTheme, sanitizeDesignTokens, sanitizeLayoutPlan, type PortfolioProfile, type ThemeId } from "../lib/schema";
 import { getSessionUser } from "./auth";
 import { getUserPlan, type BillingEnv } from "./billing";
 import type { ChatEnv } from "./chat";
@@ -86,6 +86,7 @@ Output ONLY a raw JSON object with this exact shape (no markdown fences):
 Rules:
 - Keep both "en" and "zh" synced whenever you edit bilingual text fields.
 - If the user asks to change colors or border radius, update "profile.designTokens" with safe 6-digit hex colors (#RRGGBB) and radius (0px-28px).
+- If the user asks to change layout, section order, hero style, project layout, or typography, update "profile.layoutPlan" (heroStyle: "editorial-split"|"centered-minimal"|"sidebar-dossier"|"terminal-hero"; projectLayout: "bento-grid"|"editorial-rows"|"timeline-cases"|"card-grid"; fontPair: "sans-modern"|"serif-editorial"|"mono-tech"; sectionOrder: permutation of ["work","capabilities","experience","contact"]).
 - NEVER invent fake companies, URLs, or metrics that the user didn't ask for.
 - Preserve existing project slugs unless explicitly asked to change them.`;
 
@@ -127,12 +128,14 @@ Rules:
     }
 
     const updatedTokens = sanitizeDesignTokens(parsed.profile.designTokens);
+    const updatedLayout = sanitizeLayoutPlan(parsed.profile.layoutPlan);
     const mergedProfile: PortfolioProfile = {
       ...currentProfile,
       ...parsed.profile,
       basics: { ...parsed.profile.basics, avatar: currentProfile.basics.avatar },
       theme: isValidTheme(parsed.profile.theme) ? parsed.profile.theme : theme,
       ...(updatedTokens ? { designTokens: updatedTokens } : {}),
+      ...(updatedLayout ? { layoutPlan: updatedLayout } : {}),
     };
     return { ok: true, summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "Updated portfolio.", profile: mergedProfile };
   });

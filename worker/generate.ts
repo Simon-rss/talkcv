@@ -4,6 +4,7 @@ import { profile as sampleProfile } from "../lib/profile";
 import {
   isValidTheme,
   sanitizeDesignTokens,
+  sanitizeLayoutPlan,
   type PortfolioProfile,
   type ProjectAccent,
   type ThemeId,
@@ -169,12 +170,14 @@ function normalizeGeneratedProfile(
 
   const cleanStylePrompt = stylePrompt?.trim().slice(0, 400) || undefined;
   const designTokens = sanitizeDesignTokens(raw.designTokens);
+  const layoutPlan = sanitizeLayoutPlan(raw.layoutPlan);
 
   return {
     theme,
     siteUrl: siteUrl.replace(/\/+$/, ""),
     ...(cleanStylePrompt ? { stylePrompt: cleanStylePrompt } : {}),
     ...(designTokens ? { designTokens } : {}),
+    ...(layoutPlan ? { layoutPlan } : {}),
     basics: {
       name,
       initials,
@@ -328,6 +331,12 @@ Rules:
 - Extract up to 5 featured projects actually described in the résumé. If it lists none, return projects: []. Use only its own metrics, architecture details and workflow steps.
 - STRICT VERBATIM NUMERICAL FIDELITY: NEVER alter, round, recalculate, or invent any number, duration, percentage, or metric from the resume (e.g. if the resume says "27 -> 8 minutes", facts[] and summary MUST say "27 -> 8", NEVER change 27 to another number).
 - NEVER invent companies, skills, or URLs not present in the resume. Copy only explicitly supplied contact details into basics.email, github, wechat (ID), linkedin and portfolio (blog or personal URL). Use absolute HTTP(S) links and omit missing contacts.
+- PERSONALIZED LAYOUT & VISUAL IDENTITY: Every candidate should feel bespoke, NOT cookie-cutter. Include a "layoutPlan" object tailored to this person's profession, seniority, and tone:
+  - "heroStyle": pick one of "editorial-split" (executive/product/ops), "centered-minimal" (designer/creative/founder), "sidebar-dossier" (student/academic/admin/consulting/legal), or "terminal-hero" (backend/systems/AI engineer).
+  - "projectLayout": pick one of "bento-grid" (varied-size cards with featured hero project), "editorial-rows" (wide magazine rows for research/case studies), "timeline-cases" (chronological case flow), or "card-grid" (clean balanced cards).
+  - "fontPair": pick one of "serif-editorial" (humanities/editorial/luxury/legal/admin), "sans-modern" (product/tech/business), or "mono-tech" (engineering/systems/security).
+  - "sectionOrder": order ["work","capabilities","experience","contact"] to lead with this candidate's strongest proof (e.g., students/career-switchers/ops can lead with "experience" or "capabilities" before "work"; engineers/designers lead with "work").
+- Also tailor "designTokens" with a harmonious 6-digit hex "accent" color (and optional "radius" 0px-24px) suited to their domain (e.g. deep navy #1d4ed8, warm terracotta #b45309, burgundy #9f1239, emerald #0f766e, slate indigo #4338ca, forest #166534) while keeping high contrast for the ${theme} theme.
 - Use lowercase ASCII kebab-case slugs.${styleInstruction}
 
 Reference schema example:

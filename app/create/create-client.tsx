@@ -27,7 +27,23 @@ import { canUseModel, HOSTED_MODELS, isPromoUnlockedModel, type PlanTier } from 
 import { PromoAnnouncementCard, PromoTopBanner } from "../promo-announcement";
 import { captureReferral, readSession, type AuthUser } from "../../lib/login";
 import { profile as defaultProfile } from "../../lib/profile";
-import { AI_BRIEF_LIMITS, localize, normalizeSlug, THEMES, type AiBrief, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
+import {
+  AI_BRIEF_LIMITS,
+  FONT_PAIR_OPTIONS,
+  HERO_STYLE_OPTIONS,
+  localize,
+  normalizeSlug,
+  PROJECT_LAYOUT_OPTIONS,
+  THEMES,
+  type AiBrief,
+  type FontPair,
+  type HeroStyle,
+  type Lang,
+  type PortfolioProfile,
+  type ProjectLayout,
+  type SectionId,
+  type ThemeId,
+} from "../../lib/schema";
 import { SiteInsights } from "./site-insights";
 import { StudioLoginDialog } from "../login/login-client";
 import { OnboardingTour } from "./onboarding-tour";
@@ -1651,7 +1667,87 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             />
           )}
 
-          <div className="af-preview-canvas">
+          <div className="af-layout-bar" aria-label={lang === "zh" ? "个性化布局与排版" : "Layout & Typography"}>
+            <label>
+              <span>{lang === "zh" ? "首屏骨架" : "Hero"}</span>
+              <select
+                value={generated.layoutPlan?.heroStyle ?? "editorial-split"}
+                onChange={(e) => {
+                  const heroStyle = e.target.value as HeroStyle;
+                  setGenerated((prev) => ({
+                    ...prev,
+                    layoutPlan: { ...prev.layoutPlan, heroStyle },
+                  }));
+                }}
+              >
+                {HERO_STYLE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{localize(opt.label, lang)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{lang === "zh" ? "项目排布" : "Projects"}</span>
+              <select
+                value={generated.layoutPlan?.projectLayout ?? "card-grid"}
+                onChange={(e) => {
+                  const projectLayout = e.target.value as ProjectLayout;
+                  setGenerated((prev) => ({
+                    ...prev,
+                    layoutPlan: { ...prev.layoutPlan, projectLayout },
+                  }));
+                }}
+              >
+                {PROJECT_LAYOUT_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{localize(opt.label, lang)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{lang === "zh" ? "字体气质" : "Font"}</span>
+              <select
+                value={generated.layoutPlan?.fontPair ?? "sans-modern"}
+                onChange={(e) => {
+                  const fontPair = e.target.value as FontPair;
+                  setGenerated((prev) => ({
+                    ...prev,
+                    layoutPlan: { ...prev.layoutPlan, fontPair },
+                  }));
+                }}
+              >
+                {FONT_PAIR_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{localize(opt.label, lang)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{lang === "zh" ? "模块顺序" : "Order"}</span>
+              <select
+                value={(generated.layoutPlan?.sectionOrder ?? ["work", "capabilities", "experience", "contact"]).join(",")}
+                onChange={(e) => {
+                  const sectionOrder = e.target.value.split(",") as SectionId[];
+                  setGenerated((prev) => ({
+                    ...prev,
+                    layoutPlan: { ...prev.layoutPlan, sectionOrder },
+                  }));
+                }}
+              >
+                <option value="work,capabilities,experience,contact">
+                  {lang === "zh" ? "项目优先（工程师/产品）" : "Projects first"}
+                </option>
+                <option value="experience,work,capabilities,contact">
+                  {lang === "zh" ? "教育与履历优先（应届生/行政）" : "Experience & Edu first"}
+                </option>
+                <option value="capabilities,work,experience,contact">
+                  {lang === "zh" ? "核心能力优先（咨询/管理）" : "Capabilities first"}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <div
+            className="af-preview-canvas"
+            data-font={generated.layoutPlan?.fontPair ?? "sans-modern"}
+          >
             <div className="af-avatar-bar">
               <button
                 type="button"

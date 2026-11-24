@@ -30,12 +30,14 @@ import {
 } from "react";
 import { getSiteUrl, profile as defaultProfile } from "../lib/profile";
 import {
+  DEFAULT_SECTION_ORDER,
   isValidTheme,
   localize,
   THEMES,
   type Lang,
   type PortfolioProfile,
   type ProjectItem,
+  type SectionId,
   type ThemeId,
 } from "../lib/schema";
 import { creationPricing, PLAN_CREDITS } from "../lib/credits";
@@ -458,8 +460,227 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
   const visibleProjects =
     filter === "all" ? profile.projects : profile.projects.filter((p) => p.group === filter);
 
+  const heroStyle = isPersonalHosted ? (profile.layoutPlan?.heroStyle ?? "editorial-split") : "editorial-split";
+  const projectLayout = isPersonalHosted ? (profile.layoutPlan?.projectLayout ?? "card-grid") : "card-grid";
+  const fontPair = isPersonalHosted ? (profile.layoutPlan?.fontPair ?? "sans-modern") : "sans-modern";
+  const sectionOrder: ReadonlyArray<SectionId> = isPersonalHosted
+    ? (profile.layoutPlan?.sectionOrder ?? DEFAULT_SECTION_ORDER)
+    : DEFAULT_SECTION_ORDER;
+
+  const tokenStyle: React.CSSProperties = {
+    ...(profile.designTokens?.accent ? ({ "--accent": profile.designTokens.accent } as React.CSSProperties) : {}),
+    ...(profile.designTokens?.bg ? ({ "--bg": profile.designTokens.bg } as React.CSSProperties) : {}),
+    ...(profile.designTokens?.surface ? ({ "--surface": profile.designTokens.surface } as React.CSSProperties) : {}),
+    ...(profile.designTokens?.radius ? ({ "--radius": profile.designTokens.radius } as React.CSSProperties) : {}),
+  };
+
+  const heroBlock = (
+    <section className="af-hero">
+      <div className={heroStyle === "sidebar-dossier" ? "af-dossier-card" : "af-shell"}>
+        {heroStyle === "terminal-hero" && (
+          <div className="af-terminal-bar" aria-hidden="true">
+            <span className="af-term-dot" />
+            <span className="af-term-dot" />
+            <span className="af-term-dot" />
+            <code>
+              $ whoami — {localize(profile.basics.name, lang)} · {localize(profile.basics.location, lang)}
+            </code>
+          </div>
+        )}
+        <p className="af-role">{localize(profile.basics.role, lang)}</p>
+        <h1>{localize(profile.basics.headline, lang)}</h1>
+        <p className="af-intro">{localize(profile.basics.intro, lang)}</p>
+        {heroStyle === "sidebar-dossier" && localize(profile.basics.education, lang) && (
+          <p className="af-dossier-edu">
+            <FileText size={14} />
+            <span>{localize(profile.basics.education, lang)}</span>
+          </p>
+        )}
+        <p className="print-only">
+          {profile.basics.email} ·{" "}
+          {isPersonalHosted && profileSlug !== "__draft__"
+            ? `https://mytalkcv.com/u/${profileSlug}`
+            : getSiteUrl()}
+        </p>
+        <div className="af-actions">
+          <a
+            className="af-btn af-btn-primary"
+            href="#work"
+            onClick={(event) => {
+              const target = document.getElementById(sectionOrder[0] || "work");
+              if (target) {
+                event.preventDefault();
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+            }}
+          >
+            <span>{lang === "en" ? "Explore portfolio" : "浏览核心内容"}</span>
+            <ArrowUpRight size={16} />
+          </a>
+          {profile.ai.enabled && (
+            <button type="button" className="af-btn af-btn-secondary" onClick={() => setChatOpen(true)}>
+              <Sparkles size={16} />
+              <span>{lang === "en" ? "Ask AI / Match JD" : "问 AI / 测 JD 匹配"}</span>
+            </button>
+          )}
+          {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
+        </div>
+        <div className="af-skill-strip" aria-label="Skills">
+          {profile.skills.map((skill) => (
+            <span key={skill}>{skill}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  const workSection = (
+    <section className="af-section af-shell" id="work" key="work">
+      <div className="af-section-head">
+        <div>
+          <p className="af-eyebrow">{lang === "en" ? "SELECTED WORK" : "代表项目"}</p>
+          <h2>{lang === "en" ? "Highlighted projects & outcomes" : "代表项目与核心成果"}</h2>
+        </div>
+        <div className="af-filter-bar" role="tablist">
+          {(
+            [
+              ["all", lang === "en" ? `All (${profile.projects.length})` : `全部 (${profile.projects.length})`],
+              ["platform", lang === "en" ? "Platform" : "平台"],
+              ["enterprise", lang === "en" ? "Enterprise" : "企业"],
+              ["product", lang === "en" ? "Product" : "产品"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={filter === key}
+              className={filter === key ? "active" : ""}
+              onClick={() => updateFilter(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="af-projects-grid">
+        {visibleProjects.map((project) => (
+          <article key={project.slug} id={`project-${project.slug}`} tabIndex={-1} className={`af-card accent-${project.accent}`}>
+            <div className="af-card-top">
+              <span className="af-card-cat">{localize(project.category, lang)}</span>
+              <div className="af-card-tags">
+                {project.tags.slice(0, 3).map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
+            </div>
+            <h3>
+              {isPersonalHosted ? (
+                <button
+                  type="button"
+                  className="af-card-title-btn"
+                  onClick={() => setModalProjectSlug(project.slug)}
+                >
+                  {localize(project.title, lang)}
+                </button>
+              ) : (
+                <Link href={`/projects/${project.slug}`}>{localize(project.title, lang)}</Link>
+              )}
+            </h3>
+            <p className="af-card-role">
+              <BriefcaseBusiness size={14} />
+              <span>{localize(project.role, lang)}</span>
+            </p>
+            <p className="af-card-summary">{localize(project.summary, lang)}</p>
+            <div className="af-facts">
+              {project.facts.map((fact) => (
+                <div key={fact.value + fact.label.en}>
+                  <CountUpValue value={fact.value} />
+                  <span>{localize(fact.label, lang)}</span>
+                </div>
+              ))}
+            </div>
+            {isPersonalHosted ? (
+              <button
+                type="button"
+                className="af-card-cta af-card-cta-btn"
+                onClick={() => setModalProjectSlug(project.slug)}
+              >
+                <span>{lang === "en" ? "View case details" : "查看案例详情"}</span>
+                <ArrowUpRight size={15} />
+              </button>
+            ) : (
+              <Link className="af-card-cta" href={`/projects/${project.slug}`}>
+                <span>{lang === "en" ? "Read case study" : "查看案例详情"}</span>
+                <ArrowUpRight size={15} />
+              </Link>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+
+  const capabilitiesSection = (
+    <section className="af-section af-band" id="capabilities" key="capabilities">
+      <div className="af-shell">
+        <p className="af-eyebrow">{lang === "en" ? "CAPABILITIES" : "核心能力"}</p>
+        <h2>{lang === "en" ? "Core strengths & expertise" : "核心能力与专业优势"}</h2>
+        <div className="af-cap-grid">
+          {profile.capabilities.map((cap) => (
+            <article key={cap.title.en} className="af-cap-card">
+              <h3>{localize(cap.title, lang)}</h3>
+              <p>{localize(cap.summary, lang)}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  const experienceSection = (
+    <section className="af-section af-shell" id="experience" key="experience">
+      <div className="af-exp-layout">
+        <div>
+          <p className="af-eyebrow">{lang === "en" ? "EXPERIENCE & EDUCATION" : "经历与背景"}</p>
+          <h2>{lang === "en" ? "Career & academic timeline" : "履历与教育背景"}</h2>
+          <p className="af-edu">
+            <FileText size={16} />
+            <span>{localize(profile.basics.education, lang)}</span>
+          </p>
+        </div>
+        <div className="af-timeline">
+          {profile.experiences.map((exp, index) => (
+            <article key={exp.period + exp.company.en} id={`experience-${index}`} tabIndex={-1} className="af-timeline-item">
+              <time>{exp.period}</time>
+              <div>
+                <h3>{localize(exp.company, lang)}</h3>
+                <p className="af-timeline-role">{localize(exp.role, lang)}</p>
+                <p>{localize(exp.summary, lang)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  const sectionNodes: Record<SectionId, React.ReactNode> = {
+    work: profile.projects.length > 0 ? workSection : null,
+    capabilities: profile.capabilities.length > 0 ? capabilitiesSection : null,
+    experience: experienceSection,
+    contact: <ContactBand key="contact" />,
+  };
+
   return (
-    <main className={`af-page af-theme-${theme}`}>
+    <main
+      className={`af-page af-theme-${theme}`}
+      data-hero={heroStyle}
+      data-project-layout={projectLayout}
+      data-font={fontPair}
+      style={tokenStyle}
+    >
       {profileSlug === "__draft__" && <div className="af-preview-strip">
         <span>{lang === "zh" ? "全屏草稿预览 · 二维码指向发布后的站点" : "Draft preview · The QR code links to the published site"}</span>
         <Link href={`/create?lang=${lang}`}>{lang === "zh" ? "返回工作台发布 →" : "Back to Studio to publish →"}</Link>
@@ -511,177 +732,23 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
         </section>
       )}
 
-      <section className="af-hero">
-        <div className="af-shell">
-          <p className="af-role">{localize(profile.basics.role, lang)}</p>
-          <h1>{localize(profile.basics.headline, lang)}</h1>
-          <p className="af-intro">{localize(profile.basics.intro, lang)}</p>
-          <p className="print-only">
-            {profile.basics.email} ·{" "}
-            {isPersonalHosted && profileSlug !== "__draft__"
-              ? `https://mytalkcv.com/u/${profileSlug}`
-              : getSiteUrl()}
-          </p>
-          <div className="af-actions">
-            <a
-              className="af-btn af-btn-primary"
-              href="#work"
-              onClick={(event) => {
-                const target = document.getElementById("work");
-                if (target) {
-                  event.preventDefault();
-                  target.scrollIntoView({ behavior: "smooth", block: "start" });
-                }
-              }}
-            >
-              <span>{lang === "en" ? "Explore projects" : "查看代表项目"}</span>
-              <ArrowUpRight size={16} />
-            </a>
-            {profile.ai.enabled && (
-              <button type="button" className="af-btn af-btn-secondary" onClick={() => setChatOpen(true)}>
-                <Sparkles size={16} />
-                <span>{lang === "en" ? "Ask AI / Match JD" : "问 AI / 测 JD 匹配"}</span>
-              </button>
-            )}
-            {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
-          </div>
-          <div className="af-skill-strip" aria-label="Skills">
-            {profile.skills.map((skill) => (
-              <span key={skill}>{skill}</span>
-            ))}
+      {heroStyle === "sidebar-dossier" ? (
+        <div className="af-shell af-dossier-layout">
+          <aside className="af-dossier-aside">
+            {heroBlock}
+            {isPersonalHosted && <ResumeExport profile={profile} slug={exportSlug} lang={lang} />}
+          </aside>
+          <div className="af-dossier-main">
+            {sectionOrder.map((id) => sectionNodes[id])}
           </div>
         </div>
-      </section>
-
-      {isPersonalHosted && <ResumeExport profile={profile} slug={exportSlug} lang={lang} />}
-
-      <section className="af-section af-shell" id="work">
-        <div className="af-section-head">
-          <div>
-            <p className="af-eyebrow">{lang === "en" ? "SELECTED WORK" : "代表项目"}</p>
-            <h2>{lang === "en" ? "Systems built for real constraints" : "面向真实约束的工程交付"}</h2>
-          </div>
-          <div className="af-filter-bar" role="tablist">
-            {(
-              [
-                ["all", lang === "en" ? `All (${profile.projects.length})` : `全部 (${profile.projects.length})`],
-                ["platform", lang === "en" ? "Platform" : "平台"],
-                ["enterprise", lang === "en" ? "Enterprise" : "企业"],
-                ["product", lang === "en" ? "Product" : "产品"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={filter === key}
-                className={filter === key ? "active" : ""}
-                onClick={() => updateFilter(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="af-projects-grid">
-          {visibleProjects.map((project) => (
-            <article key={project.slug} id={`project-${project.slug}`} tabIndex={-1} className={`af-card accent-${project.accent}`}>
-              <div className="af-card-top">
-                <span className="af-card-cat">{localize(project.category, lang)}</span>
-                <div className="af-card-tags">
-                  {project.tags.slice(0, 3).map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-              </div>
-              <h3>
-                {isPersonalHosted ? (
-                  <button
-                    type="button"
-                    className="af-card-title-btn"
-                    onClick={() => setModalProjectSlug(project.slug)}
-                  >
-                    {localize(project.title, lang)}
-                  </button>
-                ) : (
-                  <Link href={`/projects/${project.slug}`}>{localize(project.title, lang)}</Link>
-                )}
-              </h3>
-              <p className="af-card-role">
-                <BriefcaseBusiness size={14} />
-                <span>{localize(project.role, lang)}</span>
-              </p>
-              <p className="af-card-summary">{localize(project.summary, lang)}</p>
-              <div className="af-facts">
-                {project.facts.map((fact) => (
-                  <div key={fact.value + fact.label.en}>
-                    <CountUpValue value={fact.value} />
-                    <span>{localize(fact.label, lang)}</span>
-                  </div>
-                ))}
-              </div>
-              {isPersonalHosted ? (
-                <button
-                  type="button"
-                  className="af-card-cta af-card-cta-btn"
-                  onClick={() => setModalProjectSlug(project.slug)}
-                >
-                  <span>{lang === "en" ? "View case details" : "查看案例详情"}</span>
-                  <ArrowUpRight size={15} />
-                </button>
-              ) : (
-                <Link className="af-card-cta" href={`/projects/${project.slug}`}>
-                  <span>{lang === "en" ? "Read case study" : "查看案例详情"}</span>
-                  <ArrowUpRight size={15} />
-                </Link>
-              )}
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="af-section af-band" id="capabilities">
-        <div className="af-shell">
-          <p className="af-eyebrow">{lang === "en" ? "CAPABILITIES" : "核心能力"}</p>
-          <h2>{lang === "en" ? "Where engineering craft meets AI delivery" : "工程体系与 AI 落地的结合"}</h2>
-          <div className="af-cap-grid">
-            {profile.capabilities.map((cap) => (
-              <article key={cap.title.en} className="af-cap-card">
-                <h3>{localize(cap.title, lang)}</h3>
-                <p>{localize(cap.summary, lang)}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="af-section af-shell" id="experience">
-        <div className="af-exp-layout">
-          <div>
-            <p className="af-eyebrow">{lang === "en" ? "EXPERIENCE" : "工作经历"}</p>
-            <h2>{lang === "en" ? "Career timeline" : "职业履历"}</h2>
-            <p className="af-edu">
-              <FileText size={16} />
-              <span>{localize(profile.basics.education, lang)}</span>
-            </p>
-          </div>
-          <div className="af-timeline">
-            {profile.experiences.map((exp, index) => (
-              <article key={exp.period + exp.company.en} id={`experience-${index}`} tabIndex={-1} className="af-timeline-item">
-                <time>{exp.period}</time>
-                <div>
-                  <h3>{localize(exp.company, lang)}</h3>
-                  <p className="af-timeline-role">{localize(exp.role, lang)}</p>
-                  <p>{localize(exp.summary, lang)}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <ContactBand />
+      ) : (
+        <>
+          {heroBlock}
+          {isPersonalHosted && <ResumeExport profile={profile} slug={exportSlug} lang={lang} />}
+          {sectionOrder.map((id) => sectionNodes[id])}
+        </>
+      )}
       <SiteFooter />
 
       {modalProject && (

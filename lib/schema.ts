@@ -60,6 +60,20 @@ export interface CapabilityItem {
   summary: LocalizedText;
 }
 
+export type HeroStyle = "editorial-split" | "centered-minimal" | "sidebar-dossier" | "terminal-hero";
+export type ProjectLayout = "card-grid" | "bento-grid" | "editorial-rows" | "timeline-cases";
+export type FontPair = "sans-modern" | "serif-editorial" | "mono-tech";
+export type SectionId = "work" | "capabilities" | "experience" | "contact";
+
+export const DEFAULT_SECTION_ORDER: ReadonlyArray<SectionId> = ["work", "capabilities", "experience", "contact"];
+
+export interface LayoutPlan {
+  heroStyle?: HeroStyle;
+  projectLayout?: ProjectLayout;
+  fontPair?: FontPair;
+  sectionOrder?: SectionId[];
+}
+
 export interface DesignTokens {
   accent?: string;
   bg?: string;
@@ -72,6 +86,7 @@ export interface PortfolioProfile {
   siteUrl: string;
   stylePrompt?: string;
   designTokens?: DesignTokens;
+  layoutPlan?: LayoutPlan;
   hideBranding?: boolean;
   basics: {
     name: LocalizedText;
@@ -119,6 +134,63 @@ export function sanitizeDesignTokens(raw: unknown): DesignTokens | undefined {
   if (typeof obj.radius === "string" && radiusRe.test(obj.radius.trim())) out.radius = obj.radius.trim();
   return Object.keys(out).length > 0 ? out : undefined;
 }
+
+const VALID_HERO_STYLES = new Set<HeroStyle>(["editorial-split", "centered-minimal", "sidebar-dossier", "terminal-hero"]);
+const VALID_PROJECT_LAYOUTS = new Set<ProjectLayout>(["card-grid", "bento-grid", "editorial-rows", "timeline-cases"]);
+const VALID_FONT_PAIRS = new Set<FontPair>(["sans-modern", "serif-editorial", "mono-tech"]);
+const VALID_SECTIONS = new Set<SectionId>(["work", "capabilities", "experience", "contact"]);
+
+export function sanitizeLayoutPlan(raw: unknown): LayoutPlan | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const out: LayoutPlan = {};
+  if (typeof obj.heroStyle === "string" && VALID_HERO_STYLES.has(obj.heroStyle as HeroStyle)) {
+    out.heroStyle = obj.heroStyle as HeroStyle;
+  }
+  if (typeof obj.projectLayout === "string" && VALID_PROJECT_LAYOUTS.has(obj.projectLayout as ProjectLayout)) {
+    out.projectLayout = obj.projectLayout as ProjectLayout;
+  }
+  if (typeof obj.fontPair === "string" && VALID_FONT_PAIRS.has(obj.fontPair as FontPair)) {
+    out.fontPair = obj.fontPair as FontPair;
+  }
+  if (Array.isArray(obj.sectionOrder)) {
+    const seen = new Set<SectionId>();
+    const order: SectionId[] = [];
+    for (const item of obj.sectionOrder) {
+      if (typeof item === "string" && VALID_SECTIONS.has(item as SectionId) && !seen.has(item as SectionId)) {
+        seen.add(item as SectionId);
+        order.push(item as SectionId);
+      }
+    }
+    for (const fallback of DEFAULT_SECTION_ORDER) {
+      if (!seen.has(fallback)) order.push(fallback);
+    }
+    if (order.length === DEFAULT_SECTION_ORDER.length) {
+      out.sectionOrder = order;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export const HERO_STYLE_OPTIONS: ReadonlyArray<{ id: HeroStyle; label: LocalizedText }> = [
+  { id: "editorial-split", label: { en: "Editorial Split", zh: "左右分栏" } },
+  { id: "centered-minimal", label: { en: "Centered Minimal", zh: "居中极简" } },
+  { id: "sidebar-dossier", label: { en: "Sidebar Dossier", zh: "左栏档案" } },
+  { id: "terminal-hero", label: { en: "Terminal Tech", zh: "极客终端" } },
+];
+
+export const PROJECT_LAYOUT_OPTIONS: ReadonlyArray<{ id: ProjectLayout; label: LocalizedText }> = [
+  { id: "bento-grid", label: { en: "Bento Grid", zh: "错落 Bento" } },
+  { id: "editorial-rows", label: { en: "Editorial Rows", zh: "杂志横排" } },
+  { id: "timeline-cases", label: { en: "Timeline Cases", zh: "时间轴流" } },
+  { id: "card-grid", label: { en: "Card Grid", zh: "经典卡片" } },
+];
+
+export const FONT_PAIR_OPTIONS: ReadonlyArray<{ id: FontPair; label: LocalizedText }> = [
+  { id: "sans-modern", label: { en: "Modern Sans", zh: "现代无衬线" } },
+  { id: "serif-editorial", label: { en: "Editorial Serif", zh: "文艺衬线" } },
+  { id: "mono-tech", label: { en: "Tech Mono", zh: "极客等宽" } },
+];
 
 export const THEMES: ReadonlyArray<{
   id: ThemeId;

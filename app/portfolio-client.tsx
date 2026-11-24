@@ -230,10 +230,29 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
       </Link>
 
       <nav className="af-nav" aria-label="Primary">
-        <Link href={casePage ? "/#work" : "#work"}>{lang === "en" ? "Work" : "项目"}</Link>
-        <Link href={casePage ? "/#capabilities" : "#capabilities"}>{lang === "en" ? "Capabilities" : "能力"}</Link>
-        <Link href={casePage ? "/#experience" : "#experience"}>{lang === "en" ? "Experience" : "经历"}</Link>
-        <Link href={casePage ? "/#contact" : "#contact"}>{lang === "en" ? "Contact" : "联系"}</Link>
+        {(
+          [
+            ["work", lang === "en" ? "Work" : "项目"],
+            ["capabilities", lang === "en" ? "Capabilities" : "能力"],
+            ["experience", lang === "en" ? "Experience" : "经历"],
+            ["contact", lang === "en" ? "Contact" : "联系"],
+          ] as const
+        ).map(([sectionId, label]) => (
+          <Link
+            key={sectionId}
+            href={casePage ? `/#${sectionId}` : `#${sectionId}`}
+            onClick={(event) => {
+              if (casePage) return;
+              const target = document.getElementById(sectionId);
+              if (target) {
+                event.preventDefault();
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+            }}
+          >
+            {label}
+          </Link>
+        ))}
         {!isPersonalHosted && (
           <Link className="af-nav-create" href="/create">
             {lang === "en" ? "Create Yours" : "免费生成"}
@@ -502,7 +521,17 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
               : getSiteUrl()}
           </p>
           <div className="af-actions">
-            <a className="af-btn af-btn-primary" href="#work">
+            <a
+              className="af-btn af-btn-primary"
+              href="#work"
+              onClick={(event) => {
+                const target = document.getElementById("work");
+                if (target) {
+                  event.preventDefault();
+                  target.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }}
+            >
               <span>{lang === "en" ? "Explore projects" : "查看代表项目"}</span>
               <ArrowUpRight size={16} />
             </a>

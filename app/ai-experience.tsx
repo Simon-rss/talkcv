@@ -744,10 +744,10 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   }, [pendingJd, clearPendingJd]);
 
   useEffect(() => {
-    if (listRef.current) {
+    if (chatOpen && listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, error, loading]);
+  }, [chatOpen, messages, error, loading]);
 
   if (!profile.ai.enabled) return null;
 

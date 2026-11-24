@@ -94,7 +94,7 @@ async function makePoster(profile: PortfolioProfile, slug: string, lang: Lang) {
   ctx.fillStyle = "#173e33"; ctx.font = `650 36px ${sans}`;
   drawText(ctx, lang === "zh" ? "扫码与我的 AI 助手对话" : "Scan to chat with my AI assistant", 68, 1050, 523, 48, 2);
   ctx.fillStyle = "#455e52"; ctx.font = `400 23px ${sans}`;
-  drawText(ctx, `talkcv.renss.top/u/${slug}`, 68, 1181, 535, 30, 2);
+  drawText(ctx, `mytalkcv.com/u/${slug}`, 68, 1181, 535, 30, 2);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(qr, 648, 987, 244, 244);
   return canvas.toDataURL("image/png");

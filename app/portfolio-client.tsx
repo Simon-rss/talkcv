@@ -498,7 +498,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
           <p className="print-only">
             {profile.basics.email} ·{" "}
             {isPersonalHosted && profileSlug !== "__draft__"
-              ? `https://talkcv.renss.top/u/${profileSlug}`
+              ? `https://mytalkcv.com/u/${profileSlug}`
               : getSiteUrl()}
           </p>
           <div className="af-actions">

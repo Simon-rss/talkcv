@@ -206,7 +206,7 @@ test("the print and poster QR encodes the canonical personal-site URL with an in
   const { PNG } = await import("pngjs");
   const { default: jsQR } = await import("jsqr");
   const png = PNG.sync.read(Buffer.from((await siteQrDataUrl("qr-test")).split(",")[1], "base64"));
-  assert.equal(jsQR(new Uint8ClampedArray(png.data), png.width, png.height)?.data, "https://talkcv.renss.top/u/qr-test");
+  assert.equal(jsQR(new Uint8ClampedArray(png.data), png.width, png.height)?.data, "https://mytalkcv.com/u/qr-test");
 });
 
 test("insights count HTML views and accepted questions, gate details by owner and tier, and clear on deletion", async (t) => {

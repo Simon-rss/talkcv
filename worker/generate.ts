@@ -310,7 +310,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   const siteUrl =
     typeof body.siteUrl === "string" && body.siteUrl.trim().startsWith("http")
       ? body.siteUrl.trim()
-      : "https://talkcv.renss.top";
+      : "https://mytalkcv.com";
 
   const styleInstruction = stylePrompt
     ? `\n- Custom style & tone preference from the user: "${stylePrompt}". Reflect this tone in headline, intro, project framing, AND optionally include a "designTokens" object with safe hex colors & radius matching the theme (${theme}), e.g. {"accent":"#0f766e","radius":"14px"} (only 6-digit hex colors #RRGGBB and radius 0px-28px; ensure high readability contrast with the ${theme} theme).`

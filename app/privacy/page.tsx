@@ -14,7 +14,7 @@ export default async function PrivacyPage({ searchParams }: PublicPageProps) {
       <p>{en ? `Cookies maintain your session, access permissions and usage limits. Your browser stores Studio drafts and display preferences. You can edit or delete any published site anytime in Studio. For privacy or data deletion requests, email ${SUPPORT_EMAIL}.` : `Cookie 用于维持登录、访问权限及额度。浏览器保存工作台草稿和显示偏好。你可以随时在工作台编辑或删除已发布站点。如需隐私咨询或数据删除请求，请联系客服邮箱 ${SUPPORT_EMAIL}。`}</p>
       <div className="af-site-links">
         <a href={`mailto:${SUPPORT_EMAIL}`}>{en ? `Support: ${SUPPORT_EMAIL}` : `客服邮箱：${SUPPORT_EMAIL}`}</a>
-        <a href="https://github.com/Simon-rss/talkcv">{en ? "TalkCV open-source repository" : "TalkCV 开源仓库"}</a>
+        <a href="https://github.com/Simon-rss/talkcv">{en ? "TalkCV source repository" : "TalkCV 源码仓库"}</a>
       </div>
     </article>
   </PublicPage>;

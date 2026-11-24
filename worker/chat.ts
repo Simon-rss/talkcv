@@ -1,4 +1,4 @@
-import { canUseModel, getHostedModel } from "../lib/models";
+import { canUseModel, getHostedModel, isReasoningOrNextGenOpenAI } from "../lib/models";
 import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
@@ -231,8 +231,9 @@ Candidate data: ${JSON.stringify(storedRecord.aiBrief)}`
       body: JSON.stringify({
         model: mdl,
         stream: true,
-        temperature: 0.4,
-        max_tokens: 900,
+        ...(isReasoningOrNextGenOpenAI(mdl)
+          ? { max_completion_tokens: 1600 }
+          : { temperature: 0.4, max_tokens: 900 }),
         messages: [{ role: "system", content: systemContent }, ...sanitized],
       }),
     });

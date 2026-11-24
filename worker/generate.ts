@@ -1,5 +1,5 @@
 import { normalizeContacts } from "../lib/contacts.mjs";
-import { canUseModel, getHostedModel, type PlanTier } from "../lib/models";
+import { canUseModel, getHostedModel, isReasoningOrNextGenOpenAI, type PlanTier } from "../lib/models";
 import { profile as sampleProfile } from "../lib/profile";
 import {
   isValidTheme,
@@ -338,7 +338,9 @@ ${JSON.stringify(sanitizedSample)}`;
       method: "POST", signal,
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: targetModel, temperature: 0.1, response_format: { type: "json_object" },
+        model: targetModel,
+        ...(isReasoningOrNextGenOpenAI(targetModel) ? {} : { temperature: 0.1 }),
+        response_format: { type: "json_object" },
         messages: [{ role: "system", content: systemPrompt },
           { role: "user", content: `Convert this resume into TalkCV profile.json:\n\n${resumeText.slice(0, 14000)}` }],
       }),

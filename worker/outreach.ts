@@ -5,6 +5,7 @@ import type { ChatEnv } from "./chat";
 import { resolveStudioModel } from "./generate";
 import { withCreationCredits } from "./credits";
 import { CREDIT_COST } from "../lib/credits";
+import { isReasoningOrNextGenOpenAI } from "../lib/models";
 
 export interface OutreachResult { matches: string[]; improvements: string[]; body: string }
 function resumeEvidence(profile: PortfolioProfile | undefined) {
@@ -44,7 +45,10 @@ The résumé is your only source for the candidate's skills, employers, projects
   return withCreationCredits(user.email, mode === "byok" ? 0 : CREDIT_COST.outreach, env, request, async (signal) => {
     const upstream = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: "POST", signal, headers: { authorization: `Bearer ${provider.apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: provider.model, temperature: 0.2, response_format: { type: "json_object" },
+      body: JSON.stringify({
+        model: provider.model,
+        ...(isReasoningOrNextGenOpenAI(provider.model) ? {} : { temperature: 0.2 }),
+        response_format: { type: "json_object" },
         messages: [{ role: "system", content: prompt }, { role: "user", content: `Résumé:\n${evidence}\n\nTarget JD:\n${jd}` }] }),
     });
     if (upstream.status !== 200) return fail(upstream.status === 401 && mode === "byok" ? 401 : 502, "The model provider rejected the request.");

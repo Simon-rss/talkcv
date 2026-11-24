@@ -1,4 +1,5 @@
 import { CREDIT_COST } from "../lib/credits";
+import { isReasoningOrNextGenOpenAI } from "../lib/models";
 import { resolveStudioModel } from "./generate";
 import { withCreationCredits } from "./credits";
 import { isValidTheme, sanitizeDesignTokens, type PortfolioProfile, type ThemeId } from "../lib/schema";
@@ -98,7 +99,7 @@ Rules:
         },
         body: JSON.stringify({
           model: targetModel,
-          temperature: 0.2,
+          ...(isReasoningOrNextGenOpenAI(targetModel) ? {} : { temperature: 0.2 }),
           response_format: { type: "json_object" },
           messages: [
             { role: "system", content: systemPrompt },

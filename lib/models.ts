@@ -111,3 +111,8 @@ export function canUseModel(modelId: string, userPlan: PlanTier): boolean {
 export function getHostedModel(id: string | undefined): HostedModelOption {
   return HOSTED_MODELS.find((m) => m.id === id) ?? HOSTED_MODELS[0];
 }
+
+export function isReasoningOrNextGenOpenAI(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return /^(o[1-9]|gpt-[5-9])/.test(m);
+}

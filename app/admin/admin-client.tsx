@@ -222,14 +222,14 @@ export function AdminClient() {
           <h1>{status === "unauth" ? "请先登录管理员账号" : status === "forbidden" ? "无管理员权限" : "加载失败"}</h1>
           <p>
             {status === "unauth"
-              ? "请先在 TalkCV Studio 使用管理员邮箱登录，再刷新本页。"
+              ? "使用管理员邮箱登录后，将自动返回运营后台。"
               : status === "forbidden"
                 ? "当前登录邮箱不在 ADMIN_EMAILS 白名单中。"
                 : errMsg}
           </p>
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 12 }}>
-            <Link href="/create" className="af-btn af-btn-primary">
-              前往 Studio 登录
+            <Link href={status === "unauth" ? "/login?next=/admin" : "/create"} className="af-btn af-btn-primary">
+              {status === "unauth" ? "使用邮箱登录" : "打开工作台"}
             </Link>
             <button type="button" className="af-btn af-btn-secondary" onClick={() => void loadOverview()}>
               重试

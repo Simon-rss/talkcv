@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Lang } from "../lib/schema";
+import { AccountMenu } from "./account-menu";
 
 export const SUPPORT_EMAIL = "rss1549596771@163.com";
 
@@ -23,6 +24,7 @@ export function PublicPage({ lang, path, title, children }: { lang: Lang; path: 
       <div className="af-site-links">
         <Link href={`/create?lang=${lang}`}>{lang === "en" ? "Studio" : "工作台"}</Link>
         <Link className="af-icon-pill" href={`${path}?lang=${lang === "en" ? "zh" : "en"}`}>{lang === "en" ? "中文" : "English"}</Link>
+        <AccountMenu lang={lang} />
       </div>
     </header>
     <h1>{title}</h1>

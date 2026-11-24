@@ -37,6 +37,7 @@ import {
   type ProjectItem,
   type ThemeId,
 } from "../lib/schema";
+import { AccountMenu } from "./account-menu";
 import {
   CommandPalette,
   PortfolioAIProvider,
@@ -281,6 +282,7 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
         >
           {lang === "en" ? "中" : "EN"}
         </button>
+        {!isPersonalHosted && <AccountMenu lang={lang} />}
       </div>
     </header>
   );

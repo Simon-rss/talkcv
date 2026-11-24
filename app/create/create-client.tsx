@@ -12,7 +12,6 @@ import {
   Lock,
   LogIn,
   LogOut,
-  Mail,
   Palette,
   RotateCcw,
   Sparkles,
@@ -24,41 +23,18 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
+import { captureReferral, readSession, type AuthUser } from "../../lib/login";
 import { profile as defaultProfile } from "../../lib/profile";
 import { AI_BRIEF_LIMITS, localize, normalizeSlug, THEMES, type AiBrief, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
 import { SiteInsights } from "./site-insights";
+import { StudioLoginDialog } from "../login/login-client";
+import { OnboardingTour } from "./onboarding-tour";
 import { AiRefinePanel } from "./ai-refine-panel";
 import { OutreachPanel } from "./outreach-panel";
 import { SharePoster } from "../share-poster";
 import { ContactLinks } from "../contact-links";
 import { SiteLinks } from "../public-navigation";
 import { PricingModal, requestCheckout } from "./pricing-modal";
-
-interface AuthUser {
-  email: string;
-  plan?: PlanTier;
-  isPro?: boolean;
-  isMax?: boolean;
-  isTrial?: boolean;
-  hasBilling?: boolean;
-  hasBillingPortal?: boolean;
-  usedToday: number;
-  dailyLimit: number;
-  quotaPeriod?: "lifetime" | "month";
-  editUsedToday?: number;
-  editDailyLimit?: number;
-  maxSites: number;
-  sites: string[];
-  referral?: {
-    code: string;
-    invitedCount: number;
-    maxRewards: number;
-    bonusGenerates: number;
-    bonusEdits: number;
-    trialExpiresAt?: string;
-    hasPendingReferrer?: boolean;
-  };
-}
 
 function buildPresetAvatarSvg(initials: string, c1: string, c2: string): string {
   const clean = (initials || "TC").slice(0, 2).replace(/[<>&"']/g, "");
@@ -128,6 +104,7 @@ const BYOK_PRESETS = [
 ] as const;
 
 const STUDIO_DRAFT_KEY = "talkcv-studio-draft";
+const DEFAULT_HANDLE = "alex-chen";
 const BRIEF_LABELS = {
   expectedSalary: ["期望薪资", "Expected salary"], availability: ["最快到岗时间", "Earliest start date"],
   workMode: ["城市 / 远程偏好", "Location / remote preference"], notes: ["补充说明", "Additional notes"],
@@ -189,13 +166,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [pendingCheckout, setPendingCheckout] = useState(checkout);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(Boolean(checkout));
-  const [authEmail, setAuthEmail] = useState("");
-  const [authCode, setAuthCode] = useState("");
-  const [authChallenge, setAuthChallenge] = useState("");
-  const [authStep, setAuthStep] = useState<"email" | "code">("email");
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authMsg, setAuthMsg] = useState<string | null>(null);
-  const [authErr, setAuthErr] = useState<string | null>(null);
+  const [authIntent, setAuthIntent] = useState<"generate" | "publish" | null>(null);
 
   // Generation section state
   const [resumeText, setResumeText] = useState("");
@@ -227,7 +198,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [clearByokKey, setClearByokKey] = useState(false);
 
   // Publishing state
-  const [handle, setHandle] = useState("alex-chen");
+  const [handle, setHandle] = useState(DEFAULT_HANDLE);
   const [briefDraft, setBriefDraft] = useState<{ owner?: string; slug?: string; values: AiBrief }>();
   const briefSlug = normalizeSlug(handle);
   const briefOwner = user?.email;
@@ -296,14 +267,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let rafId: number | null = null;
-    const rawRef = params.get("ref")?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
-    let activeRef = rawRef || "";
-    try {
-      if (rawRef) window.localStorage.setItem("talkcv-pending-ref", rawRef);
-      else activeRef = window.localStorage.getItem("talkcv-pending-ref") || "";
-    } catch {
-      // ignore storage errors
-    }
+    const activeRef = captureReferral(params.get("ref"));
     if (params.get("upgraded") || activeRef) {
       const upgradedParam = params.get("upgraded");
       rafId = window.requestAnimationFrame(() => {
@@ -323,13 +287,12 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         window.history.replaceState(null, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
       }
     }
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : { user: null }))
-      .then((data: { user?: AuthUser | null }) => {
-        if (data.user) setUser(data.user);
-      })
+    const controller = new AbortController();
+    readSession(controller.signal)
+      .then((current) => { if (current && !controller.signal.aborted) setUser(current); })
       .catch(() => {});
     return () => {
+      controller.abort();
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
   }, [lang]);
@@ -542,7 +505,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     setStylePrompt("");
     setGenerated(defaultProfile);
     setHasGenerated(false);
-    setHandle("alex-chen");
+    setHandle(DEFAULT_HANDLE);
     setNoindex(undefined);
     setProtectedSite(undefined);
     setPasscode("");
@@ -624,89 +587,27 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     }
   };
 
-  const sendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthErr(null);
-    setAuthMsg(null);
-    setAuthBusy(true);
-    try {
-      const res = await fetch("/api/auth/send-code", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: authEmail }),
-      });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        instantCode?: string;
-        challenge?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.ok) throw new Error(data.error || "Failed to send code.");
-      setAuthChallenge(data.challenge || "");
-      setAuthStep("code");
-      if (data.instantCode) {
-        setAuthCode(data.instantCode);
-        setAuthMsg(
-          lang === "zh"
-            ? `测试期即时验证码：${data.instantCode}（已自动填入，点击确认即可登录）`
-            : `Instant verification code: ${data.instantCode} (auto-filled)`,
-        );
-      } else {
-        setAuthMsg(
-          lang === "zh"
-            ? "验证码已发送到你的邮箱，请查收（10 分钟内有效）。"
-            : "Verification code sent to your email (valid for 10 min).",
-        );
-      }
-    } catch (err) {
-      setAuthErr(err instanceof Error ? err.message : "Failed to send code.");
-    } finally {
-      setAuthBusy(false);
+  function authenticated(account: AuthUser) {
+    setUser(account);
+    setPendingRefCode("");
+    setAuthModalOpen(false);
+    setAuthIntent(null);
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("ref")) {
+      url.searchParams.delete("ref");
+      window.history.replaceState(null, "", url);
     }
-  };
-
-  const verifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthErr(null);
-    setAuthBusy(true);
-    try {
-      const res = await fetch("/api/auth/verify", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: authEmail,
-          code: authCode,
-          challenge: authChallenge,
-          ...(pendingRefCode ? { referralCode: pendingRefCode } : {}),
-        }),
-      });
-      const data = (await res.json()) as { ok?: boolean; user?: AuthUser; error?: string };
-      if (!res.ok || !data.user) throw new Error(data.error || "Invalid code.");
-      setUser(data.user);
-      try {
-        window.localStorage.removeItem("talkcv-pending-ref");
-      } catch {
-        // ignore
-      }
-      setPendingRefCode("");
-      setAuthModalOpen(false);
-      setAuthStep("email");
-      setAuthCode("");
-      setAuthMsg(null);
-      if (pendingCheckout) {
-        setPendingCheckout(undefined);
-        window.history.replaceState(null, "", window.location.pathname);
-        await startPlanCheckout(pendingCheckout.tier, pendingCheckout.interval);
-      }
-    } catch (err) {
-      setAuthErr(err instanceof Error ? err.message : "Verification failed.");
-    } finally {
-      setAuthBusy(false);
-    }
-  };
+    if (pendingCheckout) {
+      setPendingCheckout(undefined);
+      window.history.replaceState(null, "", window.location.pathname);
+      void startPlanCheckout(pendingCheckout.tier, pendingCheckout.interval);
+    } else if (authIntent === "generate") void generateProfile(account, true);
+    else if (authIntent === "publish") void publishLiveSite(account);
+  }
 
   const closeAuth = () => {
     setAuthModalOpen(false);
+    setAuthIntent(null);
     if (pendingCheckout) {
       setPendingCheckout(undefined);
       window.history.replaceState(null, "", window.location.pathname);
@@ -853,12 +754,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     }
   };
 
-  const onGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (genMode === "hosted" && !user) {
-      setAuthModalOpen(true);
-      return;
-    }
+  const generateProfile = async (account: AuthUser, keepDraftSettings = false) => {
     setError(null);
     setLoading(true);
     try {
@@ -892,20 +788,21 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       setGenerated(data.profile);
       setHasGenerated(true);
       setPublishedUrl(null);
-      setBriefDraft(undefined);
-      setNoindex(undefined);
-      setProtectedSite(undefined);
-      setSavedPasscodeSlug("");
-      setPasscode("");
-      if (data.quota && user) {
-        setUser({ ...user, usedToday: data.quota.usedToday, dailyLimit: data.quota.dailyLimit });
+      if (!keepDraftSettings) {
+        setBriefDraft(undefined);
+        setNoindex(undefined);
+        setProtectedSite(undefined);
+        setSavedPasscodeSlug("");
+        setPasscode("");
       }
+      const quota = data.quota;
+      if (quota) setUser((current) => current?.email === account.email ? { ...current, ...quota } : current);
       const suggested = data.profile.basics.name.en
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "")
         .slice(0, 24);
-      if (suggested.length >= 3) setHandle(suggested);
+      if (suggested.length >= 3 && (!keepDraftSettings || handle === DEFAULT_HANDLE)) setHandle(suggested);
     } catch (err) {
       setError(localizeApiError(err instanceof Error ? err.message : "Failed to generate profile.", lang));
     } finally {
@@ -943,11 +840,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     window.open(`/preview?${query}`, "_blank", "noopener,noreferrer");
   };
 
-  const publishLiveSite = async () => {
-    if (!user) {
-      setAuthModalOpen(true);
-      return;
-    }
+  const publishLiveSite = async (account: AuthUser) => {
     setPublishError(null);
     if (protectedSite && (passcode || savedPasscodeSlug !== normalizeSlug(handle)) && !/^[A-Za-z0-9]{4,8}$/.test(passcode)) {
       setPublishError(lang === "zh" ? "请输入 4 到 8 位字母或数字作为口令。" : "Enter a passcode of 4 to 8 letters or digits.");
@@ -992,7 +885,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         throw new Error(data.error || "Publish failed.");
       }
       if (data.slug) setHandle(data.slug);
-      if (aiBrief && data.slug) setBriefDraft({ owner: user.email, slug: data.slug, values: aiBrief });
+      if (aiBrief && data.slug) setBriefDraft({ owner: account.email, slug: data.slug, values: aiBrief });
       setPublishedProfile(generated);
       setPublishedUrl(data.url);
       setNoindex(Boolean(data.privacy?.noindex));
@@ -1022,8 +915,10 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             if (me?.user) setUser(me.user);
           })
           .catch(() => {});
-      } else if (data.slug && !user.sites.includes(data.slug)) {
-        setUser({ ...user, sites: [...user.sites, data.slug] });
+      } else if (data.slug) {
+        const slug = data.slug;
+        setUser((current) => current?.email === account.email && !current.sites.includes(slug)
+          ? { ...current, sites: [...current.sites, slug] } : current);
       }
     } catch (err) {
       setPublishError(localizeApiError(err instanceof Error ? err.message : "Publish failed.", lang));
@@ -1031,6 +926,14 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       setPublishing(false);
     }
   };
+
+  function startDraftAction(action: "generate" | "publish") {
+    if (!user) {
+      setAuthIntent(action);
+      setAuthModalOpen(true);
+    } else if (action === "generate") void generateProfile(user);
+    else void publishLiveSite(user);
+  }
 
   const selectedSite = user?.sites.find((slug) => publishedUrl?.endsWith(`/u/${slug}`))
     ?? user?.sites.find((slug) => slug === normalizeSlug(handle)) ?? user?.sites[0];
@@ -1050,6 +953,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           <strong>TalkCV Studio</strong>
         </Link>
         <div className="af-header-controls">
+          <OnboardingTour key={user?.email ?? "guest"} email={user?.email} lang={lang}
+            blocked={authModalOpen || pricingOpen || redeemModalOpen || loading || publishing || Boolean(checkoutBusyTier)} />
           {user ? (
             <>
               <div className="af-user-pill">
@@ -1221,7 +1126,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         lang={lang} onUpgrade={() => setPricingOpen(true)} />}
 
       <div className="af-shell af-create-grid">
-        <form className="af-create-panel" onSubmit={onGenerate}>
+        <form className="af-create-panel" onSubmit={(e) => { e.preventDefault(); startDraftAction("generate"); }}>
           <div className="af-panel-top">
             <p className="af-eyebrow">STEP 1 · GENERATE</p>
             {hasGenerated && (
@@ -1232,57 +1137,59 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           </div>
           <h1>{lang === "zh" ? "把简历变成会说话的网站" : "Turn your resume into a site that talks back"}</h1>
 
-          <label className="af-field-label">
-            <span>{lang === "zh" ? "1. 简历内容" : "1. Resume content"}</span>
-            <label className="af-upload-btn">
-              <FileUp size={13} />
-              <span>
-                {uploadingFile
-                  ? lang === "zh"
-                    ? "解析文件中…"
-                    : "Parsing…"
-                  : lang === "zh"
-                    ? "上传 PDF / Word / MD"
-                    : "Upload PDF / DOCX / MD"}
-              </span>
-              <input
-                type="file"
-                accept=".pdf,.docx,.doc,.md,.txt,.json"
-                onChange={onFileUpload}
-                disabled={uploadingFile}
-                hidden
-              />
-            </label>
-          </label>
-          {uploadNote && (
-            <div className="af-quota-note" style={{ marginBottom: 6 }}>
-              ✓ {uploadNote}
+          <div className="af-tour-group" data-tour="upload">
+            <div className="af-field-label">
+              <label htmlFor="studio-resume-text">{lang === "zh" ? "1. 简历内容" : "1. Resume content"}</label>
+              <label className="af-upload-btn">
+                <FileUp size={13} />
+                <span>
+                  {uploadingFile
+                    ? lang === "zh"
+                      ? "解析文件中…"
+                      : "Parsing…"
+                    : lang === "zh"
+                      ? "上传 PDF / Word / MD"
+                      : "Upload PDF / DOCX / MD"}
+                </span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.doc,.md,.txt,.json"
+                  onChange={onFileUpload}
+                  disabled={uploadingFile}
+                  hidden
+                />
+              </label>
             </div>
-          )}
-          <textarea
-            className="af-textarea"
-            style={dragOver ? { borderColor: "var(--accent)", boxShadow: "0 0 0 2px var(--accent-soft)" } : undefined}
-            rows={6}
-            value={resumeText}
-            onChange={(e) => setResumeText(e.target.value)}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file) void processResumeFile(file);
-            }}
-            placeholder={
-              lang === "zh"
-                ? "可直接拖入 PDF / Word (.docx) / Markdown 简历文件，或把简历全文粘贴在这里…"
-                : "Drop a PDF / Word (.docx) / Markdown resume here, or paste your resume text…"
-            }
-            required
-          />
+            {uploadNote && (
+              <div className="af-quota-note" style={{ marginBottom: 6 }}>
+                ✓ {uploadNote}
+              </div>
+            )}
+            <textarea
+              id="studio-resume-text" className="af-textarea"
+              style={dragOver ? { borderColor: "var(--accent)", boxShadow: "0 0 0 2px var(--accent-soft)" } : undefined}
+              rows={6}
+              value={resumeText}
+              onChange={(e) => setResumeText(e.target.value)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) void processResumeFile(file);
+              }}
+              placeholder={
+                lang === "zh"
+                  ? "可直接拖入 PDF / Word (.docx) / Markdown 简历文件，或把简历全文粘贴在这里…"
+                  : "Drop a PDF / Word (.docx) / Markdown resume here, or paste your resume text…"
+              }
+              required
+            />
+          </div>
 
           <div className="af-field-label">
             <span>
@@ -1439,7 +1346,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
 
           {error && <div className="af-ai-error">{error}</div>}
 
-          <button type="submit" className="af-btn af-btn-primary af-create-submit" disabled={loading}>
+          <button type="submit" className="af-btn af-btn-primary af-create-submit" disabled={loading || uploadingFile}>
             <Sparkles size={16} />
             <span>
               {loading
@@ -1447,8 +1354,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   ? "正在解析简历并定制风格…"
                   : "Generating your TalkCV…"
                 : lang === "zh"
-                  ? "生成 TalkCV 配置与预览"
-                  : "Generate TalkCV Profile"}
+                  ? "开始生成简历网站"
+                  : "Generate résumé site"}
             </span>
           </button>
         </form>
@@ -1572,36 +1479,38 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               </div>
             )}
 
-            <fieldset className="af-privacy-fields">
-              <legend>{lang === "zh" ? "发布隐私" : "Publishing privacy"}</legend>
-              <label><input type="checkbox" checked={noindex === true} onChange={(e) => setNoindex(e.target.checked)} />
-                {lang === "zh" ? "禁止搜索引擎收录" : "Exclude from search engines"}</label>
-              <label><input type="checkbox" checked={protectedSite === true} onChange={(e) => { setProtectedSite(e.target.checked); setPasscode(""); }} />
-                {lang === "zh" ? "访问口令保护" : "Require a passcode"}</label>
-              {protectedSite && <label className="af-field-label">
-                {savedPasscodeSlug === normalizeSlug(handle) ? (lang === "zh" ? "更换口令（留空保留现有口令）" : "New passcode (leave blank to keep current)") :
-                  (lang === "zh" ? "设置口令（4 到 8 位字母或数字）" : "Set a passcode (4–8 letters or digits)")}
-                <input type="password" autoComplete="new-password" maxLength={8} value={passcode} onChange={(e) => setPasscode(e.target.value)} />
-              </label>}
-            </fieldset>
-            <details className="af-brief" onToggle={(event) => { setBriefOpen(event.currentTarget.open); setBriefReadError(false); }}>
-              <summary>{lang === "zh" ? "AI 回答边界与求职备忘" : "Private AI brief & answer boundaries"}</summary>
-              <p>{lang === "zh" ? "备忘不展示在个人站。AI 可在访客提问时使用你授权的答案，遇到红线会请对方直接联系你。" :
-                "The brief stays off your public page. AI may share these answers with visitors and refers restricted topics to you."}</p>
-              {!user ? <button type="button" className="af-icon-pill" onClick={() => setAuthModalOpen(true)}>{lang === "zh" ? "登录后设置" : "Sign in to edit"}</button> :
-                needsBrief ? <p role="status">{briefReadError ? (lang === "zh" ? "读取失败，请重新打开此面板。" : "Reopen this panel to retry.") :
-                  (lang === "zh" ? "正在读取站点备忘…" : "Loading the site brief…")}</p> :
-                (Object.keys(BRIEF_LABELS) as (keyof AiBrief)[]).map((field) => {
-                  const props = { maxLength: AI_BRIEF_LIMITS[field], value: aiBrief?.[field] ?? "",
-                    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-                      setBriefDraft({ owner: user.email, slug: existingBrief ? briefSlug : undefined,
-                        values: { ...aiBrief, [field]: e.target.value } }) };
-                  return <label key={field}>{BRIEF_LABELS[field][lang === "zh" ? 0 : 1]}
-                    {field === "notes" || field === "redLines" ? <textarea rows={2} {...props} /> : <input {...props} />}
-                  </label>;
-                })}
-            </details>
-            <div className="af-publish-row">
+            <div className="af-tour-group" data-tour="privacy">
+              <fieldset className="af-privacy-fields">
+                <legend>{lang === "zh" ? "发布隐私" : "Publishing privacy"}</legend>
+                <label><input type="checkbox" checked={noindex === true} onChange={(e) => setNoindex(e.target.checked)} />
+                  {lang === "zh" ? "禁止搜索引擎收录" : "Exclude from search engines"}</label>
+                <label><input type="checkbox" checked={protectedSite === true} onChange={(e) => { setProtectedSite(e.target.checked); setPasscode(""); }} />
+                  {lang === "zh" ? "访问口令保护" : "Require a passcode"}</label>
+                {protectedSite && <label className="af-field-label">
+                  {savedPasscodeSlug === normalizeSlug(handle) ? (lang === "zh" ? "更换口令（留空保留现有口令）" : "New passcode (leave blank to keep current)") :
+                    (lang === "zh" ? "设置口令（4 到 8 位字母或数字）" : "Set a passcode (4–8 letters or digits)")}
+                  <input type="password" autoComplete="new-password" maxLength={8} value={passcode} onChange={(e) => setPasscode(e.target.value)} />
+                </label>}
+              </fieldset>
+              <details className="af-brief" onToggle={(event) => { setBriefOpen(event.currentTarget.open); setBriefReadError(false); }}>
+                <summary>{lang === "zh" ? "AI 回答边界与求职备忘" : "Private AI brief & answer boundaries"}</summary>
+                <p>{lang === "zh" ? "备忘不展示在个人站。AI 可在访客提问时使用你授权的答案，遇到红线会请对方直接联系你。" :
+                  "The brief stays off your public page. AI may share these answers with visitors and refers restricted topics to you."}</p>
+                {!user ? <button type="button" className="af-icon-pill" onClick={() => setAuthModalOpen(true)}>{lang === "zh" ? "登录后设置" : "Sign in to edit"}</button> :
+                  needsBrief ? <p role="status">{briefReadError ? (lang === "zh" ? "读取失败，请重新打开此面板。" : "Reopen this panel to retry.") :
+                    (lang === "zh" ? "正在读取站点备忘…" : "Loading the site brief…")}</p> :
+                  (Object.keys(BRIEF_LABELS) as (keyof AiBrief)[]).map((field) => {
+                    const props = { maxLength: AI_BRIEF_LIMITS[field], value: aiBrief?.[field] ?? "",
+                      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        setBriefDraft({ owner: user.email, slug: existingBrief ? briefSlug : undefined,
+                          values: { ...aiBrief, [field]: e.target.value } }) };
+                    return <label key={field}>{BRIEF_LABELS[field][lang === "zh" ? 0 : 1]}
+                      {field === "notes" || field === "redLines" ? <textarea rows={2} {...props} /> : <input {...props} />}
+                    </label>;
+                  })}
+              </details>
+            </div>
+            <div className="af-publish-row" data-tour="publish">
               <div className="af-handle-input">
                 <span>/u/</span>
                 <input
@@ -1623,7 +1532,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                 type="button"
                 className="af-btn af-btn-primary af-publish-btn"
                 disabled={publishing}
-                onClick={publishLiveSite}
+                onClick={() => startDraftAction("publish")}
               >
                 <Globe size={15} />
                 <span>
@@ -1688,7 +1597,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             )}
           </div>
 
-          <div className="af-edit-toolbar">
+          <div className="af-edit-toolbar" data-tour="preview">
             <span className="af-inline-edit-hint">
               ✏️ {lang === "zh" ? "所见即所得：点击下方任意文字或指标即可直接编辑" : "WYSIWYG: Click any text or metric below to edit inline"}
             </span>
@@ -2210,58 +2119,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         </div>
       )}
 
-      {authModalOpen && (
-        <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={closeAuth}>
-          <div className="af-auth-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="af-auth-head">
-              <strong>
-                <Mail size={15} /> {lang === "zh" ? "邮箱验证码登录" : "Sign in with Email"}
-              </strong>
-              <button type="button" onClick={closeAuth} aria-label="Close">
-                <X size={15} />
-              </button>
-            </div>
-            {authStep === "email" ? (
-              <form className="af-auth-form" onSubmit={sendOtp}>
-                <p>
-                  {lang === "zh"
-                    ? "登录后即可免费使用 TalkCV 内置 DeepSeek / OpenAI 额度（每账号共 3 次）并免费托管你的专属简历链接。"
-                    : "Sign in to unlock 3 free AI generations per account and 30-day hosting for your TalkCV link."}
-                </p>
-                <input
-                  type="email"
-                  required
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="you@example.com"
-                />
-                {authErr && <div className="af-ai-error">{authErr}</div>}
-                <button type="submit" className="af-btn af-btn-primary" disabled={authBusy}>
-                  {authBusy ? (lang === "zh" ? "发送中…" : "Sending…") : lang === "zh" ? "获取 6 位验证码" : "Send 6-digit code"}
-                </button>
-              </form>
-            ) : (
-              <form className="af-auth-form" onSubmit={verifyOtp}>
-                {authMsg && <div className="af-quota-note">{authMsg}</div>}
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="\d{6}"
-                  maxLength={6}
-                  required
-                  value={authCode}
-                  onChange={(e) => setAuthCode(e.target.value)}
-                  placeholder={lang === "zh" ? "输入 6 位验证码" : "6-digit code"}
-                />
-                {authErr && <div className="af-ai-error">{authErr}</div>}
-                <button type="submit" className="af-btn af-btn-primary" disabled={authBusy}>
-                  {authBusy ? (lang === "zh" ? "验证中…" : "Verifying…") : lang === "zh" ? "确认登录" : "Verify & Sign in"}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      {authModalOpen && <StudioLoginDialog lang={lang} referralCode={pendingRefCode} intent={authIntent}
+        onClose={closeAuth} onVerified={authenticated} />}
     </main>
   );
 }

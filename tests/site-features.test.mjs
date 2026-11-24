@@ -67,6 +67,48 @@ test("pricing, refunds and privacy are public in both languages and linked from 
 const { default: profile } = await import("../data/profile.json", { with: { type: "json" } });
 const publish = (slug, cookie, extra = {}, env) => call("/api/publish", { method: "POST", cookie, body: { slug, profile, ...extra }, env });
 
+test("the bilingual login page renders an email form and opts out of indexing", async () => {
+  for (const [query, title] of [["", "登录 TalkCV"], ["?lang=en&next=/admin", "Sign in to TalkCV"]]) {
+    const res = await call("/login" + query);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.ok(html.includes(title));
+    assert.match(html, /<meta name="robots" content="noindex, nofollow"/);
+    assert.match(html, /<input[^>]*type="email"/);
+  }
+});
+
+test("login redirects accept only local paths and preserve their queries and fragments", async () => {
+  const { safeLoginNext } = await import("../lib/login.ts");
+  for (const path of ["/create", "/admin", "/pricing?lang=en#plans", "/u/my-site"]) assert.equal(safeLoginNext(path), path);
+  for (const value of [undefined, "", ["//evil.test"], "https://evil.test", "//evil.test", "/\\evil.test", "/.//evil.test",
+    "/\t/evil.test", "/\t/["]) assert.equal(safeLoginNext(value), "/create");
+});
+
+test("anonymous visitors can open Studio and demo chat from home; only product headers offer account sign-in", async () => {
+  const home = await call("/");
+  assert.equal(home.status, 200);
+  const html = await home.text();
+  assert.match(html, /href="\/create\?lang=en"/);
+  assert.match(html, /class="af-ai-fab"/);
+  assert.match(html, /href="\/login\?next=\/create&amp;lang=en"/);
+  for (const path of ["/pricing", "/terms", "/privacy"]) {
+    const product = await (await call(path)).text();
+    assert.match(product, /href="\/login\?next=\/create"/);
+  }
+  assert.equal((await publish("menu-personal", undefined)).status, 200);
+  const personal = await call("/u/menu-personal");
+  assert.equal(personal.status, 200);
+  assert.doesNotMatch(await personal.text(), /href="\/login\?next=|af-account-trigger/);
+});
+
+test("the Studio tour has a manual entry and four distinct targets before a résumé is generated", async () => {
+  const studio = await (await call("/create")).text();
+  assert.match(studio, /aria-label="新手引导 \/ Quick guide"/);
+  for (const id of ["upload", "preview", "privacy", "publish"]) assert.equal(studio.split(`data-tour="${id}"`).length - 1, 1);
+  assert.doesNotMatch(studio, /<dialog[^>]*class="af-tour"/);
+});
+
 test("only the owning account can remove a site and immediately reuse the slot", async () => {
   const owner = await login("owner@example.org");
   const other = await login("other@example.org");

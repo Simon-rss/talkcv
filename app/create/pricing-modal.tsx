@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, KeyRound, Sparkles, X } from "lucide-react";
+import { Check, KeyRound, Sparkles, Tag, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PLAN_CREDITS, creationPricing } from "../../lib/credits";
 import type { PlanTier } from "../../lib/models";
@@ -161,26 +161,82 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
         {creationPricing(lang)}
         {isZh ? " 中文页支持支付宝单次购买（账单地区选 China），不自动续费。" : ""}
       </p>
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, margin: "8px 0 14px", flexWrap: "wrap" }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
-          <span>{isZh ? "打折券码（可选）" : "Discount code (optional)"}</span>
+      <div style={{ display: "flex", justifyContent: "center", margin: "10px 0 18px" }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            padding: "8px 14px",
+            borderRadius: 12,
+            background: "rgba(15, 118, 110, 0.06)",
+            border: "1.5px solid rgba(15, 118, 110, 0.25)",
+          }}
+        >
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#0f766e",
+            }}
+          >
+            <Tag size={14} />
+            {isZh ? "有打折券？" : "Have a discount code?"}
+          </span>
           <input
             type="text"
             value={discountCode}
             onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
             placeholder={isZh ? "输入券码，如 OFF20-XXXX" : "e.g. OFF20-XXXX"}
             style={{
-              width: 190,
-              padding: "6px 10px",
+              width: 210,
+              padding: "7px 12px",
               borderRadius: 8,
-              border: "1px solid var(--border)",
-              background: "var(--surface)",
-              color: "var(--ink)",
+              border: "1.5px solid rgba(15, 23, 42, 0.18)",
+              background: "#ffffff",
+              color: "#0f172a",
               fontSize: 13,
-              fontFamily: "var(--font-mono, monospace)",
+              fontWeight: 600,
+              letterSpacing: "0.02em",
+              fontFamily: "var(--font-mono, ui-monospace, monospace)",
+              outline: "none",
             }}
           />
-        </label>
+          {discountCode.trim() && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#0f766e",
+              }}
+            >
+              <Check size={13} />
+              {isZh ? "结账时自动减免" : "Applied at checkout"}
+              <button
+                type="button"
+                aria-label={isZh ? "清除券码" : "Clear code"}
+                onClick={() => setDiscountCode("")}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#64748b",
+                  cursor: "pointer",
+                  padding: 2,
+                  display: "inline-flex",
+                }}
+              >
+                <X size={13} />
+              </button>
+            </span>
+          )}
+        </div>
       </div>
       <div className="af-pricing-grid">
         {tiers.map((t) => {

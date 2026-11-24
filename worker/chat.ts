@@ -4,7 +4,10 @@ import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
 import { getUserPlan, PLAN_LIMITS, type BillingEnv } from "./billing";
 import { decryptSecret } from "./crypto";
+import { normalizeSlug } from "../lib/schema";
 import { getEncryptionMasterKey, loadStoredRecord } from "./publish";
+import { consumeSiteDailyChatQuota, recordVisit } from "./insights";
+import { siteUnlocked } from "./site-access";
 
 export interface ChatEnv extends AuthEnv {
   OPENAI_API_KEY?: string;
@@ -25,38 +28,7 @@ export interface ClientToolCall {
 
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 15;
-const DAILY_CHAT_LIMIT_PER_SITE = 30;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
-const memSiteChatUsage = new Map<string, number>();
-
-function todayDateKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-async function consumeSiteDailyChatQuota(
-  slug: string,
-  env: ChatEnv,
-  dailyLimit = DAILY_CHAT_LIMIT_PER_SITE,
-): Promise<boolean> {
-  const key = `chat_usage:${slug}:${todayDateKey()}`;
-  let current = 0;
-  if (env.PROFILES_KV) {
-    const raw = await env.PROFILES_KV.get(key);
-    const parsed = Number(raw ?? "0");
-    current = Number.isFinite(parsed) ? parsed : 0;
-  } else {
-    current = memSiteChatUsage.get(key) ?? 0;
-  }
-  if (current >= dailyLimit) return false;
-  const next = current + 1;
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(key, String(next));
-  } else {
-    memSiteChatUsage.set(key, next);
-  }
-  return true;
-}
-
 const VALID_SECTIONS = new Set(["work", "capabilities", "experience", "contact"]);
 const VALID_THEMES = new Set(["editorial", "terminal", "bento"]);
 
@@ -127,13 +99,6 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
 
   const openaiKey = env.OPENAI_API_KEY?.trim() || "";
   const deepseekKey = env.DEEPSEEK_API_KEY?.trim() || "";
-  if (!openaiKey && !deepseekKey) {
-    return jsonError(
-      503,
-      "AI chat is not configured yet. Add OPENAI_API_KEY or DEEPSEEK_API_KEY to enable it.",
-    );
-  }
-
   const ip =
     request.headers.get("cf-connecting-ip") ??
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -177,6 +142,10 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
   const allowThemeSwitch = !isPersonalHosted;
 
   const storedRecord = isPersonalHosted ? await loadStoredRecord(siteKey, env) : null;
+  if (isPersonalHosted && siteKey !== "__draft__" && !storedRecord) return jsonError(404, "Site not found.");
+  if (storedRecord && !await siteUnlocked(request, normalizeSlug(siteKey), storedRecord.passcode)) {
+    return jsonError(401, "Unlock this site before asking a question.");
+  }
   const activeProfile = storedRecord?.profile ?? defaultProfile;
   const validSlugs = new Set(activeProfile.projects.map((p) => p.slug));
 
@@ -197,6 +166,14 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
   const ownerPlan = storedRecord?.ownerEmail
     ? await getUserPlan(storedRecord.ownerEmail, env as BillingEnv)
     : { plan: "free" as const, isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
+  if (storedRecord && !ownerPlan.isPro && Date.now() > Date.parse(storedRecord.expiresAt)) return jsonError(410, "Hosting period expired.");
+  if (!byokCreds && !openaiKey && !deepseekKey) {
+    return jsonError(
+      503,
+      "AI chat is not configured yet. Add OPENAI_API_KEY or DEEPSEEK_API_KEY to enable it.",
+    );
+  }
+
   const activeDailyChatLimit = ownerPlan.limits.dailyChatLimitPerSite;
 
   if (!byokCreds) {
@@ -315,6 +292,8 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
         : "AI provider returned an error. Check OPENAI_BASE_URL / OPENAI_MODEL or regional availability.",
     );
   }
+
+  if (storedRecord) await recordVisit(normalizeSlug(siteKey), storedRecord, env, sanitized[sanitized.length - 1].content);
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();

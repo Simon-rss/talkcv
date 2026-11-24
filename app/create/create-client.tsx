@@ -25,9 +25,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
 import { profile as defaultProfile } from "../../lib/profile";
-import { localize, THEMES, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
+import { localize, normalizeSlug, THEMES, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
+import { SiteInsights } from "./site-insights";
 import { AiRefinePanel } from "./ai-refine-panel";
-import { PricingModal } from "./pricing-modal";
+import { SharePoster } from "../share-poster";
+import { ContactLinks } from "../contact-links";
+import { SiteLinks } from "../public-navigation";
+import { PricingModal, requestCheckout } from "./pricing-modal";
 
 interface AuthUser {
   email: string;
@@ -40,6 +44,7 @@ interface AuthUser {
   quotaPeriod?: "lifetime" | "month";
   editUsedToday?: number;
   editDailyLimit?: number;
+  maxSites: number;
   sites: string[];
 }
 
@@ -116,13 +121,13 @@ function localizeApiError(raw: string, lang: Lang): string {
   if (lang !== "zh") return raw;
   const s = raw.trim();
   if (/An OpenAI-compatible API key is required/i.test(s)) {
-    return "自有 Key 模式需要填入 OpenAI 兼容 API Key（或登录账号使用每日免费托管额度）。";
+    return "自有 Key 模式需要填入 OpenAI 兼容 API Key（或登录账号使用账号托管额度）。";
   }
   if (/Please sign in with your email/i.test(s)) {
     return "请先使用邮箱登录以使用 TalkCV 免费托管额度（或切换为自有 API Key）。";
   }
   if (/Daily free generation limit reached/i.test(s)) {
-    return "今日免费生成额度（3 次/天）已用完，请明日再试或切换自有 API Key。";
+    return "账号的免费生成额度已用完，可升级套餐或使用自有 API Key。";
   }
   if (/Please enter your visitor chat API key/i.test(s)) {
     return "请先填写访客对话的自有 API Key（或切换回免费托管模型）。";
@@ -139,6 +144,7 @@ function localizeApiError(raw: string, lang: Lang): string {
   if (/Invalid API key/i.test(s)) {
     return "API Key 无效，请检查后重试。";
   }
+  if (/Check the email address and contact links/i.test(s)) return "请检查邮箱、GitHub、LinkedIn 及博客网址后再发布。";
   if (/Handle must be/i.test(s)) {
     return "自定义网址仅支持 3–32 位小写字母、数字和连字符。";
   }
@@ -157,10 +163,13 @@ function localizeApiError(raw: string, lang: Lang): string {
   return s;
 }
 
-export function CreateStudioClient() {
-  const [lang, setLang] = useState<Lang>("zh");
+type CheckoutChoice = { tier: "pro" | "max"; interval: "month" | "year" };
+
+export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLang?: Lang; checkout?: CheckoutChoice }) {
+  const [lang, setLang] = useState<Lang>(initialLang);
+  const [pendingCheckout, setPendingCheckout] = useState(checkout);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(Boolean(checkout));
   const [authEmail, setAuthEmail] = useState("");
   const [authCode, setAuthCode] = useState("");
   const [authChallenge, setAuthChallenge] = useState("");
@@ -200,12 +209,18 @@ export function CreateStudioClient() {
 
   // Publishing state
   const [handle, setHandle] = useState("alex-chen");
+  const [noindex, setNoindex] = useState<boolean>();
+  const [protectedSite, setProtectedSite] = useState<boolean>();
+  const [passcode, setPasscode] = useState("");
+  const [savedPasscodeSlug, setSavedPasscodeSlug] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [publishedProfile, setPublishedProfile] = useState<PortfolioProfile | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishedExpires, setPublishedExpires] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [loadingSiteSlug, setLoadingSiteSlug] = useState<string | null>(null);
+  const [siteActionError, setSiteActionError] = useState("");
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingBanner, setBillingBanner] = useState<string | null>(null);
   const [redeemModalOpen, setRedeemModalOpen] = useState(false);
@@ -264,37 +279,21 @@ export function CreateStudioClient() {
   }, [lang]);
 
   const startPlanCheckout = async (tier: "pro" | "max", interval: "month" | "year") => {
-    if (!user) {
-      setPricingOpen(false);
-      setAuthModalOpen(true);
-      return;
-    }
     setCheckoutBusyTier(tier);
     setPricingError(null);
     try {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 12000);
-      const res = await fetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tier, interval }),
-        signal: controller.signal,
-      });
-      window.clearTimeout(timeout);
-      const data = (await res.json().catch(() => ({}))) as { checkoutUrl?: string; error?: string };
-      if (!res.ok || !data.checkoutUrl) {
-        throw new Error(data.error || "Could not start checkout.");
+      const url = await requestCheckout(tier, interval);
+      if (url) {
+        window.location.assign(url);
+      } else {
+        setPendingCheckout({ tier, interval });
+        setPricingOpen(false);
+        setAuthModalOpen(true);
       }
-      window.location.href = data.checkoutUrl;
-      // Reset busy state in case user cancels navigation or navigates back from bfcache
-      window.setTimeout(() => setCheckoutBusyTier(null), 4000);
-    } catch (err) {
-      const rawMsg = err instanceof Error ? err.message : "Could not start checkout.";
-      const friendly =
-        lang === "zh"
-          ? `收银台暂不可用（${rawMsg}）。若支付通道仍在审核中，可先点右下角「兑换码」直接开通体验。`
-          : `Checkout unavailable (${rawMsg}). You can also redeem an invite code below.`;
-      setPricingError(friendly);
+    } catch {
+      setPricingError(lang === "zh" ? "暂时无法打开收银台，请稍后重试。" : "Checkout is unavailable. Please try again later.");
+      setPricingOpen(true);
+    } finally {
       setCheckoutBusyTier(null);
     }
   };
@@ -333,7 +332,9 @@ export function CreateStudioClient() {
         plan?: PlanTier;
         isPro?: boolean;
         isMax?: boolean;
-        dailyLimit?: number;
+        dailyLimit: number;
+        editDailyLimit: number;
+        maxSites: number;
         days?: number;
         expiresAt?: string;
         error?: string;
@@ -342,11 +343,13 @@ export function CreateStudioClient() {
         throw new Error(data.error || "Invalid redemption code.");
       }
       const nextPlan: PlanTier = data.plan === "max" ? "max" : "pro";
-      const nextDailyLimit = data.dailyLimit ?? (nextPlan === "max" ? 50 : 15);
-      const nextEditLimit = nextPlan === "max" ? 100 : 30;
+      const nextDailyLimit = data.dailyLimit;
+      const nextEditLimit = data.editDailyLimit;
       setUser({
         ...user,
         plan: nextPlan,
+        quotaPeriod: "month",
+        maxSites: data.maxSites,
         isPro: true,
         isMax: nextPlan === "max",
         dailyLimit: nextDailyLimit,
@@ -385,6 +388,9 @@ export function CreateStudioClient() {
             theme?: ThemeId;
             handle?: string;
             generated?: PortfolioProfile;
+            noindex?: boolean;
+            protectedSite?: boolean;
+            savedPasscodeSlug?: string;
             hasGenerated?: boolean;
             genMode?: "hosted" | "byok";
             genModelId?: string;
@@ -401,6 +407,9 @@ export function CreateStudioClient() {
           if (typeof d.chatHostedModelId === "string" && d.chatHostedModelId) {
             setChatHostedModelId(d.chatHostedModelId);
           }
+          setNoindex(d.noindex);
+          setProtectedSite(d.protectedSite);
+          setSavedPasscodeSlug(d.savedPasscodeSlug ?? "");
           if (d.generated && d.hasGenerated) {
             setGenerated(d.generated);
             setHasGenerated(true);
@@ -410,6 +419,9 @@ export function CreateStudioClient() {
         const queryHandle = new URLSearchParams(window.location.search).get("handle")?.trim().toLowerCase();
         if (queryHandle && /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(queryHandle)) {
           setHandle(queryHandle);
+          setNoindex(undefined);
+          setProtectedSite(undefined);
+          setSavedPasscodeSlug("");
         }
       } catch {
         // ignore corrupted draft
@@ -433,6 +445,7 @@ export function CreateStudioClient() {
           handle,
           generated,
           hasGenerated,
+          noindex, protectedSite, savedPasscodeSlug,
           genMode,
           genModelId,
           chatMode,
@@ -447,6 +460,7 @@ export function CreateStudioClient() {
     }
   }, [
     draftHydrated,
+    noindex, protectedSite, savedPasscodeSlug,
     resumeText,
     stylePrompt,
     theme,
@@ -465,6 +479,10 @@ export function CreateStudioClient() {
     setGenerated(defaultProfile);
     setHasGenerated(false);
     setHandle("alex-chen");
+    setNoindex(undefined);
+    setProtectedSite(undefined);
+    setPasscode("");
+    setSavedPasscodeSlug("");
     setPublishedUrl(null);
     setSavedByokMask("");
     setChatByokApiKey("");
@@ -481,10 +499,11 @@ export function CreateStudioClient() {
     setLoadingSiteSlug(slug);
     setPublishError(null);
     try {
-      const res = await fetch(`/api/profiles/${encodeURIComponent(slug)}`);
+      const res = await fetch(`/api/profiles/${encodeURIComponent(slug)}?edit=1`);
       const data = (await res.json()) as {
         profile?: PortfolioProfile;
         expiresAt?: string;
+        privacy?: { noindex: boolean; protected: boolean };
         chatMeta?: ChatMeta;
         error?: string;
       };
@@ -494,8 +513,13 @@ export function CreateStudioClient() {
       setTheme(data.profile.theme || "editorial");
       setStylePrompt(data.profile.stylePrompt || data.profile.ai?.stylePrompt || "");
       setHandle(slug);
+      setPublishedProfile(data.profile);
       setPublishedUrl(`${window.location.origin}/u/${slug}`);
       setPublishedExpires(data.expiresAt ? data.expiresAt.slice(0, 10) : null);
+      setNoindex(Boolean(data.privacy?.noindex));
+      setProtectedSite(Boolean(data.privacy?.protected));
+      setSavedPasscodeSlug(data.privacy?.protected ? slug : "");
+      setPasscode("");
       if (data.chatMeta) {
         setChatMode(data.chatMeta.mode);
         setChatHostedModelId(data.chatMeta.hostedModelId || "auto");
@@ -507,6 +531,27 @@ export function CreateStudioClient() {
       }
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : "Failed to load site.");
+    } finally {
+      setLoadingSiteSlug(null);
+    }
+  };
+
+  const deleteSite = async (slug: string) => {
+    const message = lang === "zh" ? `确认下线 /u/${slug}？该链接将失效，并释放一个站点名额。` : `Take /u/${slug} offline? Its link will stop working and a site slot will be freed.`;
+    if (!window.confirm(message)) return;
+    setLoadingSiteSlug(slug);
+    setSiteActionError("");
+    try {
+      const res = await fetch(`/api/profiles/${encodeURIComponent(slug)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      const { sites } = await res.json();
+      setUser((previous) => previous && { ...previous, sites });
+      if (publishedUrl?.endsWith(`/u/${slug}`)) {
+        setPublishedUrl(null);
+        setPublishedExpires(null);
+      }
+    } catch {
+      setSiteActionError(lang === "zh" ? "未能下线站点，请刷新后重试。" : "Could not remove the site. Refresh and try again.");
     } finally {
       setLoadingSiteSlug(null);
     }
@@ -570,10 +615,23 @@ export function CreateStudioClient() {
       setAuthStep("email");
       setAuthCode("");
       setAuthMsg(null);
+      if (pendingCheckout) {
+        setPendingCheckout(undefined);
+        window.history.replaceState(null, "", window.location.pathname);
+        await startPlanCheckout(pendingCheckout.tier, pendingCheckout.interval);
+      }
     } catch (err) {
       setAuthErr(err instanceof Error ? err.message : "Verification failed.");
     } finally {
       setAuthBusy(false);
+    }
+  };
+
+  const closeAuth = () => {
+    setAuthModalOpen(false);
+    if (pendingCheckout) {
+      setPendingCheckout(undefined);
+      window.history.replaceState(null, "", window.location.pathname);
     }
   };
 
@@ -755,6 +813,10 @@ export function CreateStudioClient() {
       setGenerated(data.profile);
       setHasGenerated(true);
       setPublishedUrl(null);
+      setNoindex(undefined);
+      setProtectedSite(undefined);
+      setSavedPasscodeSlug("");
+      setPasscode("");
       if (data.quota && user) {
         setUser({ ...user, usedToday: data.quota.usedToday, dailyLimit: data.quota.dailyLimit });
       }
@@ -794,7 +856,7 @@ export function CreateStudioClient() {
       "talkcv-draft-profile",
       JSON.stringify({ ...generated, theme }),
     );
-    window.open("/preview", "_blank", "noopener,noreferrer");
+    window.open(`/preview?handle=${encodeURIComponent(handle)}&lang=${lang}`, "_blank", "noopener,noreferrer");
   };
 
   const publishLiveSite = async () => {
@@ -803,6 +865,10 @@ export function CreateStudioClient() {
       return;
     }
     setPublishError(null);
+    if (protectedSite && (passcode || savedPasscodeSlug !== normalizeSlug(handle)) && !/^[A-Za-z0-9]{4,8}$/.test(passcode)) {
+      setPublishError(lang === "zh" ? "请输入 4 到 8 位字母或数字作为口令。" : "Enter a passcode of 4 to 8 letters or digits.");
+      return;
+    }
     setPublishing(true);
     try {
       const res = await fetch("/api/publish", {
@@ -810,6 +876,7 @@ export function CreateStudioClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           slug: handle,
+          privacy: { noindex, protected: protectedSite, passcode: protectedSite && passcode ? passcode : undefined },
           profile: { ...generated, theme, ...(stylePrompt.trim() ? { stylePrompt: stylePrompt.trim() } : {}) },
           chatConfig:
             chatMode === "byok"
@@ -831,13 +898,20 @@ export function CreateStudioClient() {
         url?: string;
         slug?: string;
         expiresAt?: string;
+        privacy?: { noindex: boolean; protected: boolean };
         chatMeta?: ChatMeta;
         error?: string;
       };
       if (!res.ok || !data.url) {
         throw new Error(data.error || "Publish failed.");
       }
+      if (data.slug) setHandle(data.slug);
+      setPublishedProfile(generated);
       setPublishedUrl(data.url);
+      setNoindex(Boolean(data.privacy?.noindex));
+      setProtectedSite(Boolean(data.privacy?.protected));
+      setSavedPasscodeSlug(data.privacy?.protected ? data.slug ?? handle : "");
+      setPasscode("");
       setPublishedExpires(data.expiresAt ? data.expiresAt.slice(0, 10) : null);
       if (data.chatMeta) {
         setSavedByokMask(data.chatMeta.hasByokKey ? data.chatMeta.byokKeyMask : "");
@@ -854,6 +928,7 @@ export function CreateStudioClient() {
     }
   };
 
+  const selectedSite = user?.sites.find((slug) => publishedUrl?.endsWith(`/u/${slug}`)) ?? user?.sites[0];
   const remaining = user ? Math.max(0, user.dailyLimit - user.usedToday) : 3;
   const previewStyleVars: React.CSSProperties = {
     ...(generated.designTokens?.accent ? ({ "--accent": generated.designTokens.accent } as React.CSSProperties) : {}),
@@ -924,7 +999,7 @@ export function CreateStudioClient() {
           ) : (
             <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
               <LogIn size={13} />
-              <span>{lang === "zh" ? "邮箱登录（领每日免费额度）" : "Sign in with Email"}</span>
+              <span>{lang === "zh" ? "邮箱登录（免费生成 3 次）" : "Sign in with Email"}</span>
             </button>
           )}
           <Link className="af-icon-pill" href="/">
@@ -951,26 +1026,30 @@ export function CreateStudioClient() {
         </div>
       )}
 
-      {user && user.sites.length > 0 && (
-        <div className="af-shell af-mysites-bar">
+      {user && (
+        <section className="af-shell af-mysites-bar">
           <span className="af-mysites-label">
-            <Globe size={13} /> {lang === "zh" ? "我的已发布站点（点击加载回编辑器）：" : "My published sites:"}
+            <Globe size={13} /> {lang === "zh" ? "我的已发布站点" : "My published sites"}
+            <span>{lang === "zh" ? `剩余 ${Math.max(0, user.maxSites - user.sites.length)}/${user.maxSites} 个名额` : `${Math.max(0, user.maxSites - user.sites.length)}/${user.maxSites} slots available`}</span>
           </span>
           <div className="af-mysites-list">
             {user.sites.map((slug) => (
-              <button
-                key={slug}
-                type="button"
-                className={`af-icon-pill ${handle === slug && publishedUrl ? "af-site-active" : ""}`}
-                disabled={loadingSiteSlug === slug}
-                onClick={() => void loadExistingSite(slug)}
-              >
-                <span>/u/{slug}</span>
-              </button>
+              <div className="af-site-entry" key={slug}>
+                <button type="button" className={`af-icon-pill ${publishedUrl?.endsWith(`/u/${slug}`) ? "af-site-active" : ""}`}
+                  disabled={loadingSiteSlug !== null} onClick={() => void loadExistingSite(slug)}>/u/{slug}</button>
+                <button type="button" className="af-icon-pill" disabled={loadingSiteSlug !== null}
+                  aria-label={`${lang === "zh" ? "下线" : "Delete"} /u/${slug}`} onClick={() => void deleteSite(slug)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))}
           </div>
-        </div>
+          {siteActionError && <p role="alert">{siteActionError}</p>}
+        </section>
       )}
+
+      {user && selectedSite && <SiteInsights key={`${user.email}:${selectedSite}:${currentPlan}`} slug={selectedSite}
+        lang={lang} onUpgrade={() => setPricingOpen(true)} />}
 
       <div className="af-shell af-create-grid">
         <form className="af-create-panel" onSubmit={onGenerate}>
@@ -1129,14 +1208,14 @@ export function CreateStudioClient() {
                 {user ? (
                   <span>
                     {lang === "zh"
-                      ? `已登录 ${user.email} · 今日剩余免费生成 ${remaining}/${user.dailyLimit} 次`
-                      : `Signed in as ${user.email} · ${remaining}/${user.dailyLimit} free generations left today`}
+                      ? `已登录 ${user.email} · ${user.quotaPeriod === "month" ? "本月" : "账号"}剩余生成 ${remaining}/${user.dailyLimit} 次`
+                      : `Signed in as ${user.email} · ${remaining}/${user.dailyLimit} generations left ${user.quotaPeriod === "month" ? "this month" : "on this account"}`}
                   </span>
                 ) : (
                   <button type="button" className="af-inline-link" onClick={() => setAuthModalOpen(true)}>
                     {lang === "zh"
-                      ? "👉 点击先用邮箱登录，领取每日 3 次免费生成额度"
-                      : "👉 Sign in with email for 3 free daily generations"}
+                      ? "👉 点击先用邮箱登录，领取每账号 3 次免费生成额度"
+                      : "👉 Sign in for 3 free generations per account"}
                   </button>
                 )}
               </div>
@@ -1324,13 +1403,32 @@ export function CreateStudioClient() {
               </div>
             )}
 
+            <fieldset className="af-privacy-fields">
+              <legend>{lang === "zh" ? "发布隐私" : "Publishing privacy"}</legend>
+              <label><input type="checkbox" checked={noindex === true} onChange={(e) => setNoindex(e.target.checked)} />
+                {lang === "zh" ? "禁止搜索引擎收录" : "Exclude from search engines"}</label>
+              <label><input type="checkbox" checked={protectedSite === true} onChange={(e) => { setProtectedSite(e.target.checked); setPasscode(""); }} />
+                {lang === "zh" ? "访问口令保护" : "Require a passcode"}</label>
+              {protectedSite && <label className="af-field-label">
+                {savedPasscodeSlug === normalizeSlug(handle) ? (lang === "zh" ? "更换口令（留空保留现有口令）" : "New passcode (leave blank to keep current)") :
+                  (lang === "zh" ? "设置口令（4 到 8 位字母或数字）" : "Set a passcode (4–8 letters or digits)")}
+                <input type="password" autoComplete="new-password" maxLength={8} value={passcode} onChange={(e) => setPasscode(e.target.value)} />
+              </label>}
+            </fieldset>
             <div className="af-publish-row">
               <div className="af-handle-input">
                 <span>/u/</span>
                 <input
                   type="text"
                   value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setHandle(next);
+                    // A stored public setting belongs to its original handle.
+                    // Omitted settings preserve the target site's privacy on the server.
+                    if (noindex === false) setNoindex(undefined);
+                    if (protectedSite === false) setProtectedSite(undefined);
+                  }}
                   placeholder="your-name"
                   aria-label="Custom handle"
                 />
@@ -1399,6 +1497,7 @@ export function CreateStudioClient() {
                   {copiedUrl ? <Check size={12} /> : <Copy size={12} />}
                   <span>{copiedUrl ? (lang === "zh" ? "已复制" : "Copied") : lang === "zh" ? "复制链接" : "Copy Link"}</span>
                 </button>
+                {publishedProfile && <SharePoster profile={publishedProfile} slug={new URL(publishedUrl).pathname.split("/").pop()!} lang={lang} />}
               </div>
             )}
           </div>
@@ -1611,6 +1710,25 @@ export function CreateStudioClient() {
               {localize(generated.basics.intro, lang)}
             </p>
 
+            <ContactLinks basics={generated.basics} lang={lang} />
+            <details className="af-contact-editor">
+              <summary>{lang === "zh" ? "编辑联系方式" : "Edit contact details"}</summary>
+              <div className="af-input-grid">
+                {(["email", "github", "wechat", "linkedin", "portfolio"] as const).map((field) => (
+                  <label key={field} className="af-field-label">
+                    <span>{{ email: lang === "zh" ? "邮箱" : "Email", github: "GitHub", wechat: lang === "zh" ? "微信号" : "WeChat ID",
+                      linkedin: "LinkedIn", portfolio: lang === "zh" ? "博客或作品集网址" : "Blog or portfolio URL" }[field]}</span>
+                    <input type={field === "wechat" ? "text" : field === "email" ? "email" : "url"} value={generated.basics[field] ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setGenerated((previous) => ({ ...previous, basics: { ...previous.basics, [field]: value } }));
+                        setHasGenerated(true);
+                      }} />
+                  </label>
+                ))}
+              </div>
+            </details>
+
             {editingSkills ? (
               <div className="af-skills-editor">
                 <input
@@ -1784,6 +1902,8 @@ export function CreateStudioClient() {
         </section>
       </div>
 
+      <footer className="af-shell af-footer"><SiteLinks lang={lang} /></footer>
+
       <PricingModal
         open={pricingOpen}
         onClose={() => {
@@ -1849,10 +1969,10 @@ export function CreateStudioClient() {
                     ✓ {lang === "zh" ? `已增加 ${redeemSuccess.days} 天会员，有效期至 ${redeemSuccess.expiresAt}` : `+${redeemSuccess.days} days active until ${redeemSuccess.expiresAt}`}
                   </span>
                   <span>
-                    ✓ {lang === "zh" ? `每日简历生成提升至 ${redeemSuccess.dailyLimit} 次/天` : `${redeemSuccess.dailyLimit} AI generations / day`}
+                    ✓ {lang === "zh" ? `每月可生成 ${redeemSuccess.dailyLimit} 份简历` : `${redeemSuccess.dailyLimit} AI generations / month`}
                   </span>
                   <span>
-                    ✓ {lang === "zh" ? `已解锁 AI 多轮实时精修（${redeemSuccess.editDailyLimit} 次/天）` : `AI Multi-turn Live Refine unlocked (${redeemSuccess.editDailyLimit}/day)`}
+                    ✓ {lang === "zh" ? `已解锁 AI 多轮实时精修（${redeemSuccess.editDailyLimit} 次/月）` : `AI Multi-turn Live Refine unlocked (${redeemSuccess.editDailyLimit}/month)`}
                   </span>
                   <span>
                     ✓{" "}
@@ -1899,13 +2019,13 @@ export function CreateStudioClient() {
       )}
 
       {authModalOpen && (
-        <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={() => setAuthModalOpen(false)}>
+        <div className="af-cmd-backdrop" role="dialog" aria-modal="true" onClick={closeAuth}>
           <div className="af-auth-modal" onClick={(e) => e.stopPropagation()}>
             <div className="af-auth-head">
               <strong>
                 <Mail size={15} /> {lang === "zh" ? "邮箱验证码登录" : "Sign in with Email"}
               </strong>
-              <button type="button" onClick={() => setAuthModalOpen(false)} aria-label="Close">
+              <button type="button" onClick={closeAuth} aria-label="Close">
                 <X size={15} />
               </button>
             </div>
@@ -1913,8 +2033,8 @@ export function CreateStudioClient() {
               <form className="af-auth-form" onSubmit={sendOtp}>
                 <p>
                   {lang === "zh"
-                    ? "登录后即可免费使用 TalkCV 内置 DeepSeek / OpenAI 额度（每日 3 次）并免费托管你的专属简历链接。"
-                    : "Sign in to unlock 3 free daily AI generations and 30-day hosting for your TalkCV link."}
+                    ? "登录后即可免费使用 TalkCV 内置 DeepSeek / OpenAI 额度（每账号共 3 次）并免费托管你的专属简历链接。"
+                    : "Sign in to unlock 3 free AI generations per account and 30-day hosting for your TalkCV link."}
                 </p>
                 <input
                   type="email"

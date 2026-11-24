@@ -55,37 +55,54 @@ async function createPostgresKvAdapter() {
   `);
   console.log("[talkcv] Connected to PostgreSQL and ensured schema.");
 
-  return {
-    async get(key) {
-      const res = await pool.query("SELECT value FROM talkcv_store WHERE key = $1", [key]);
-      return res.rows[0]?.value ?? null;
-    },
-    async put(key, value) {
-      await pool.query(
-        `INSERT INTO talkcv_store (key, value, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-        [key, value],
-      );
-      if (key.startsWith("profile:")) {
-        try {
-          const slug = key.slice("profile:".length);
-          const parsed = JSON.parse(value);
-          const ownerEmail = parsed.ownerEmail ?? null;
-          const theme = parsed.profile?.theme ?? parsed.theme ?? "editorial";
-          const expiresAt = parsed.expiresAt ?? null;
-          await pool.query(
-            `INSERT INTO talkcv_sites (slug, owner_email, theme, expires_at)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (slug) DO UPDATE
-               SET owner_email = EXCLUDED.owner_email,
-                   theme = EXCLUDED.theme,
-                   expires_at = EXCLUDED.expires_at`,
-            [slug, ownerEmail, theme, expiresAt],
+  function storeFor(db) {
+    return {
+      async get(key) {
+        const res = await db.query("SELECT value FROM talkcv_store WHERE key = $1", [key]);
+        return res.rows[0]?.value ?? null;
+      },
+      async put(key, value) {
+        await db.query(
+          `INSERT INTO talkcv_store (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, [key, value],
+        );
+        if (key.startsWith("profile:")) {
+          const record = JSON.parse(value);
+          await db.query(
+            `INSERT INTO talkcv_sites (slug, owner_email, theme, expires_at) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (slug) DO UPDATE SET owner_email = EXCLUDED.owner_email,
+               theme = EXCLUDED.theme, expires_at = EXCLUDED.expires_at`,
+            [key.slice(8), record.ownerEmail ?? null, record.profile?.theme ?? record.theme ?? "editorial", record.expiresAt ?? null],
           );
-        } catch {
-          // ignore non-JSON or legacy payload
         }
+      },
+      async delete(key) {
+        await db.query("DELETE FROM talkcv_store WHERE key = $1", [key]);
+        if (key.startsWith("profile:")) {
+          const slug = key.slice(8);
+          await db.query("DELETE FROM talkcv_store WHERE starts_with(key, $1)", [`chat_usage:${slug}:`]);
+          await db.query("DELETE FROM talkcv_sites WHERE slug = $1", [slug]);
+        }
+      },
+    };
+  }
+
+  return {
+    ...storeFor(pool),
+    async withSiteWrite(slug, email, operation) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT pg_advisory_xact_lock(1, hashtext($1))", [slug]);
+        if (email) await client.query("SELECT pg_advisory_xact_lock(2, hashtext($1))", [email]);
+        const result = await operation(storeFor(client));
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
       }
     },
   };

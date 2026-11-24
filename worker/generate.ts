@@ -1,3 +1,4 @@
+import { normalizeContacts } from "../lib/contacts.mjs";
 import { canUseModel, getHostedModel } from "../lib/models";
 import { profile as sampleProfile } from "../lib/profile";
 import {
@@ -184,14 +185,7 @@ function normalizeGeneratedProfile(
       role: loc(basicsRaw.role, "Software Engineer"),
       location: loc(basicsRaw.location, "Remote"),
       timezone: typeof basicsRaw.timezone === "string" && basicsRaw.timezone.trim() ? basicsRaw.timezone.trim() : "UTC",
-      email: typeof basicsRaw.email === "string" && basicsRaw.email.trim() ? basicsRaw.email.trim() : "hello@example.com",
-      ...(typeof basicsRaw.github === "string" &&
-      basicsRaw.github.startsWith("http") &&
-      !basicsRaw.github.includes("talkcv-demo") &&
-      !basicsRaw.github.includes("Simon-rss/talkcv") &&
-      sourceResumeText.toLowerCase().includes("github")
-        ? { github: basicsRaw.github }
-        : {}),
+      ...normalizeContacts(basicsRaw, sourceResumeText),
       headline: loc(basicsRaw.headline, "Building reliable software systems."),
       intro: loc(basicsRaw.intro, ""),
       education: loc(basicsRaw.education, ""),
@@ -362,7 +356,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
 
   const sanitizedSample = {
     ...sampleProfile,
-    basics: { ...sampleProfile.basics, github: undefined },
+    basics: { ...sampleProfile.basics, ...normalizeContacts({}) },
     projects: sampleProfile.projects.map((p) => ({ ...p, links: undefined })),
   };
 
@@ -371,7 +365,7 @@ Rules:
 - Populate BOTH "en" and "zh" for every localized field (translate faithfully if the resume is single-language).
 - Extract 2-5 featured projects with concrete metrics in facts[], crisp architecture sections[], and workflow[] steps.
 - STRICT VERBATIM NUMERICAL FIDELITY: NEVER alter, round, recalculate, or invent any number, duration, percentage, or metric from the resume (e.g. if the resume says "27 -> 8 minutes", facts[] and summary MUST say "27 -> 8", NEVER change 27 to another number).
-- NEVER invent companies, skills, or URLs not present in the resume. ONLY include basics.github if the resume explicitly contains a GitHub URL or handle; otherwise omit basics.github completely.
+- NEVER invent companies, skills, or URLs not present in the resume. Copy only explicitly supplied contact details into basics.email, github, wechat (ID), linkedin and portfolio (blog or personal URL). Use absolute HTTP(S) links and omit missing contacts.
 - Use lowercase ASCII kebab-case slugs.${styleInstruction}
 
 Reference schema example:

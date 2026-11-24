@@ -81,6 +81,8 @@ export interface PortfolioProfile {
     avatar?: string;
     github?: string;
     linkedin?: string;
+    wechat?: string;
+    portfolio?: string;
     headline: LocalizedText;
     intro: LocalizedText;
     education: LocalizedText;
@@ -151,6 +153,15 @@ export function localize(text: LocalizedText | string | undefined, lang: Lang): 
   if (!text) return "";
   if (typeof text === "string") return text;
   return text[lang] || text.en || text.zh || "";
+}
+
+export function normalizeSlug(raw: string): string {
+  return raw
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
 }
 
 export function isValidTheme(value: unknown): value is ThemeId {

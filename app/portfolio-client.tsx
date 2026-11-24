@@ -8,14 +8,16 @@ import {
   Clock,
   Command,
   FileText,
-  GitFork,
   Home,
-  Mail,
   Palette,
   Sparkles,
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { SharePoster } from "./share-poster";
+import { ResumeExport } from "./resume-export";
+import { ContactLinks } from "./contact-links";
+import { SiteLinks } from "./public-navigation";
 import { useRouter } from "next/navigation";
 import {
   createContext,
@@ -63,27 +65,29 @@ function useApp() {
 
 function AppProvider({
   initialProfile = defaultProfile,
+  initialLang,
   profileSlug,
   children,
 }: {
   initialProfile?: PortfolioProfile;
+  initialLang?: Lang;
   profileSlug?: string;
   children: React.ReactNode;
 }) {
-  const [lang, setLangState] = useState<Lang>("en");
+  const [lang, setLangState] = useState<Lang>(initialLang ?? "en");
   const [theme, setThemeState] = useState<ThemeId>(initialProfile.theme || "editorial");
 
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       const savedLang = window.localStorage.getItem("talkcv-lang");
-      if (savedLang === "en" || savedLang === "zh") setLangState(savedLang);
+      if (!initialLang && (savedLang === "en" || savedLang === "zh")) setLangState(savedLang);
       if (!profileSlug) {
         const savedTheme = window.localStorage.getItem("talkcv-theme");
         if (isValidTheme(savedTheme)) setThemeState(savedTheme);
       }
     });
     return () => window.cancelAnimationFrame(raf);
-  }, [profileSlug]);
+  }, [profileSlug, initialLang]);
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -343,20 +347,7 @@ function ContactBand() {
         </div>
         <div className="af-contact-copy">
           <LiveClock lang={lang} />
-          <div className="af-actions">
-            <a className="af-btn af-btn-primary" href={`mailto:${profile.basics.email}`}>
-              <Mail size={16} />
-              <span>{profile.basics.email}</span>
-              <ArrowUpRight size={15} />
-            </a>
-            {profile.basics.github && (
-              <a className="af-btn af-btn-secondary" href={profile.basics.github} target="_blank" rel="noreferrer">
-                <GitFork size={16} />
-                <span>GitHub</span>
-                <ArrowUpRight size={15} />
-              </a>
-            )}
-          </div>
+          <ContactLinks basics={profile.basics} lang={lang} />
         </div>
       </div>
     </section>
@@ -386,6 +377,7 @@ function SiteFooter() {
       </div>
       {!isPersonalHosted && (
         <div className="af-footer-meta">
+          <SiteLinks lang={lang} />
           <a href="/llms.txt">
             {lang === "en" ? "Agents: read /llms.txt" : "给 AI 读的版本：/llms.txt"}
           </a>
@@ -399,7 +391,7 @@ function SiteFooter() {
   );
 }
 
-function HomeContent() {
+function HomeContent({ exportSlug }: { exportSlug?: string }) {
   const { profile, profileSlug, lang, theme } = useApp();
   const { setChatOpen, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
   const [filter, setFilter] = useState<"all" | "platform" | "enterprise" | "product">("all");
@@ -441,7 +433,52 @@ function HomeContent() {
 
   return (
     <main className={`af-page af-theme-${theme}`}>
+      {profileSlug === "__draft__" && <div className="af-preview-strip">
+        <span>{lang === "zh" ? "全屏草稿预览 · 二维码指向发布后的站点" : "Draft preview · The QR code links to the published site"}</span>
+        <Link href={`/create?lang=${lang}`}>{lang === "zh" ? "返回工作台发布 →" : "Back to Studio to publish →"}</Link>
+      </div>}
       <SiteHeader />
+
+      {!isPersonalHosted && (
+        <section className="af-storefront-band">
+          <div className="af-shell af-storefront-card">
+            <div className="af-storefront-top">
+              <div>
+                <p className="af-eyebrow">TALKCV · AI INTERACTIVE RÉSUMÉ BUILDER</p>
+                <h2>
+                  {lang === "zh"
+                    ? "把你的 PDF / Word 简历变成自带 AI 助手的个人网站"
+                    : "Turn your résumé into a hosted interactive portfolio with an AI assistant"}
+                </h2>
+                <p className="af-storefront-desc">
+                  {lang === "zh"
+                    ? "上传 PDF / Word 或粘贴文本，几秒生成专属 /u/你的名字 交互式简历站：支持访客 AI 对话、JD 匹配、可扫码 A4 PDF 导出、访客洞察与在职隐私保护。Free $0（账号限 3 次体验）· Pro $20/月（$190/年）· Max $49/月（$469/年）。"
+                    : "Upload PDF/DOCX or paste your résumé to publish a personal /u/handle portfolio with visitor AI chat, JD matching, QR-enabled A4 PDF export, visitor insights, and passcode privacy. Plans: Free $0 (3 generations/account) · Pro $20/mo ($190/yr) · Max $49/mo ($469/yr)."}
+                </p>
+              </div>
+              <div className="af-storefront-actions">
+                <Link className="af-btn af-btn-primary" href={`/create?lang=${lang}`}>
+                  <Sparkles size={15} />
+                  <span>{lang === "zh" ? "免费开始建站" : "Open TalkCV Studio"}</span>
+                </Link>
+                <Link className="af-btn af-btn-secondary" href={lang === "en" ? "/pricing?lang=en" : "/pricing"}>
+                  <span>{lang === "zh" ? "查看会员价格 ($0 / $20 / $49)" : "View Pricing ($0 / $20 / $49)"}</span>
+                </Link>
+              </div>
+            </div>
+            <div className="af-demo-notice" role="note">
+              <strong>
+                {lang === "zh" ? "虚构示例演示（Alex Chen）" : "LIVE DEMO · FICTIONAL SAMPLE PROFILE (ALEX CHEN)"}
+              </strong>
+              <span>
+                {lang === "zh"
+                  ? "下方展示的是用 TalkCV 生成的虚构人物示例站。所有经历、项目指标（如「12 个团队」「450+ 评测用例」）及示例邮箱 alex.chen@example.dev 均为演示占位数据，并非真实客户成绩。TalkCV 官方客服与条款见页面底部。"
+                  : "The portfolio below is an interactive fictional demo of what TalkCV creates. All metrics (including '12 teams onboarded' and '450+ golden eval cases'), roles, and alex.chen@example.dev are illustrative sample placeholders, not verified customer results. Official TalkCV support & policies are linked in the footer."}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="af-hero">
         <div className="af-shell">
@@ -465,6 +502,7 @@ function HomeContent() {
                 <span>{lang === "en" ? "Ask AI / Match JD" : "问 AI / 测 JD 匹配"}</span>
               </button>
             )}
+            {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
           </div>
           <div className="af-skill-strip" aria-label="Skills">
             {profile.skills.map((skill) => (
@@ -473,6 +511,8 @@ function HomeContent() {
           </div>
         </div>
       </section>
+
+      {isPersonalHosted && <ResumeExport profile={profile} slug={exportSlug} lang={lang} />}
 
       <section className="af-section af-shell" id="work">
         <div className="af-section-head">
@@ -898,13 +938,17 @@ function NotFoundContent() {
 export function PortfolioHome({
   initialProfile,
   profileSlug,
+  draftHandle,
+  initialLang,
 }: {
   initialProfile?: PortfolioProfile;
   profileSlug?: string;
+  draftHandle?: string;
+  initialLang?: Lang;
 } = {}) {
   return (
-    <AppProvider initialProfile={initialProfile} profileSlug={profileSlug}>
-      <HomeContent />
+    <AppProvider initialProfile={initialProfile} profileSlug={profileSlug} initialLang={initialLang}>
+      <HomeContent exportSlug={profileSlug === "__draft__" ? draftHandle : profileSlug} />
     </AppProvider>
   );
 }

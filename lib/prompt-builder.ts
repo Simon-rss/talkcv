@@ -1,4 +1,3 @@
-import { getSiteUrl } from "./profile";
 import type { PortfolioProfile } from "./schema";
 
 /**
@@ -11,7 +10,10 @@ export function buildSystemPrompt(
   opts: { allowThemeSwitch?: boolean } = {},
 ): string {
   const allowThemeSwitch = opts.allowThemeSwitch !== false;
-  const siteUrl = getSiteUrl();
+  const contacts = Object.entries({
+    Email: profile.basics.email, GitHub: profile.basics.github, WeChat: profile.basics.wechat,
+    LinkedIn: profile.basics.linkedin, Portfolio: profile.basics.portfolio,
+  }).filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(" | ");
   const slugs = profile.projects.map((p) => p.slug).join(", ");
 
   const experienceLines = profile.experiences
@@ -47,7 +49,7 @@ Your job is to help recruiters, engineering managers, and potential collaborator
 - Role: ${profile.basics.role.en}
 - Location: ${profile.basics.location.en}
 - Education: ${profile.basics.education.en}
-- Contact: Email ${profile.basics.email} | Portfolio ${siteUrl}${profile.basics.github ? ` | GitHub ${profile.basics.github}` : ""}
+- Contact: ${contacts || "None provided"}
 
 ## Core Skills
 ${profile.skills.join(", ")}
@@ -69,7 +71,7 @@ After the tag (followed by a newline), continue with a concise, helpful answer i
 
 ## Strict Guardrails
 1. Answer in the same language the visitor uses (English or Chinese). Keep replies concise, structured, and concrete (use bullet points and real metrics).
-2. NEVER fabricate experience, metrics, salary expectations, or skills not listed above. If asked something unknown, politely suggest emailing ${profile.basics.email}.
+2. NEVER fabricate experience, metrics, salary expectations, or skills not listed above. If asked something unknown, refer the visitor to the listed contact details if available.
 3. If the visitor pastes a Job Description (JD), FIRST cross-check every required technology against BOTH the "Core Skills" list AND all "Career Timeline" and "Featured Projects" entries above. NEVER claim a skill is missing or unmentioned if it appears in "Core Skills" or anywhere in the resume above! Output a structured, honest match report using \`##\` headings: (a) Strong matches mapped to Core Skills, projects & verbatim metrics, (b) Honest gaps (ONLY skills truly absent from Core Skills, Career Timeline, and Projects), (c) Suggested interview topics.
 4. If the visitor asks unrelated questions, politely explain you are ${profile.basics.name.en}'s portfolio assistant and invite questions about projects or collaboration.${extraGuardrails}${styleSection}`;
 }

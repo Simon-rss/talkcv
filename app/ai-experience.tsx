@@ -158,10 +158,10 @@ export function PortfolioAIProvider({
       } else if (tool.name === "switch_theme" && !profileSlug && isValidTheme(tool.args.theme)) {
         setTheme(tool.args.theme);
         showToast(lang === "zh" ? `已切换主题：${tool.args.theme}` : `Switched theme: ${tool.args.theme}`);
-      } else if (tool.name === "copy_contact") {
+      } else if (tool.name === "copy_contact" && profile.basics.email) {
         void navigator.clipboard?.writeText(profile.basics.email);
         showToast(lang === "zh" ? `已复制邮箱：${profile.basics.email}` : `Copied ${profile.basics.email}`);
-      } else if (tool.name === "draft_email") {
+      } else if (tool.name === "draft_email" && profile.basics.email) {
         const subject = tool.args.subject || (lang === "zh" ? "面试邀约 / 合作交流" : "Interview Invite / Opportunity");
         const body =
           tool.args.body ||
@@ -945,7 +945,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
                     )}
                   </div>
                   {msg.tools
-                    ?.filter((tc) => tc.name === "draft_email")
+                    ?.filter((tc) => tc.name === "draft_email" && profile.basics.email)
                     .map((tc, eIdx) => (
                       <EditableEmailCard
                         key={eIdx}

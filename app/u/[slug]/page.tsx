@@ -1,5 +1,8 @@
+import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { PublishedProfileClient } from "./published-client";
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -12,6 +15,7 @@ export async function generateMetadata({
   return {
     title: { absolute: label },
     description: desc,
+    ...((await headers()).get("x-talkcv-robots") === "noindex" && { robots: { index: false, follow: false } }),
     alternates: {
       canonical: `/u/${slug}`,
     },
@@ -33,5 +37,7 @@ export default async function PublishedSitePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <PublishedProfileClient slug={slug} />;
+  const state = (await headers()).get("x-talkcv-site-state");
+  const initialStatus = state === "locked" || state === "not_found" || state === "expired" ? state : "loading";
+  return <PublishedProfileClient key={slug} slug={slug} initialStatus={initialStatus} />;
 }

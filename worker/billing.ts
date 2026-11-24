@@ -263,14 +263,24 @@ export async function setUserPlan(email: string, record: PlanRecord, env: Billin
   }
 }
 
+function billingProducts(env: BillingEnv) {
+  return {
+    pro: { month: env.CREEM_PRO_PRODUCT_ID?.trim(), year: env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim() },
+    max: { month: env.CREEM_MAX_PRODUCT_ID?.trim(), year: env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim() },
+  };
+}
+
+export function billingAvailability(env: BillingEnv) {
+  const { pro, max } = billingProducts(env);
+  const enabled = Boolean(env.CREEM_API_KEY?.trim());
+  return {
+    pro: { month: enabled && Boolean(pro.month), year: enabled && Boolean(pro.year) },
+    max: { month: enabled && Boolean(max.month), year: enabled && Boolean(max.year) },
+  };
+}
+
 export function isBillingConfigured(env: BillingEnv): boolean {
-  return Boolean(
-    env.CREEM_API_KEY?.trim() &&
-      (env.CREEM_PRO_PRODUCT_ID?.trim() ||
-        env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim() ||
-        env.CREEM_MAX_PRODUCT_ID?.trim() ||
-        env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim()),
-  );
+  return Object.values(billingAvailability(env)).some(({ month, year }) => month || year);
 }
 
 export async function handleBillingCheckoutRequest(request: Request, env: BillingEnv): Promise<Response> {
@@ -291,14 +301,7 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
   const interval: "month" | "year" = body.interval === "year" ? "year" : "month";
 
   const apiKey = env.CREEM_API_KEY?.trim();
-  const productId =
-    tier === "max"
-      ? interval === "year"
-        ? env.CREEM_MAX_YEARLY_PRODUCT_ID?.trim() || env.CREEM_MAX_PRODUCT_ID?.trim()
-        : env.CREEM_MAX_PRODUCT_ID?.trim()
-      : interval === "year"
-        ? env.CREEM_PRO_YEARLY_PRODUCT_ID?.trim() || env.CREEM_PRO_PRODUCT_ID?.trim()
-        : env.CREEM_PRO_PRODUCT_ID?.trim();
+  const productId = billingProducts(env)[tier][interval];
 
   if (!apiKey || !productId) {
     return jsonResponse(503, { error: "Selected billing plan is not configured on this server yet." });
@@ -637,6 +640,7 @@ export async function handleRedeemCodeRequest(request: Request, env: BillingEnv)
     isPro: true,
     isMax: effectiveTier === "max",
     dailyLimit: PLAN_LIMITS[effectiveTier].generateLimit,
+    maxSites: PLAN_LIMITS[effectiveTier].maxSites,
     quotaPeriod: PLAN_LIMITS[effectiveTier].generatePeriod,
     editDailyLimit: PLAN_LIMITS[effectiveTier].editLimit,
     days: record.days,

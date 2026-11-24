@@ -1,18 +1,27 @@
+import { deleteSiteTraffic } from "./insights";
+import { normalizeContacts } from "../lib/contacts.mjs";
 import { canUseModel } from "../lib/models";
-import { sanitizeDesignTokens, type PortfolioProfile } from "../lib/schema";
+import { normalizeSlug, sanitizeDesignTokens, type PortfolioProfile } from "../lib/schema";
 import {
   FREE_HOSTING_DAYS,
   getSessionUser,
   getUserSites,
-  recordUserSite,
+  updateUserSites,
+  type SessionUser,
   type AuthEnv,
 } from "./auth";
 import { getUserPlan, type BillingEnv } from "./billing";
+import { hashPasscode, siteUnlocked, validPasscode, type PasscodeHash } from "./site-access";
 import { encryptSecret, maskApiKey } from "./crypto";
 
 export interface KVNamespaceLike {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+  list?(options: { prefix: string; cursor?: string }): Promise<{
+    keys: { name: string }[]; list_complete: boolean; cursor?: string;
+  }>;
+  withSiteWrite?<T>(slug: string, email: string, operation: (store: KVNamespaceLike) => Promise<T>): Promise<T>;
 }
 
 export interface PublishEnv {
@@ -31,12 +40,25 @@ export interface SiteChatConfig {
   byokKeyMask?: string;
 }
 
+function chatMetadata(config?: SiteChatConfig) {
+  return {
+    mode: config?.mode ?? "hosted",
+    hostedModelId: config?.hostedModelId ?? "auto",
+    hasByokKey: Boolean(config?.byokKeyEncrypted),
+    byokKeyMask: config?.byokKeyMask ?? "",
+    byokBaseUrl: config?.byokBaseUrl ?? "",
+    byokModel: config?.byokModel ?? "",
+  };
+}
+
 export interface StoredProfileRecord {
   profile: PortfolioProfile;
   ownerEmail?: string;
   createdAt: string;
   expiresAt: string;
   chatConfig?: SiteChatConfig;
+  noindex?: boolean;
+  passcode?: PasscodeHash;
 }
 
 const RESERVED_SLUGS = new Set([
@@ -59,7 +81,7 @@ const memoryStore = new Map<string, string>();
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" },
   });
 }
 
@@ -70,15 +92,6 @@ export function getEncryptionMasterKey(env: PublishEnv): string {
     env.OPENAI_API_KEY?.trim() ||
     "talkcv-local-dev-encryption-key"
   );
-}
-
-export function normalizeSlug(raw: string): string {
-  return raw
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
 }
 
 export async function loadStoredRecord(
@@ -105,12 +118,29 @@ export async function loadStoredRecord(
   }
 }
 
-export async function loadPublishedProfile(
-  slug: string,
-  env: PublishEnv,
-): Promise<PortfolioProfile | null> {
-  const record = await loadStoredRecord(slug, env);
-  return record?.profile ?? null;
+interface PublishBody {
+  slug?: unknown;
+  profile?: unknown;
+  privacy?: { noindex?: boolean; protected?: boolean; passcode?: string };
+  chatConfig?: {
+    mode?: unknown;
+    hostedModelId?: unknown;
+    byokApiKey?: unknown;
+    byokBaseUrl?: unknown;
+    byokModel?: unknown;
+    clearByokKey?: unknown;
+  };
+}
+
+// PostgreSQL locks both the handle and the account quota across server instances.
+let localWrite = Promise.resolve();
+export function withSiteWrite<T>(slug: string, email: string, env: AuthEnv, operation: (env: AuthEnv) => Promise<T>) {
+  if (env.PROFILES_KV?.withSiteWrite) {
+    return env.PROFILES_KV.withSiteWrite(slug, email, (store) => operation({ ...env, PROFILES_KV: store }));
+  }
+  const result = localWrite.then(() => operation(env));
+  localWrite = result.then(() => {}, () => {});
+  return result;
 }
 
 export async function handlePublishRequest(request: Request, env: AuthEnv): Promise<Response> {
@@ -118,18 +148,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     return jsonResponse(405, { error: "Method not allowed." });
   }
 
-  let body: {
-    slug?: unknown;
-    profile?: unknown;
-    chatConfig?: {
-      mode?: unknown;
-      hostedModelId?: unknown;
-      byokApiKey?: unknown;
-      byokBaseUrl?: unknown;
-      byokModel?: unknown;
-      clearByokKey?: unknown;
-    };
-  };
+  let body: PublishBody;
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -151,18 +170,30 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     return jsonResponse(400, { error: "Valid profile payload is required." });
   }
 
-  // Sanitize optional designTokens before saving
+  const contacts = normalizeContacts(profileObj.basics);
+  for (const key of Object.keys(contacts) as (keyof typeof contacts)[]) {
+    if (profileObj.basics[key] && !contacts[key]) {
+      return jsonResponse(400, { error: "Check the email address and contact links before publishing." });
+    }
+  }
+
   const cleanProfile: PortfolioProfile = {
     ...(profileObj as PortfolioProfile),
+    basics: { ...profileObj.basics, ...contacts },
     designTokens: sanitizeDesignTokens(profileObj.designTokens),
   };
 
   const user = await getSessionUser(request, env);
-  if (env.PROFILES_KV && !user) {
+  if (!user && (env.PROFILES_KV || body.privacy?.protected || body.privacy?.noindex)) {
     return jsonResponse(401, {
       error: "Please sign in with your email before publishing a TalkCV site.",
     });
   }
+  return withSiteWrite(slug, user?.email ?? "", env, (lockedEnv) =>
+    saveProfile(slug, cleanProfile, body, user, new URL(request.url).origin, lockedEnv));
+}
+
+async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: PublishBody, user: SessionUser | null, origin: string, env: AuthEnv) {
   const existing = await loadStoredRecord(slug, env);
   if (existing?.ownerEmail && existing.ownerEmail !== user?.email) {
     return jsonResponse(403, {
@@ -243,11 +274,22 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     }
   }
 
+  const privacy = body.privacy;
+  let passcode = existing?.passcode;
+  if (privacy?.protected === false) passcode = undefined;
+  if (privacy?.protected === true && (privacy.passcode || !passcode)) {
+    if (!validPasscode(privacy.passcode)) {
+      return jsonResponse(400, { error: "Use a passcode of 4 to 8 letters or digits." });
+    }
+    passcode = await hashPasscode(privacy.passcode);
+  }
   const now = new Date();
   const hostingDays = limits.hostingDays;
   const expiresAt = new Date(now.getTime() + hostingDays * 86400_000).toISOString();
   const record: StoredProfileRecord = {
     profile: finalProfile,
+    noindex: privacy?.noindex ?? existing?.noindex ?? false,
+    passcode,
     ...(user ? { ownerEmail: user.email } : {}),
     createdAt: existing?.createdAt ?? now.toISOString(),
     expiresAt,
@@ -267,57 +309,66 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
   }
 
   if (user) {
-    await recordUserSite(user.email, slug, env);
+    await updateUserSites(user.email, slug, true, env);
   }
 
-  const origin = new URL(request.url).origin;
   return jsonResponse(200, {
     ok: true,
     slug,
     url: `${origin}/u/${slug}`,
     expiresAt,
-    chatMeta: {
-      mode: chatConfig.mode,
-      hostedModelId: chatConfig.hostedModelId ?? "auto",
-      hasByokKey: Boolean(chatConfig.byokKeyEncrypted),
-      byokKeyMask: chatConfig.byokKeyMask ?? "",
-      byokBaseUrl: chatConfig.byokBaseUrl ?? "",
-      byokModel: chatConfig.byokModel ?? "",
-    },
+    privacy: { noindex: Boolean(record.noindex), protected: Boolean(record.passcode) },
+    chatMeta: chatMetadata(chatConfig),
     storage: env.PROFILES_KV ? "kv" : "memory",
   });
 }
 
+export async function handleDeleteProfileRequest(request: Request, rawSlug: string, env: AuthEnv) {
+  const user = await getSessionUser(request, env);
+  if (!user) return jsonResponse(401, { error: "Sign in to delete a site." });
+  const slug = normalizeSlug(rawSlug);
+  return withSiteWrite(slug, user.email, env, async (lockedEnv) => {
+    const record = await loadStoredRecord(slug, lockedEnv);
+    if (!record) return jsonResponse(404, { error: "Published TalkCV profile not found." });
+    if (record.ownerEmail !== user.email) return jsonResponse(403, { error: "Only the site owner can delete it." });
+    if (lockedEnv.PROFILES_KV) await lockedEnv.PROFILES_KV.delete(`profile:${slug}`);
+    else memoryStore.delete(`profile:${slug}`);
+    await deleteSiteTraffic(slug, lockedEnv);
+    const sites = await updateUserSites(user.email, slug, false, lockedEnv);
+    return jsonResponse(200, { sites });
+  });
+}
+
 export async function handleGetProfileRequest(
-  slug: string,
+  request: Request, slug: string,
   env: PublishEnv,
 ): Promise<Response> {
   const record = await loadStoredRecord(slug, env);
   if (!record) {
     return jsonResponse(404, { error: "Published TalkCV profile not found." });
   }
+  const editing = new URL(request.url).searchParams.get("edit") === "1";
+  if (editing) {
+    const user = await getSessionUser(request, env);
+    if (!user || user.email !== record.ownerEmail) return jsonResponse(403, { error: "Owner access required." });
+  } else if (!await siteUnlocked(request, normalizeSlug(slug), record.passcode)) {
+    return jsonResponse(401, { locked: true });
+  }
   const expTs = Date.parse(record.expiresAt);
   const ownerPlan = record.ownerEmail
     ? await getUserPlan(record.ownerEmail, env as BillingEnv)
     : { isPro: false };
-  if (!ownerPlan.isPro && Number.isFinite(expTs) && Date.now() > expTs) {
+  if (!editing && !ownerPlan.isPro && Number.isFinite(expTs) && Date.now() > expTs) {
     return jsonResponse(410, {
       error: "Hosting period expired.",
       expired: true,
       expiresAt: record.expiresAt,
     });
   }
-  const cc = record.chatConfig;
   return jsonResponse(200, {
     profile: record.profile,
     expiresAt: record.expiresAt,
-    chatMeta: {
-      mode: cc?.mode ?? "hosted",
-      hostedModelId: cc?.hostedModelId ?? "auto",
-      hasByokKey: Boolean(cc?.byokKeyEncrypted),
-      byokKeyMask: cc?.byokKeyMask ?? "",
-      byokBaseUrl: cc?.byokBaseUrl ?? "",
-      byokModel: cc?.byokModel ?? "",
-    },
+    chatMeta: chatMetadata(record.chatConfig),
+    ...(editing && { privacy: { noindex: Boolean(record.noindex), protected: Boolean(record.passcode) } }),
   });
 }

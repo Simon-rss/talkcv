@@ -8,6 +8,7 @@
  *   npm run generate -- --resume ./resume.md --theme terminal --site https://me.dev
  *   npm run validate
  */
+import { normalizeContacts } from "../lib/contacts.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -73,7 +74,10 @@ export function validateProfile(data) {
     errors.push("basics object is required");
   } else {
     if (!data.basics.name?.en) errors.push("basics.name.en is required");
-    if (!data.basics.email) errors.push("basics.email is required");
+    const contacts = normalizeContacts(data.basics);
+    for (const key of Object.keys(contacts)) {
+      if (data.basics[key] && !contacts[key]) errors.push(`basics.${key} is not a valid contact`);
+    }
     if (!data.basics.headline?.en) errors.push("basics.headline.en is required");
   }
   if (!Array.isArray(data.projects) || data.projects.length === 0) {
@@ -150,7 +154,7 @@ async function extractResumeText(filePath) {
   throw new Error(`Unsupported file extension "${ext}". Supported: .md, .txt, .docx, .pdf, .json`);
 }
 
-function normalizeProfile(raw, { theme, siteUrl }) {
+export function normalizeProfile(raw, { theme, siteUrl, resumeText }) {
   const slugify = (str, fallback) =>
     String(str || fallback)
       .toLowerCase()
@@ -232,9 +236,7 @@ function normalizeProfile(raw, { theme, siteUrl }) {
       role: loc(raw.basics?.role, "Software Engineer"),
       location: loc(raw.basics?.location, "Remote"),
       timezone: String(raw.basics?.timezone || "UTC"),
-      email: String(raw.basics?.email || "hello@example.com"),
-      ...(raw.basics?.github ? { github: String(raw.basics.github) } : {}),
-      ...(raw.basics?.linkedin ? { linkedin: String(raw.basics.linkedin) } : {}),
+      ...normalizeContacts(raw.basics || {}, resumeText),
       headline: loc(raw.basics?.headline, "Building reliable software systems."),
       intro: loc(raw.basics?.intro, ""),
       education: loc(raw.basics?.education, ""),
@@ -289,6 +291,7 @@ async function generateFromResume({ resumeText, apiKey, baseUrl, model }) {
   const systemPrompt = `You are a precise portfolio data compiler. Convert the provided resume into a valid JSON object matching the exact schema of TalkCV's data/profile.json.
 
 Rules:
+Copy only contact details from the resume to basics.email, github, wechat (ID), linkedin and portfolio (blog or personal URL). Omit missing contacts.
 1. Output ONLY valid JSON (no markdown fences, no commentary).
 2. Every localized field must have both "en" and "zh" strings. Translate faithfully if the source resume is in only one language.
 3. Extract 2 to 6 featured projects with concrete metrics in facts[], crisp architecture sections[], and workflow[] steps.
@@ -406,7 +409,7 @@ async function main() {
     console.log(`🤖 Calling ${model} via ${baseUrl} to generate bilingual profile.json...`);
 
     const rawGenerated = await generateFromResume({ resumeText, apiKey, baseUrl, model });
-    const normalized = normalizeProfile(rawGenerated, { theme, siteUrl });
+    const normalized = normalizeProfile(rawGenerated, { theme, siteUrl, resumeText });
     const errors = validateProfile(normalized);
     if (errors.length > 0) {
       throw new Error(`Generated profile failed validation:\n${errors.join("\n")}`);

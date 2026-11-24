@@ -23,8 +23,8 @@
       "zh": "构建扛得住真实生产流量的 AI 工作流与智能体系统。"
     },
     "intro": {
-      "en": "6+ years shipping distributed backends, developer platforms, and LLM agent infrastructure. Replace this sample profile with your own resume in one command: npm run generate.",
-      "zh": "6 年以上分布式后端、开发者平台与大模型 Agent 基础设施实战经验。只需一条命令 npm run generate，即可把这份示例配置替换为你的个人简历。"
+      "en": "Fictional demo profile showcasing TalkCV's interactive résumé format. All roles, project metrics, and contact details shown for Alex Chen are illustrative sample placeholders, not verified customer results.",
+      "zh": "虚构示例简历，仅用于演示 TalkCV 交互式个人简历效果。页面中陈明远（Alex Chen）的经历、项目指标与联系邮箱均为示例占位数据，并非真实客户成果。"
     },
     "education": {
       "en": "B.S. in Computer Science · University of Washington (2016 – 2020)",
@@ -155,15 +155,15 @@
       "facts": [
         {
           "value": "-64%",
-          "label": { "en": "tool-run failure rate", "zh": "工具调用失败率" }
+          "label": { "en": "tool-run failure rate (sample)", "zh": "工具调用失败率（示例）" }
         },
         {
           "value": "24",
-          "label": { "en": "typed agent tools", "zh": "强类型工具数" }
+          "label": { "en": "typed agent tools (sample)", "zh": "强类型工具数（示例）" }
         },
         {
           "value": "180ms",
-          "label": { "en": "median TTFT", "zh": "中位首字延迟" }
+          "label": { "en": "median TTFT (sample)", "zh": "中位首字延迟（示例）" }
         }
       ],
       "links": [
@@ -261,15 +261,15 @@
       "facts": [
         {
           "value": "99.95%",
-          "label": { "en": "monthly availability", "zh": "月度可用性" }
+          "label": { "en": "monthly availability (sample)", "zh": "月度可用性（示例）" }
         },
         {
           "value": "-31%",
-          "label": { "en": "blended token spend", "zh": "综合模型成本" }
+          "label": { "en": "blended token spend (sample)", "zh": "综合模型成本（示例）" }
         },
         {
           "value": "4",
-          "label": { "en": "upstream providers", "zh": "接入上游厂商" }
+          "label": { "en": "upstream providers (sample)", "zh": "接入上游厂商（示例）" }
         }
       ],
       "sections": [
@@ -332,15 +332,15 @@
       "facts": [
         {
           "value": "12",
-          "label": { "en": "teams onboarded", "zh": "接入研发团队" }
+          "label": { "en": "teams onboarded (sample)", "zh": "接入研发团队（示例）" }
         },
         {
           "value": "450+",
-          "label": { "en": "golden eval cases", "zh": "黄金评测用例" }
+          "label": { "en": "golden eval cases (sample)", "zh": "黄金评测用例（示例）" }
         },
         {
           "value": "3x",
-          "label": { "en": "faster prompt iteration", "zh": "提示词迭代提速" }
+          "label": { "en": "faster prompt iteration (sample)", "zh": "提示词迭代提速（示例）" }
         }
       ],
       "sections": [

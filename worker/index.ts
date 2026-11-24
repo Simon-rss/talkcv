@@ -1,3 +1,6 @@
+import { normalizeSlug } from "../lib/schema";
+import { getSiteInsights, recordVisit } from "./insights";
+import { siteUnlocked, unlockSite } from "./site-access";
 import handler from "vinext/server/app-router-entry";
 import {
   handleLogoutRequest,
@@ -6,6 +9,7 @@ import {
   handleVerifyCodeRequest,
 } from "./auth";
 import {
+  billingAvailability,
   getUserPlan,
   handleBillingCheckoutRequest,
   handleBillingPortalRequest,
@@ -18,7 +22,7 @@ import { handleGenerateAvatarRequest } from "./avatar";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleAiEditRequest } from "./edit";
 import { handleGenerateRequest } from "./generate";
-import { handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
+import { handleDeleteProfileRequest, handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
 import {
   buildLlmsTxtResponse,
   buildResumeJsonResponse,
@@ -44,6 +48,9 @@ const worker = {
     }
     if (url.pathname === "/api/auth/logout") {
       return handleLogoutRequest(request);
+    }
+    if (url.pathname === "/api/billing/plans" && request.method === "GET") {
+      return Response.json(billingAvailability(env));
     }
     if (url.pathname === "/api/billing/checkout") {
       return handleBillingCheckoutRequest(request, env);
@@ -75,9 +82,15 @@ const worker = {
     if (url.pathname === "/api/publish") {
       return handlePublishRequest(request, env);
     }
-    if (url.pathname.startsWith("/api/profiles/")) {
+    const insights = /^\/api\/profiles\/([a-z0-9-]+)\/insights$/.exec(url.pathname);
+    if (insights && request.method === "GET") return getSiteInsights(request, insights[1], env);
+    const unlock = /^\/api\/profiles\/([a-z0-9-]+)\/unlock$/.exec(url.pathname);
+    if (unlock && request.method === "POST") return unlockSite(request, unlock[1], env);
+    if (/^\/api\/profiles\/[^/]+$/.test(url.pathname)) {
       const slug = decodeURIComponent(url.pathname.slice("/api/profiles/".length));
-      return handleGetProfileRequest(slug, env);
+      if (request.method === "DELETE") return handleDeleteProfileRequest(request, slug, env);
+      if (request.method !== "GET") return new Response(null, { status: 405 });
+      return handleGetProfileRequest(request, slug, env);
     }
     if (url.pathname === "/sitemap.xml") {
       return buildSitemapResponse();
@@ -91,25 +104,26 @@ const worker = {
     if (url.pathname === "/resume.json") {
       return buildResumeJsonResponse();
     }
-    if (url.pathname.startsWith("/u/") && request.method === "GET") {
-      const slug = decodeURIComponent(url.pathname.slice("/u/".length).split("/")[0] || "");
+    if (url.pathname.startsWith("/u/") && (request.method === "GET" || request.method === "HEAD")) {
+      const slug = normalizeSlug(decodeURIComponent(url.pathname.slice("/u/".length).split("/")[0] || ""));
       const record = slug ? await loadStoredRecord(slug, env) : null;
-      const rendered = await handler.fetch(request);
-      if (!record) {
-        return new Response(rendered.body, {
-          status: 404,
-          headers: rendered.headers,
-        });
+      const ownerPlan = record?.ownerEmail ? await getUserPlan(record.ownerEmail, env) : null;
+      const expired = record && !ownerPlan?.isPro && Date.now() > Date.parse(record.expiresAt);
+      const hidden = Boolean(record?.noindex || record?.passcode);
+      const locked = record && !expired && !await siteUnlocked(request, slug, record.passcode);
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set("x-talkcv-robots", hidden ? "noindex" : "index");
+      requestHeaders.set("x-talkcv-site-state", !record ? "not_found" : expired ? "expired" : locked ? "locked" : "loading");
+      const rendered = await handler.fetch(new Request(request, { headers: requestHeaders }));
+      const headers = new Headers(rendered.headers);
+      headers.set("cache-control", "private, no-store");
+      if (record && !locked && !expired && rendered.ok && request.method === "GET"
+        && headers.get("content-type")?.includes("text/html") && !request.headers.has("next-router-prefetch")
+        && request.headers.get("purpose") !== "prefetch") {
+        await recordVisit(slug, record, env);
       }
-      const expTs = Date.parse(record.expiresAt);
-      const ownerPlan = record.ownerEmail ? await getUserPlan(record.ownerEmail, env) : { isPro: false };
-      if (!ownerPlan.isPro && Number.isFinite(expTs) && Date.now() > expTs) {
-        return new Response(rendered.body, {
-          status: 410,
-          headers: rendered.headers,
-        });
-      }
-      return rendered;
+      if (hidden) headers.set("x-robots-tag", "noindex, nofollow");
+      return new Response(rendered.body, { status: !record ? 404 : expired ? 410 : rendered.status, headers });
     }
     return handler.fetch(request);
   },

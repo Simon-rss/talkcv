@@ -16,28 +16,33 @@ interface PricingModalProps {
   onOpenRedeem: () => void;
 }
 
-export function PricingModal({
-  open,
-  onClose,
-  lang,
-  currentPlan,
-  busyTier,
-  error,
-  onSelectPlan,
-  onOpenRedeem,
-}: PricingModalProps) {
+type PlansProps = Pick<PricingModalProps, "lang" | "currentPlan" | "busyTier" | "error" | "onSelectPlan">;
+
+export async function requestCheckout(tier: "pro" | "max", interval: "month" | "year") {
+  const response = await fetch("/api/billing/checkout", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tier, interval }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (response.status === 401) return null;
+  const data = await response.json();
+  if (!response.ok || !data.checkoutUrl) throw new Error(data.error || "Could not start checkout.");
+  return data.checkoutUrl as string;
+}
+
+export function PricingPlans({ lang, currentPlan, busyTier, error, onSelectPlan }: PlansProps) {
   const [interval, setInterval] = useState<"month" | "year">("month");
 
+  const [available, setAvailable] = useState<Record<"pro" | "max", Record<"month" | "year", boolean>> | null>(null);
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
+    const controller = new AbortController();
+    fetch("/api/billing/plans", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then(setAvailable)
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   const isZh = lang === "zh";
 
@@ -118,6 +123,95 @@ export function PricingModal({
   ];
 
   return (
+    <>
+      <div className="af-pricing-toggle" role="group" aria-label={isZh ? "账单周期" : "Billing interval"}>
+        <button
+          type="button"
+          aria-pressed={interval === "month"}
+          className={interval === "month" ? "active" : ""}
+          onClick={() => setInterval("month")}
+        >
+          {isZh ? "按月订阅" : "Monthly"}
+        </button>
+        <button
+          type="button"
+          aria-pressed={interval === "year"}
+          className={interval === "year" ? "active" : ""}
+          onClick={() => setInterval("year")}
+        >
+          {isZh ? "按年订阅" : "Yearly"}
+        </button>
+      </div>
+
+      <div className="af-pricing-grid">
+        {tiers.map((t) => {
+          const isCurrent = currentPlan === t.id;
+          const unavailable = t.id !== "free" && !available?.[t.id][interval];
+          let action = isZh ? `立即升级 ${t.name} →` : `Upgrade to ${t.name} →`;
+          if (isCurrent) action = isZh ? "当前方案" : "Current plan";
+          else if (unavailable && interval === "year") action = isZh ? "暂未开放年付" : "Yearly billing unavailable";
+          else if (unavailable) action = isZh ? "暂未开放月付" : "Monthly billing unavailable";
+          else if (busyTier === t.id) action = isZh ? "正在跳转收银台…" : "Opening checkout…";
+          const price = interval === "year" ? t.priceYear : t.priceMonth;
+          const unit = t.id === "free" ? "" : interval === "year" ? (isZh ? "/年" : "/yr") : isZh ? "/月" : "/mo";
+          return (
+            <div key={t.id} className={`af-pricing-card${t.popular ? " is-popular" : ""}`}>
+              {t.popular && (
+                <span className="af-pricing-badge">
+                  <Sparkles size={11} /> {isZh ? "最受欢迎" : "Most Popular"}
+                </span>
+              )}
+              <h3>{t.name}</h3>
+              <p className="af-pricing-tagline">{t.tagline}</p>
+              <div className="af-pricing-price">
+                <strong>{price}</strong>
+                {unit && <span>{unit}</span>}
+              </div>
+              <ul className="af-pricing-features">
+                {t.features.map((f) => (
+                  <li key={f}>
+                    <Check size={14} />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              {t.id === "free" ? (
+                <button type="button" className="af-btn af-btn-secondary af-pricing-cta" disabled>
+                  {isCurrent ? (isZh ? "当前方案" : "Current Plan") : isZh ? "基础免费版" : "Free Tier"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={`af-btn ${t.popular ? "af-btn-primary" : "af-btn-secondary"} af-pricing-cta`}
+                  disabled={busyTier !== null || isCurrent || unavailable}
+                  onClick={() => onSelectPlan(t.id, interval)}
+                >
+                  {action}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {error && <div className="af-ai-error">{error}</div>}
+
+    </>
+  );
+}
+
+export function PricingModal({ open, onClose, onOpenRedeem, ...plans }: PricingModalProps) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const isZh = plans.lang === "zh";
+  return (
     <div className="af-cmd-backdrop" role="dialog" aria-modal="true" aria-label="Pricing plans" onClick={onClose}>
       <div className="af-pricing-modal" onClick={(e) => e.stopPropagation()}>
         <div className="af-pricing-head">
@@ -130,85 +224,12 @@ export function PricingModal({
           </button>
         </div>
 
-        <div className="af-pricing-toggle" role="group" aria-label="Billing interval">
-          <button
-            type="button"
-            className={interval === "month" ? "active" : ""}
-            onClick={() => setInterval("month")}
-          >
-            {isZh ? "按月订阅" : "Monthly"}
-          </button>
-          <button
-            type="button"
-            className={interval === "year" ? "active" : ""}
-            onClick={() => setInterval("year")}
-          >
-            {isZh ? "按年订阅（省 20%）" : "Yearly (Save 20%)"}
-          </button>
-        </div>
-
-        <div className="af-pricing-grid">
-          {tiers.map((t) => {
-            const isCurrent = currentPlan === t.id;
-            const price = interval === "year" ? t.priceYear : t.priceMonth;
-            const unit = t.id === "free" ? "" : interval === "year" ? (isZh ? "/年" : "/yr") : isZh ? "/月" : "/mo";
-            return (
-              <div key={t.id} className={`af-pricing-card${t.popular ? " is-popular" : ""}`}>
-                {t.popular && (
-                  <span className="af-pricing-badge">
-                    <Sparkles size={11} /> {isZh ? "最受欢迎" : "Most Popular"}
-                  </span>
-                )}
-                <h3>{t.name}</h3>
-                <p className="af-pricing-tagline">{t.tagline}</p>
-                <div className="af-pricing-price">
-                  <strong>{price}</strong>
-                  {unit && <span>{unit}</span>}
-                </div>
-                <ul className="af-pricing-features">
-                  {t.features.map((f) => (
-                    <li key={f}>
-                      <Check size={14} />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                {t.id === "free" ? (
-                  <button type="button" className="af-btn af-btn-secondary af-pricing-cta" disabled>
-                    {isCurrent ? (isZh ? "当前方案" : "Current Plan") : isZh ? "基础免费版" : "Free Tier"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className={`af-btn ${t.popular ? "af-btn-primary" : "af-btn-secondary"} af-pricing-cta`}
-                    disabled={busyTier !== null || isCurrent}
-                    onClick={() => onSelectPlan(t.id, interval)}
-                  >
-                    {isCurrent
-                      ? isZh
-                        ? "当前方案"
-                        : "Current Plan"
-                      : busyTier === t.id
-                        ? isZh
-                          ? "正在跳转收银台…"
-                          : "Opening checkout…"
-                        : isZh
-                          ? `立即升级 ${t.name} →`
-                          : `Upgrade to ${t.name} →`}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {error && <div className="af-ai-error">{error}</div>}
-
+        <PricingPlans {...plans} />
         <div className="af-pricing-footer">
           <span>
             {isZh
-              ? "订阅期内个人站永不过期；随时可取消，退订后保留 30 天缓冲期。"
-              : "Sites never expire while subscribed. Cancel anytime with a 30-day grace period."}
+              ? "订阅可随时在账单门户取消续订。"
+              : "Manage or cancel renewal in the billing portal at any time."}
           </span>
           <button
             type="button"

@@ -50,16 +50,24 @@ function randomCode(): string {
   return String(100000 + (bytes[0] % 900000));
 }
 
+let localSigningSecret: string;
+
+function canSendLoginCode(env: AuthEnv) {
+  return !env.PROFILES_KV || Boolean(env.RESEND_API_KEY?.trim() && (
+    env.AUTH_SECRET?.trim() || env.DEEPSEEK_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()
+  ));
+}
+
 function getSigningSecret(env: AuthEnv): string {
   return (
     env.AUTH_SECRET?.trim() ||
     env.DEEPSEEK_API_KEY?.trim() ||
     env.OPENAI_API_KEY?.trim() ||
-    "talkcv-local-dev-signing-secret"
+    (localSigningSecret ??= crypto.randomUUID())
   );
 }
 
-async function hmacHex(secret: string, message: string): Promise<string> {
+export async function hmacHex(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -72,7 +80,7 @@ async function hmacHex(secret: string, message: string): Promise<string> {
   return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function timingSafeEqual(a: string, b: string): boolean {
+export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) {
@@ -81,7 +89,7 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function parseCookies(request: Request): Record<string, string> {
+export function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("cookie") ?? "";
   const out: Record<string, string> = {};
   for (const part of header.split(";")) {
@@ -197,9 +205,9 @@ export async function getUserSites(email: string, env: AuthEnv): Promise<string[
   return memUserSites.get(key) ?? [];
 }
 
-export async function recordUserSite(email: string, slug: string, env: AuthEnv): Promise<string[]> {
+export async function updateUserSites(email: string, slug: string, add: boolean, env: AuthEnv): Promise<string[]> {
   const existing = await getUserSites(email, env);
-  const next = existing.includes(slug) ? existing : [...existing, slug];
+  const next = add ? [...new Set([...existing, slug])] : existing.filter((site) => site !== slug);
   const key = `user_sites:${email}`;
   if (env.PROFILES_KV) {
     await env.PROFILES_KV.put(key, JSON.stringify(next));
@@ -211,6 +219,8 @@ export async function recordUserSite(email: string, slug: string, env: AuthEnv):
 
 export async function handleSendCodeRequest(request: Request, env: AuthEnv): Promise<Response> {
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
+
+  if (!canSendLoginCode(env)) return jsonResponse(503, { error: "Email authentication is not configured." });
 
   let body: { email?: unknown };
   try {
@@ -274,6 +284,8 @@ export async function handleSendCodeRequest(request: Request, env: AuthEnv): Pro
 export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): Promise<Response> {
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
 
+  if (!canSendLoginCode(env)) return jsonResponse(503, { error: "Email authentication is not configured." });
+
   let body: { email?: unknown; code?: unknown; challenge?: unknown };
   try {
     body = (await request.json()) as { email?: unknown; code?: unknown; challenge?: unknown };
@@ -320,6 +332,7 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
         isPro,
         isMax,
         hasBilling: isBillingConfigured(env as BillingEnv),
+        maxSites: limits.maxSites,
         usedToday,
         dailyLimit: limits.generateLimit,
         quotaPeriod: limits.generatePeriod,
@@ -348,6 +361,7 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
       isPro,
       isMax,
       hasBilling: isBillingConfigured(env as BillingEnv),
+      maxSites: limits.maxSites,
       usedToday,
       dailyLimit: limits.generateLimit,
       quotaPeriod: limits.generatePeriod,

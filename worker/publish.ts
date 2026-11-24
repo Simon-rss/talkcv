@@ -11,6 +11,7 @@ import {
   type AuthEnv,
 } from "./auth";
 import { getUserPlan, type BillingEnv } from "./billing";
+import { getOrCreateReferralRecord, qualifyReferralOnPublish } from "./referral";
 import { hashPasscode, siteUnlocked, validPasscode, type PasscodeHash } from "./site-access";
 import { encryptSecret, maskApiKey } from "./crypto";
 
@@ -21,6 +22,7 @@ export interface KVNamespaceLike {
   list?(options: { prefix: string; cursor?: string }): Promise<{
     keys: { name: string }[]; list_complete: boolean; cursor?: string;
   }>;
+  listPrefix?(prefix: string, limit?: number): Promise<Array<{ key: string; value: string; updatedAt?: string }>>;
   withSiteWrite?<T>(slug: string, email: string, operation: (store: KVNamespaceLike) => Promise<T>): Promise<T>;
 }
 
@@ -54,6 +56,7 @@ function chatMetadata(config?: SiteChatConfig) {
 export interface StoredProfileRecord {
   profile: PortfolioProfile;
   ownerEmail?: string;
+  ownerRefCode?: string;
   createdAt: string;
   expiresAt: string;
   chatConfig?: SiteChatConfig;
@@ -189,16 +192,45 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
       error: "Please sign in with your email before publishing a TalkCV site.",
     });
   }
-  return withSiteWrite(slug, user?.email ?? "", env, (lockedEnv) =>
+  const clientIp =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown";
+  const result = await withSiteWrite(slug, user?.email ?? "", env, (lockedEnv) =>
     saveProfile(slug, cleanProfile, body, user, new URL(request.url).origin, lockedEnv));
+  if (!result.ok) return result.response;
+
+  let referralReward: { generates: number; edits: number; trialDays: number; inviterRewarded: boolean } | undefined;
+  if (user) {
+    const qualified = await qualifyReferralOnPublish(user.email, clientIp, env, result.isFirstSite);
+    if (qualified.rewarded) referralReward = qualified.inviteeBonus;
+  }
+
+  return jsonResponse(200, {
+    ...result.payload,
+    ...(referralReward ? { referralReward } : {}),
+  });
 }
 
-async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: PublishBody, user: SessionUser | null, origin: string, env: AuthEnv) {
+async function saveProfile(
+  slug: string,
+  cleanProfile: PortfolioProfile,
+  body: PublishBody,
+  user: SessionUser | null,
+  origin: string,
+  env: AuthEnv,
+): Promise<
+  | { ok: false; response: Response }
+  | { ok: true; isFirstSite: boolean; payload: Record<string, unknown> }
+> {
   const existing = await loadStoredRecord(slug, env);
   if (existing?.ownerEmail && existing.ownerEmail !== user?.email) {
-    return jsonResponse(403, {
-      error: `The handle "/u/${slug}" is already owned by another account. Please pick a different handle.`,
-    });
+    return {
+      ok: false,
+      response: jsonResponse(403, {
+        error: `The handle "/u/${slug}" is already owned by another account. Please pick a different handle.`,
+      }),
+    };
   }
 
   const { plan, limits } = await getUserPlan(user?.email, env as BillingEnv);
@@ -209,12 +241,17 @@ async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: P
     hideBranding: plan === "max" && Boolean(cleanProfile.hideBranding),
   };
 
+  let priorSiteCount = 0;
   if (user) {
     const userSites = await getUserSites(user.email, env);
+    priorSiteCount = userSites.length;
     if (!userSites.includes(slug) && userSites.length >= maxSites) {
-      return jsonResponse(403, {
-        error: `Your plan allows up to ${maxSites} sites (${userSites.map((s) => `/u/${s}`).join(", ")}). Update an existing handle instead.`,
-      });
+      return {
+        ok: false,
+        response: jsonResponse(403, {
+          error: `Your plan allows up to ${maxSites} sites (${userSites.map((s) => `/u/${s}`).join(", ")}). Update an existing handle instead.`,
+        }),
+      };
     }
   }
 
@@ -255,17 +292,23 @@ async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: P
           byokKeyMask: existing.chatConfig.byokKeyMask,
         };
       } else {
-        return jsonResponse(400, {
-          error: "Please enter an API key to enable unlimited BYOK visitor chat.",
-        });
+        return {
+          ok: false,
+          response: jsonResponse(400, {
+            error: "Please enter an API key to enable unlimited BYOK visitor chat.",
+          }),
+        };
       }
     } else {
       const modelId =
         typeof incomingChat.hostedModelId === "string" ? incomingChat.hostedModelId.trim() : "auto";
       if (!canUseModel(modelId, plan)) {
-        return jsonResponse(403, {
-          error: `Model "${modelId}" requires TalkCV Pro or Max (or switch to BYOK with your own API key).`,
-        });
+        return {
+          ok: false,
+          response: jsonResponse(403, {
+            error: `Model "${modelId}" requires TalkCV Pro or Max (or switch to BYOK with your own API key).`,
+          }),
+        };
       }
       chatConfig = {
         mode: "hosted",
@@ -279,18 +322,22 @@ async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: P
   if (privacy?.protected === false) passcode = undefined;
   if (privacy?.protected === true && (privacy.passcode || !passcode)) {
     if (!validPasscode(privacy.passcode)) {
-      return jsonResponse(400, { error: "Use a passcode of 4 to 8 letters or digits." });
+      return {
+        ok: false,
+        response: jsonResponse(400, { error: "Use a passcode of 4 to 8 letters or digits." }),
+      };
     }
     passcode = await hashPasscode(privacy.passcode);
   }
   const now = new Date();
   const hostingDays = limits.hostingDays;
   const expiresAt = new Date(now.getTime() + hostingDays * 86400_000).toISOString();
+  const ownerRef = user ? await getOrCreateReferralRecord(user.email, env) : null;
   const record: StoredProfileRecord = {
     profile: finalProfile,
     noindex: privacy?.noindex ?? existing?.noindex ?? false,
     passcode,
-    ...(user ? { ownerEmail: user.email } : {}),
+    ...(user ? { ownerEmail: user.email, ownerRefCode: ownerRef?.code } : {}),
     createdAt: existing?.createdAt ?? now.toISOString(),
     expiresAt,
     chatConfig,
@@ -298,7 +345,10 @@ async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: P
 
   const serialized = JSON.stringify(record);
   if (serialized.length > 260_000) {
-    return jsonResponse(413, { error: "Profile payload is too large (max 260KB)." });
+    return {
+      ok: false,
+      response: jsonResponse(413, { error: "Profile payload is too large (max 260KB)." }),
+    };
   }
 
   const key = `profile:${slug}`;
@@ -312,15 +362,19 @@ async function saveProfile(slug: string, cleanProfile: PortfolioProfile, body: P
     await updateUserSites(user.email, slug, true, env);
   }
 
-  return jsonResponse(200, {
+  return {
     ok: true,
-    slug,
-    url: `${origin}/u/${slug}`,
-    expiresAt,
-    privacy: { noindex: Boolean(record.noindex), protected: Boolean(record.passcode) },
-    chatMeta: chatMetadata(chatConfig),
-    storage: env.PROFILES_KV ? "kv" : "memory",
-  });
+    isFirstSite: !existing && priorSiteCount === 0,
+    payload: {
+      ok: true,
+      slug,
+      url: `${origin}/u/${slug}`,
+      expiresAt,
+      privacy: { noindex: Boolean(record.noindex), protected: Boolean(record.passcode) },
+      chatMeta: chatMetadata(chatConfig),
+      storage: env.PROFILES_KV ? "kv" : "memory",
+    },
+  };
 }
 
 export async function handleDeleteProfileRequest(request: Request, rawSlug: string, env: AuthEnv) {
@@ -357,17 +411,22 @@ export async function handleGetProfileRequest(
   const expTs = Date.parse(record.expiresAt);
   const ownerPlan = record.ownerEmail
     ? await getUserPlan(record.ownerEmail, env as BillingEnv)
-    : { isPro: false };
-  if (!editing && !ownerPlan.isPro && Number.isFinite(expTs) && Date.now() > expTs) {
+    : { isPro: false, isTrial: false };
+  const hasPermanentHosting = ownerPlan.isPro && !ownerPlan.isTrial;
+  if (!editing && !hasPermanentHosting && Number.isFinite(expTs) && Date.now() > expTs) {
     return jsonResponse(410, {
       error: "Hosting period expired.",
       expired: true,
       expiresAt: record.expiresAt,
     });
   }
+  const ownerRefCode =
+    record.ownerRefCode ||
+    (record.ownerEmail ? (await getOrCreateReferralRecord(record.ownerEmail, env)).code : undefined);
   return jsonResponse(200, {
     profile: record.profile,
     expiresAt: record.expiresAt,
+    ...(ownerRefCode ? { ownerRefCode } : {}),
     chatMeta: chatMetadata(record.chatConfig),
     ...(editing && { privacy: { noindex: Boolean(record.noindex), protected: Boolean(record.passcode) } }),
   });

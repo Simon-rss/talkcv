@@ -6,12 +6,19 @@ import { PricingPlans, requestCheckout } from "../create/pricing-modal";
 
 export function PublicPlans({ lang }: { lang: Lang }) {
   const [currentPlan, setPlan] = useState<PlanTier>("free");
+  const [isTrial, setIsTrial] = useState(false);
   const [busy, setBusy] = useState<"pro" | "max" | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("/api/auth/me").then((r) => r.json()).then(({ user }) => setPlan(user?.plan ?? "free")).catch(() => {});
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then(({ user }) => {
+        setPlan(user?.plan ?? "free");
+        setIsTrial(Boolean(user?.isTrial));
+      })
+      .catch(() => {});
   }, []);
-  return <PricingPlans lang={lang} currentPlan={currentPlan} busyTier={busy} error={error} onSelectPlan={async (tier, interval) => {
+  return <PricingPlans lang={lang} currentPlan={currentPlan} isTrial={isTrial} busyTier={busy} error={error} onSelectPlan={async (tier, interval) => {
     setBusy(tier);
     setError("");
     try {

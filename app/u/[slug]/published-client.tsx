@@ -20,6 +20,7 @@ export function PublishedProfileClient({ slug, initialStatus }: { slug: string; 
   };
   const languageButton = <button type="button" className="af-icon-pill" onClick={changeLanguage}>{zh ? "English" : "中文"}</button>;
   const [profile, setProfile] = useState<PortfolioProfile | null>(null);
+  const [ownerRefCode, setOwnerRefCode] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<Status>(initialStatus);
 
   useEffect(() => {
@@ -36,11 +37,12 @@ export function PublishedProfileClient({ slug, initialStatus }: { slug: string; 
           return null;
         }
         if (!res.ok) throw new Error("not found");
-        return (await res.json()) as { profile: PortfolioProfile };
+        return (await res.json()) as { profile: PortfolioProfile; ownerRefCode?: string };
       })
       .then((data) => {
         if (!active || !data) return;
         setProfile(data.profile);
+        setOwnerRefCode(data.ownerRefCode);
         setStatus("ready");
         const name = data.profile.basics?.name?.zh || data.profile.basics?.name?.en || slug;
         document.title = `${name} · 个人交互简历`;
@@ -105,5 +107,5 @@ export function PublishedProfileClient({ slug, initialStatus }: { slug: string; 
     </main>;
   }
 
-  return <PortfolioHome initialProfile={profile} profileSlug={slug} />;
+  return <PortfolioHome initialProfile={profile} profileSlug={slug} ownerRefCode={ownerRefCode} />;
 }

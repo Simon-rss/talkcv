@@ -84,6 +84,17 @@ async function createPostgresKvAdapter() {
           await db.query("DELETE FROM talkcv_sites WHERE slug = $1", [slug]);
         }
       },
+      async listPrefix(prefix, limit = 500) {
+        const res = await db.query(
+          "SELECT key, value, updated_at FROM talkcv_store WHERE starts_with(key, $1) ORDER BY updated_at DESC LIMIT $2",
+          [prefix, limit],
+        );
+        return res.rows.map((r) => ({
+          key: r.key,
+          value: r.value,
+          updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+        }));
+      },
     };
   }
 
@@ -93,7 +104,7 @@ async function createPostgresKvAdapter() {
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query("SELECT pg_advisory_xact_lock(1, hashtext($1))", [slug]);
+        if (slug) await client.query("SELECT pg_advisory_xact_lock(1, hashtext($1))", [slug]);
         if (email) await client.query("SELECT pg_advisory_xact_lock(2, hashtext($1))", [email]);
         const result = await operation(storeFor(client));
         await client.query("COMMIT");
@@ -136,6 +147,7 @@ const env = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   AUTH_EMAIL_FROM: process.env.AUTH_EMAIL_FROM,
   AUTH_SECRET: process.env.AUTH_SECRET,
+  ADMIN_EMAILS: process.env.ADMIN_EMAILS,
   CREEM_API_KEY: process.env.CREEM_API_KEY,
   CREEM_WEBHOOK_SECRET: process.env.CREEM_WEBHOOK_SECRET,
   CREEM_PRO_PRODUCT_ID: process.env.CREEM_PRO_PRODUCT_ID,

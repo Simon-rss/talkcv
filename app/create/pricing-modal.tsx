@@ -10,13 +10,14 @@ interface PricingModalProps {
   onClose: () => void;
   lang: Lang;
   currentPlan: PlanTier;
+  isTrial?: boolean;
   busyTier: "pro" | "max" | null;
   error?: string | null;
   onSelectPlan: (tier: "pro" | "max", interval: "month" | "year") => void;
   onOpenRedeem: () => void;
 }
 
-type PlansProps = Pick<PricingModalProps, "lang" | "currentPlan" | "busyTier" | "error" | "onSelectPlan">;
+type PlansProps = Pick<PricingModalProps, "lang" | "currentPlan" | "isTrial" | "busyTier" | "error" | "onSelectPlan">;
 
 export async function requestCheckout(tier: "pro" | "max", interval: "month" | "year") {
   const response = await fetch("/api/billing/checkout", {
@@ -31,7 +32,7 @@ export async function requestCheckout(tier: "pro" | "max", interval: "month" | "
   return data.checkoutUrl as string;
 }
 
-export function PricingPlans({ lang, currentPlan, busyTier, error, onSelectPlan }: PlansProps) {
+export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, error, onSelectPlan }: PlansProps) {
   const [interval, setInterval] = useState<"month" | "year">("month");
 
   const [available, setAvailable] = useState<Record<"pro" | "max", Record<"month" | "year", boolean>> | null>(null);
@@ -145,9 +146,16 @@ export function PricingPlans({ lang, currentPlan, busyTier, error, onSelectPlan 
 
       <div className="af-pricing-grid">
         {tiers.map((t) => {
-          const isCurrent = currentPlan === t.id;
+          const isCurrent = !isTrial && currentPlan === t.id;
           const unavailable = t.id !== "free" && !available?.[t.id][interval];
-          let action = isZh ? `立即升级 ${t.name} →` : `Upgrade to ${t.name} →`;
+          let action =
+            isTrial && t.id === "pro"
+              ? isZh
+                ? "升级正式 Pro →"
+                : "Upgrade to Paid Pro →"
+              : isZh
+                ? `立即升级 ${t.name} →`
+                : `Upgrade to ${t.name} →`;
           if (isCurrent) action = isZh ? "当前方案" : "Current plan";
           else if (unavailable && interval === "year") action = isZh ? "暂未开放年付" : "Yearly billing unavailable";
           else if (unavailable) action = isZh ? "暂未开放月付" : "Monthly billing unavailable";

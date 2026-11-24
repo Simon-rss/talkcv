@@ -15,8 +15,7 @@ export default function PreviewDraftPage() {
     const raf = window.requestAnimationFrame(() => {
       try {
         const params = new URLSearchParams(window.location.search);
-        const studio = JSON.parse(window.localStorage.getItem("talkcv-studio-draft") || "{}");
-        const slug = normalizeSlug(params.get("handle") ?? studio.handle ?? "");
+        const slug = normalizeSlug(params.get("handle") ?? "");
         if (slug.length >= 3) setHandle(slug);
         setZh(params.get("lang") !== "en");
         const raw = window.localStorage.getItem("talkcv-draft-profile");

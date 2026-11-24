@@ -1,5 +1,6 @@
 import { getMonthlyEditUsage, getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
 import type { PublishEnv } from "./publish";
+import { bindReferralOnLogin, getOrCreateReferralRecord, isTrialActive, MAX_REFERRAL_REWARDS } from "./referral";
 
 export interface AuthEnv extends PublishEnv {
   RESEND_API_KEY?: string;
@@ -286,9 +287,9 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
 
   if (!canSendLoginCode(env)) return jsonResponse(503, { error: "Email authentication is not configured." });
 
-  let body: { email?: unknown; code?: unknown; challenge?: unknown };
+  let body: { email?: unknown; code?: unknown; challenge?: unknown; referralCode?: unknown };
   try {
-    body = (await request.json()) as { email?: unknown; code?: unknown; challenge?: unknown };
+    body = (await request.json()) as { email?: unknown; code?: unknown; challenge?: unknown; referralCode?: unknown };
   } catch {
     return jsonResponse(400, { error: "Invalid JSON body." });
   }
@@ -315,10 +316,22 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
   const sessionSig = await hmacHex(getSigningSecret(env), `session:${email}|${sessionExp}`);
   const sessionValue = encodeURIComponent(`${email}|${sessionExp}|${sessionSig}`);
 
-  const { plan, isPro, isMax, limits } = await getUserPlan(email, env as BillingEnv);
+  const existingSites = await getUserSites(email, env);
+  const existingPlan = await getUserPlan(email, env as BillingEnv);
+  const existingLifetimeUsage = await getDailyUsage(email, env, request, "lifetime");
+  const isExistingUser =
+    existingSites.length > 0 || existingLifetimeUsage > 0 || (existingPlan.isPro && !existingPlan.isTrial);
+
+  const refRec = await bindReferralOnLogin(email, body.referralCode, env, { isExistingUser });
+  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits } = await getUserPlan(
+    email,
+    env as BillingEnv,
+  );
   const usedToday = await getDailyUsage(email, env, request, limits.generatePeriod);
-  const editUsedToday = await getMonthlyEditUsage(email, env as BillingEnv);
-  const sites = await getUserSites(email, env);
+  const editUsedToday = isTrial ? 0 : await getMonthlyEditUsage(email, env as BillingEnv);
+  const effectiveDailyLimit = Math.max(baseLimits.generateLimit, usedToday) + bonusGenerates;
+  const effectiveEditLimit = Math.max(isTrial ? 0 : baseLimits.editLimit, editUsedToday) + bonusEdits;
+  const sites = existingSites;
   const isHttps = request.url.startsWith("https://");
   const cookie = `talkcv_session=${sessionValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
 
@@ -331,14 +344,24 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
         plan,
         isPro,
         isMax,
+        isTrial,
         hasBilling: isBillingConfigured(env as BillingEnv),
         maxSites: limits.maxSites,
         usedToday,
-        dailyLimit: limits.generateLimit,
+        dailyLimit: effectiveDailyLimit,
         quotaPeriod: limits.generatePeriod,
         editUsedToday,
-        editDailyLimit: limits.editLimit,
+        editDailyLimit: effectiveEditLimit,
         sites,
+        referral: {
+          code: refRec.code,
+          invitedCount: refRec.invitedCount,
+          maxRewards: MAX_REFERRAL_REWARDS,
+          bonusGenerates: refRec.bonusGenerates,
+          bonusEdits: refRec.bonusEdits,
+          trialExpiresAt: isTrialActive(refRec) ? refRec.trialExpiresAt : undefined,
+          hasPendingReferrer: Boolean(refRec.referredBy && !refRec.qualifiedAt),
+        },
       },
     },
     { "set-cookie": cookie },
@@ -350,9 +373,15 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
   if (!user) {
     return jsonResponse(200, { user: null });
   }
-  const { plan, isPro, isMax, limits } = await getUserPlan(user.email, env as BillingEnv);
+  const refRec = await getOrCreateReferralRecord(user.email, env);
+  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits } = await getUserPlan(
+    user.email,
+    env as BillingEnv,
+  );
   const usedToday = await getDailyUsage(user.email, env, request, limits.generatePeriod);
-  const editUsedToday = await getMonthlyEditUsage(user.email, env as BillingEnv);
+  const editUsedToday = isTrial ? 0 : await getMonthlyEditUsage(user.email, env as BillingEnv);
+  const effectiveDailyLimit = Math.max(baseLimits.generateLimit, usedToday) + bonusGenerates;
+  const effectiveEditLimit = Math.max(isTrial ? 0 : baseLimits.editLimit, editUsedToday) + bonusEdits;
   const sites = await getUserSites(user.email, env);
   return jsonResponse(200, {
     user: {
@@ -360,14 +389,24 @@ export async function handleMeRequest(request: Request, env: AuthEnv): Promise<R
       plan,
       isPro,
       isMax,
+      isTrial,
       hasBilling: isBillingConfigured(env as BillingEnv),
       maxSites: limits.maxSites,
       usedToday,
-      dailyLimit: limits.generateLimit,
+      dailyLimit: effectiveDailyLimit,
       quotaPeriod: limits.generatePeriod,
       editUsedToday,
-      editDailyLimit: limits.editLimit,
+      editDailyLimit: effectiveEditLimit,
       sites,
+      referral: {
+        code: refRec.code,
+        invitedCount: refRec.invitedCount,
+        maxRewards: MAX_REFERRAL_REWARDS,
+        bonusGenerates: refRec.bonusGenerates,
+        bonusEdits: refRec.bonusEdits,
+        trialExpiresAt: isTrialActive(refRec) ? refRec.trialExpiresAt : undefined,
+        hasPendingReferrer: Boolean(refRec.referredBy && !refRec.qualifiedAt),
+      },
     },
   });
 }

@@ -18,6 +18,7 @@ import {
   handleRedeemCodeRequest,
   type BillingEnv,
 } from "./billing";
+import { handleAdminCreateCodeRequest, handleAdminOverviewRequest, type AdminEnv } from "./admin";
 import { handleGenerateAvatarRequest } from "./avatar";
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleAiEditRequest } from "./edit";
@@ -30,7 +31,7 @@ import {
   buildSitemapResponse,
 } from "./site-meta";
 
-interface WorkerEnv extends ChatEnv, BillingEnv {
+interface WorkerEnv extends ChatEnv, BillingEnv, AdminEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
@@ -66,6 +67,12 @@ const worker = {
     }
     if (url.pathname === "/api/billing/admin/codes") {
       return handleCreateRedeemCodesRequest(request, env);
+    }
+    if (url.pathname === "/api/admin/overview") {
+      return handleAdminOverviewRequest(request, env);
+    }
+    if (url.pathname === "/api/admin/codes") {
+      return handleAdminCreateCodeRequest(request, env);
     }
     if (url.pathname === "/api/chat") {
       return handleChatRequest(request, env);
@@ -108,7 +115,8 @@ const worker = {
       const slug = normalizeSlug(decodeURIComponent(url.pathname.slice("/u/".length).split("/")[0] || ""));
       const record = slug ? await loadStoredRecord(slug, env) : null;
       const ownerPlan = record?.ownerEmail ? await getUserPlan(record.ownerEmail, env) : null;
-      const expired = record && !ownerPlan?.isPro && Date.now() > Date.parse(record.expiresAt);
+      const hasPermanentHosting = Boolean(ownerPlan?.isPro && !ownerPlan?.isTrial);
+      const expired = record && !hasPermanentHosting && Date.now() > Date.parse(record.expiresAt);
       const hidden = Boolean(record?.noindex || record?.passcode);
       const locked = record && !expired && !await siteUnlocked(request, slug, record.passcode);
       const requestHeaders = new Headers(request.headers);

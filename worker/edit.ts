@@ -2,6 +2,7 @@ import { canUseModel, getHostedModel } from "../lib/models";
 import { isValidTheme, sanitizeDesignTokens, type PortfolioProfile, type ThemeId } from "../lib/schema";
 import { getSessionUser } from "./auth";
 import { getMonthlyEditUsage, getUserPlan, incrementMonthlyEditUsage, type BillingEnv } from "./billing";
+import { consumeReferralBonus, refundReferralBonus } from "./referral";
 import type { ChatEnv } from "./chat";
 
 interface EditHistoryTurn {
@@ -55,7 +56,11 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
   let baseUrl = "https://api.openai.com/v1";
   let model = "gpt-4o-mini";
   let userEmail: string | null = null;
-  let editDailyLimit = 0;
+  let editBaseLimit = 0;
+  let editUsedBefore = 0;
+  let editBonusRemaining = 0;
+  let editIsTrial = false;
+  let reservedBonusEdit = false;
 
   if (isByok) {
     apiKey = byokKey;
@@ -71,17 +76,22 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
         error: "Please sign in and upgrade to TalkCV Pro or Max to use AI Live Refine.",
       });
     }
-    const { plan, limits } = await getUserPlan(user.email, env);
+    const { plan, isTrial, limits, baseLimits, bonusEdits } = await getUserPlan(user.email, env);
     if (!limits.aiLiveEdit) {
       return jsonResponse(403, {
         error: "AI Live Refine is a TalkCV Pro / Max feature. Upgrade your plan to unlock multi-turn AI editing.",
       });
     }
-    editDailyLimit = limits.editLimit;
-    const used = await getMonthlyEditUsage(user.email, env);
-    if (used >= editDailyLimit) {
+    editIsTrial = isTrial;
+    editBaseLimit = isTrial ? 0 : baseLimits.editLimit;
+    editBonusRemaining = bonusEdits;
+    const used = isTrial ? 0 : await getMonthlyEditUsage(user.email, env);
+    editUsedBefore = used;
+    const remaining = Math.max(0, editBaseLimit - used) + bonusEdits;
+    if (remaining <= 0) {
+      const displayLimit = Math.max(editBaseLimit, used);
       return jsonResponse(429, {
-        error: `Monthly AI refine limit reached (${editDailyLimit}/month). Upgrade to Max for 300/month.`,
+        error: `Monthly AI refine limit reached (${displayLimit}/month). Upgrade to Max for 300/month.`,
       });
     }
     userEmail = user.email;
@@ -107,6 +117,17 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
     }
     if (!apiKey) {
       return jsonResponse(503, { error: `Hosted ${chosen.provider} is not configured on this server.` });
+    }
+
+    if (editIsTrial || editUsedBefore >= editBaseLimit) {
+      const deducted = await consumeReferralBonus(user.email, "edit", env);
+      if (!deducted) {
+        const displayLimit = Math.max(editBaseLimit, editUsedBefore);
+        return jsonResponse(429, {
+          error: `Monthly AI refine limit reached (${displayLimit}/month). Upgrade to Max for 300/month.`,
+        });
+      }
+      reservedBonusEdit = true;
     }
   }
 
@@ -166,10 +187,12 @@ Rules:
       upstream = await callEdit("deepseek-chat");
     }
   } catch {
+    if (reservedBonusEdit && userEmail) await refundReferralBonus(userEmail, "edit", env);
     return jsonResponse(502, { error: "Unable to reach AI provider." });
   }
 
   if (!upstream.ok) {
+    if (reservedBonusEdit && userEmail) await refundReferralBonus(userEmail, "edit", env);
     return jsonResponse(upstream.status === 401 ? 401 : 502, {
       error: `AI provider returned HTTP ${upstream.status}.`,
     });
@@ -196,8 +219,16 @@ Rules:
 
     let editQuota: { usedToday: number; dailyLimit: number } | undefined;
     if (userEmail) {
-      const usedToday = await incrementMonthlyEditUsage(userEmail, env);
-      editQuota = { usedToday, dailyLimit: editDailyLimit };
+      if (!reservedBonusEdit) {
+        const usedToday = await incrementMonthlyEditUsage(userEmail, env);
+        editQuota = { usedToday, dailyLimit: editBaseLimit + editBonusRemaining };
+      } else {
+        const remainingBonus = Math.max(0, editBonusRemaining - 1);
+        editQuota = {
+          usedToday: editUsedBefore,
+          dailyLimit: Math.max(editBaseLimit, editUsedBefore) + remainingBonus,
+        };
+      }
     }
 
     return jsonResponse(200, {
@@ -207,6 +238,7 @@ Rules:
       ...(editQuota ? { editQuota } : {}),
     });
   } catch {
+    if (reservedBonusEdit && userEmail) await refundReferralBonus(userEmail, "edit", env);
     return jsonResponse(502, { error: "Could not parse AI edit response. Please try again." });
   }
 }

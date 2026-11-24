@@ -49,6 +49,7 @@ import {
 interface AppContextValue {
   profile: PortfolioProfile;
   profileSlug?: string;
+  ownerRefCode?: string;
   lang: Lang;
   setLang: (l: Lang) => void;
   theme: ThemeId;
@@ -67,11 +68,13 @@ function AppProvider({
   initialProfile = defaultProfile,
   initialLang,
   profileSlug,
+  ownerRefCode,
   children,
 }: {
   initialProfile?: PortfolioProfile;
   initialLang?: Lang;
   profileSlug?: string;
+  ownerRefCode?: string;
   children: React.ReactNode;
 }) {
   const [lang, setLangState] = useState<Lang>(initialLang ?? "en");
@@ -139,8 +142,8 @@ function AppProvider({
   };
 
   const value = useMemo(
-    () => ({ profile: initialProfile, profileSlug, lang, setLang, theme, setTheme }),
-    [initialProfile, profileSlug, lang, theme],
+    () => ({ profile: initialProfile, profileSlug, ownerRefCode, lang, setLang, theme, setTheme }),
+    [initialProfile, profileSlug, ownerRefCode, lang, theme],
   );
 
   return (
@@ -355,9 +358,10 @@ function ContactBand() {
 }
 
 function SiteFooter() {
-  const { profile, profileSlug, lang } = useApp();
+  const { profile, profileSlug, ownerRefCode, lang } = useApp();
   const buildSha = typeof __BUILD_SHA__ === "string" ? __BUILD_SHA__ : "dev";
   const isPersonalHosted = Boolean(profileSlug);
+  const refHref = ownerRefCode ? `/create?ref=${encodeURIComponent(ownerRefCode)}` : "/create";
 
   return (
     <footer className="af-footer af-shell">
@@ -367,7 +371,7 @@ function SiteFooter() {
         </span>
         {isPersonalHosted ? (
           !profile.hideBranding && (
-            <Link href="/create" className="af-powered-by">
+            <Link href={refHref} className="af-powered-by">
               {lang === "en" ? "Hosted with TalkCV" : "由 TalkCV 托管"}
             </Link>
           )
@@ -466,16 +470,18 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
                 </Link>
               </div>
             </div>
-            <div className="af-demo-notice" role="note">
-              <strong>
-                {lang === "zh" ? "虚构示例演示（Alex Chen）" : "LIVE DEMO · FICTIONAL SAMPLE PROFILE (ALEX CHEN)"}
-              </strong>
-              <span>
-                {lang === "zh"
-                  ? "下方展示的是用 TalkCV 生成的虚构人物示例站。所有经历、项目指标（如「12 个团队」「450+ 评测用例」）及示例邮箱 alex.chen@example.dev 均为演示占位数据，并非真实客户成绩。TalkCV 官方客服与条款见页面底部。"
-                  : "The portfolio below is an interactive fictional demo of what TalkCV creates. All metrics (including '12 teams onboarded' and '450+ golden eval cases'), roles, and alex.chen@example.dev are illustrative sample placeholders, not verified customer results. Official TalkCV support & policies are linked in the footer."}
-              </span>
-            </div>
+            {profile.basics.email === "alex.chen@example.dev" && (
+              <div className="af-demo-notice" role="note">
+                <strong>
+                  {lang === "zh" ? "虚构示例演示（Alex Chen）" : "LIVE DEMO · FICTIONAL SAMPLE PROFILE (ALEX CHEN)"}
+                </strong>
+                <span>
+                  {lang === "zh"
+                    ? "下方展示的是用 TalkCV 生成的虚构人物示例站。所有经历、项目指标（如「12 个团队」「450+ 评测用例」）及示例邮箱 alex.chen@example.dev 均为演示占位数据，并非真实客户成绩。TalkCV 官方客服与条款见页面底部。"
+                    : "The portfolio below is an interactive fictional demo of what TalkCV creates. All metrics (including '12 teams onboarded' and '450+ golden eval cases'), roles, and alex.chen@example.dev are illustrative sample placeholders, not verified customer results. Official TalkCV support & policies are linked in the footer."}
+                </span>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -938,16 +944,23 @@ function NotFoundContent() {
 export function PortfolioHome({
   initialProfile,
   profileSlug,
+  ownerRefCode,
   draftHandle,
   initialLang,
 }: {
   initialProfile?: PortfolioProfile;
   profileSlug?: string;
+  ownerRefCode?: string;
   draftHandle?: string;
   initialLang?: Lang;
 } = {}) {
   return (
-    <AppProvider initialProfile={initialProfile} profileSlug={profileSlug} initialLang={initialLang}>
+    <AppProvider
+      initialProfile={initialProfile}
+      profileSlug={profileSlug}
+      ownerRefCode={ownerRefCode}
+      initialLang={initialLang}
+    >
       <HomeContent exportSlug={profileSlug === "__draft__" ? draftHandle : profileSlug} />
     </AppProvider>
   );

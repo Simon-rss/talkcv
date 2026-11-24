@@ -38,6 +38,7 @@ interface AuthUser {
   plan?: PlanTier;
   isPro?: boolean;
   isMax?: boolean;
+  isTrial?: boolean;
   hasBilling?: boolean;
   usedToday: number;
   dailyLimit: number;
@@ -46,6 +47,15 @@ interface AuthUser {
   editDailyLimit?: number;
   maxSites: number;
   sites: string[];
+  referral?: {
+    code: string;
+    invitedCount: number;
+    maxRewards: number;
+    bonusGenerates: number;
+    bonusEdits: number;
+    trialExpiresAt?: string;
+    hasPendingReferrer?: boolean;
+  };
 }
 
 function buildPresetAvatarSvg(initials: string, c1: string, c2: string): string {
@@ -246,26 +256,42 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
+  const [pendingRefCode, setPendingRefCode] = useState<string>("");
+  const [copiedRef, setCopiedRef] = useState(false);
 
   const currentPlan: PlanTier = user?.plan ?? "free";
   const remainingEdits = user ? Math.max(0, (user.editDailyLimit ?? 0) - (user.editUsedToday ?? 0)) : 0;
 
-  // Restore user session + check ?upgraded=1 return from Creem
+  // Restore user session + check ?upgraded= / ?ref=
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let rafId: number | null = null;
-    if (params.get("upgraded")) {
-      const upgradedTier = params.get("upgraded") === "max" ? "Max" : "Pro";
+    const rawRef = params.get("ref")?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+    let activeRef = rawRef || "";
+    try {
+      if (rawRef) window.localStorage.setItem("talkcv-pending-ref", rawRef);
+      else activeRef = window.localStorage.getItem("talkcv-pending-ref") || "";
+    } catch {
+      // ignore storage errors
+    }
+    if (params.get("upgraded") || activeRef) {
+      const upgradedParam = params.get("upgraded");
       rafId = window.requestAnimationFrame(() => {
-        setBillingBanner(
-          lang === "zh"
-            ? `支付已完成！TalkCV ${upgradedTier} 权益（高级模型 + AI 实时精修 + 更高额度）正在同步生效。`
-            : `Payment received! Your TalkCV ${upgradedTier} models, AI Live Refine & higher quotas are activating.`,
-        );
+        if (activeRef) setPendingRefCode(activeRef);
+        if (upgradedParam) {
+          const upgradedTier = upgradedParam === "max" ? "Max" : "Pro";
+          setBillingBanner(
+            lang === "zh"
+              ? `支付已完成！TalkCV ${upgradedTier} 权益（高级模型 + AI 实时精修 + 更高额度）正在同步生效。`
+              : `Payment received! Your TalkCV ${upgradedTier} models, AI Live Refine & higher quotas are activating.`,
+          );
+        }
       });
-      params.delete("upgraded");
-      const q = params.toString();
-      window.history.replaceState(null, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+      if (upgradedParam) {
+        params.delete("upgraded");
+        const q = params.toString();
+        window.history.replaceState(null, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+      }
     }
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : { user: null }))
@@ -352,9 +378,16 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         maxSites: data.maxSites,
         isPro: true,
         isMax: nextPlan === "max",
+        isTrial: false,
         dailyLimit: nextDailyLimit,
         editDailyLimit: nextEditLimit,
       });
+      fetch("/api/auth/me")
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .then((me: { user?: AuthUser | null } | null) => {
+          if (me?.user) setUser(me.user);
+        })
+        .catch(() => {});
       setRedeemCode("");
       const expDate = data.expiresAt ? data.expiresAt.slice(0, 10) : "";
       setRedeemSuccess({
@@ -606,11 +639,22 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       const res = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: authEmail, code: authCode, challenge: authChallenge }),
+        body: JSON.stringify({
+          email: authEmail,
+          code: authCode,
+          challenge: authChallenge,
+          ...(pendingRefCode ? { referralCode: pendingRefCode } : {}),
+        }),
       });
       const data = (await res.json()) as { ok?: boolean; user?: AuthUser; error?: string };
       if (!res.ok || !data.user) throw new Error(data.error || "Invalid code.");
       setUser(data.user);
+      try {
+        window.localStorage.removeItem("talkcv-pending-ref");
+      } catch {
+        // ignore
+      }
+      setPendingRefCode("");
       setAuthModalOpen(false);
       setAuthStep("email");
       setAuthCode("");
@@ -856,7 +900,11 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       "talkcv-draft-profile",
       JSON.stringify({ ...generated, theme }),
     );
-    window.open(`/preview?handle=${encodeURIComponent(handle)}&lang=${lang}`, "_blank", "noopener,noreferrer");
+    const publishedSlug = publishedUrl?.match(/\/u\/([^/?#]+)/)?.[1] ?? "";
+    const query = publishedSlug
+      ? `handle=${encodeURIComponent(publishedSlug)}&lang=${lang}`
+      : `lang=${lang}`;
+    window.open(`/preview?${query}`, "_blank", "noopener,noreferrer");
   };
 
   const publishLiveSite = async () => {
@@ -900,6 +948,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         expiresAt?: string;
         privacy?: { noindex: boolean; protected: boolean };
         chatMeta?: ChatMeta;
+        referralReward?: { generates: number; edits: number; trialDays: number; inviterRewarded?: boolean };
         error?: string;
       };
       if (!res.ok || !data.url) {
@@ -918,7 +967,24 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         setChatByokApiKey("");
         setClearByokKey(false);
       }
-      if (data.slug && !user.sites.includes(data.slug)) {
+      if (data.referralReward) {
+        const r = data.referralReward;
+        setBillingBanner(
+          lang === "zh"
+            ? r.inviterRewarded !== false
+              ? `🎁 好友邀请奖励已发放！你已解锁 ${r.trialDays} 天 Pro 体验（+${r.generates} 次生成 & +${r.edits} 次 AI 精修），好友也同步获得 7 天 Pro 体验奖励！`
+              : `🎁 好友邀请奖励已发放！你已解锁 ${r.trialDays} 天 Pro 体验（+${r.generates} 次生成 & +${r.edits} 次 AI 精修）！`
+            : r.inviterRewarded !== false
+              ? `🎁 Referral reward unlocked! You received ${r.trialDays}-day Pro trial (+${r.generates} generations & +${r.edits} AI refines), and your friend earned 7 days!`
+              : `🎁 Referral reward unlocked! You received ${r.trialDays}-day Pro trial (+${r.generates} generations & +${r.edits} AI refines)!`,
+        );
+        fetch("/api/auth/me")
+          .then((resp) => (resp.ok ? resp.json() : null))
+          .then((me: { user?: AuthUser | null } | null) => {
+            if (me?.user) setUser(me.user);
+          })
+          .catch(() => {});
+      } else if (data.slug && !user.sites.includes(data.slug)) {
         setUser({ ...user, sites: [...user.sites, data.slug] });
       }
     } catch (err) {
@@ -952,7 +1018,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                 <span>{user.email}</span>
                 {user.isPro && (
                   <em style={{ background: "var(--accent)", color: "var(--accent-ink)", padding: "1px 6px", borderRadius: 999 }}>
-                    {user.isMax ? "MAX" : "PRO"}
+                    {user.isMax ? "MAX" : user.isTrial ? "PRO 体验" : "PRO"}
                   </em>
                 )}
                 <em>
@@ -968,7 +1034,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   <LogOut size={12} />
                 </button>
               </div>
-              {user.isPro && (
+              {user.isPro && !user.isTrial && (
                 <button type="button" className="af-icon-pill" onClick={openBillingPortal} disabled={billingBusy}>
                   <span>{lang === "zh" ? "管理订阅" : "Billing"}</span>
                 </button>
@@ -980,7 +1046,19 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   onClick={() => setPricingOpen(true)}
                 >
                   <Sparkles size={13} />
-                  <span>{lang === "zh" ? (user.isPro ? "升级 Max" : "升级会员") : user.isPro ? "Upgrade Max" : "Upgrade"}</span>
+                  <span>
+                    {lang === "zh"
+                      ? user.isTrial
+                        ? "升级正式 Pro"
+                        : user.isPro
+                          ? "升级 Max"
+                          : "升级会员"
+                      : user.isTrial
+                        ? "Upgrade Pro"
+                        : user.isPro
+                          ? "Upgrade Max"
+                          : "Upgrade"}
+                  </span>
                 </button>
               )}
               <button
@@ -1016,6 +1094,52 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         </div>
       </header>
 
+      {!user && pendingRefCode && (
+        <div className="af-shell af-mysites-bar" role="status">
+          <Sparkles size={14} />
+          <span>
+            {lang === "zh"
+              ? `🎁 你正在通过好友邀请码（${pendingRefCode}）体验 TalkCV：登录并发布首个个人站后，你立得 3 天 Pro 体验（+3 次生成 & +10 次 AI 精修），好友同获 7 天奖励！`
+              : `🎁 Invited via code ${pendingRefCode}: sign in & publish your first site to unlock a 3-day Pro trial (+3 generations & +10 AI refines) for you and 7 days for your friend!`}
+          </span>
+          <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
+            {lang === "zh" ? "立即登录领取" : "Sign in to claim"}
+          </button>
+        </div>
+      )}
+
+      {user?.referral && (
+        <div className="af-shell af-mysites-bar">
+          <span className="af-mysites-label">
+            <Sparkles size={13} />{" "}
+            {lang === "zh"
+              ? `邀请有礼：每拉 1 位新用户建站，你得 +5 生成/+15 精修/+7 天 Pro，好友得 +3 生成/+10 精修/+3 天 Pro（已邀 ${user.referral.invitedCount}/${user.referral.maxRewards} 人）`
+              : `Invite & Earn: +5 gen / +15 AI refines / 7d Pro per friend who publishes (${user.referral.invitedCount}/${user.referral.maxRewards} invited)`}
+          </span>
+          <button
+            type="button"
+            className="af-icon-pill af-login-pill"
+            onClick={() => {
+              const link = `${window.location.origin}/create?ref=${user.referral!.code}`;
+              void navigator.clipboard?.writeText(link);
+              setCopiedRef(true);
+              window.setTimeout(() => setCopiedRef(false), 2000);
+            }}
+          >
+            {copiedRef ? <Check size={12} /> : <Copy size={12} />}
+            <span>
+              {copiedRef
+                ? lang === "zh"
+                  ? "已复制邀请链接"
+                  : "Invite link copied"
+                : lang === "zh"
+                  ? `复制专属邀请链接 (${user.referral.code})`
+                  : `Copy invite link (${user.referral.code})`}
+            </span>
+          </button>
+        </div>
+      )}
+
       {billingBanner && (
         <div className="af-shell af-mysites-bar" role="status">
           <Sparkles size={14} />
@@ -1037,9 +1161,15 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               <div className="af-site-entry" key={slug}>
                 <button type="button" className={`af-icon-pill ${publishedUrl?.endsWith(`/u/${slug}`) ? "af-site-active" : ""}`}
                   disabled={loadingSiteSlug !== null} onClick={() => void loadExistingSite(slug)}>/u/{slug}</button>
-                <button type="button" className="af-icon-pill" disabled={loadingSiteSlug !== null}
-                  aria-label={`${lang === "zh" ? "下线" : "Delete"} /u/${slug}`} onClick={() => void deleteSite(slug)}>
-                  <Trash2 size={14} />
+                <button
+                  type="button"
+                  className="af-site-delete"
+                  disabled={loadingSiteSlug !== null}
+                  title={lang === "zh" ? `下线并删除 /u/${slug}` : `Delete /u/${slug}`}
+                  aria-label={`${lang === "zh" ? "下线" : "Delete"} /u/${slug}`}
+                  onClick={() => void deleteSite(slug)}
+                >
+                  <X size={11} strokeWidth={2.5} />
                 </button>
               </div>
             ))}
@@ -1913,6 +2043,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         }}
         lang={lang}
         currentPlan={currentPlan}
+        isTrial={Boolean(user?.isTrial)}
         busyTier={checkoutBusyTier}
         error={pricingError}
         onSelectPlan={startPlanCheckout}

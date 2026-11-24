@@ -1,5 +1,6 @@
 import type { PlanTier } from "../lib/models";
 import { getSessionUser, type AuthEnv } from "./auth";
+import { isTrialActive, readReferralRecord } from "./referral";
 
 export interface BillingEnv extends AuthEnv {
   CREEM_API_KEY?: string;
@@ -128,7 +129,7 @@ export const PRO_DAILY_CHAT_LIMIT_PER_SITE = PLAN_LIMITS.pro.dailyChatLimitPerSi
 export const PRO_HOSTING_DAYS = PLAN_LIMITS.pro.hostingDays;
 export const PRO_MAX_SITES_PER_USER = PLAN_LIMITS.pro.maxSites;
 
-interface RedeemCodeRecord {
+export interface RedeemCodeRecord {
   code: string;
   plan?: PlanTier;
   days: number;
@@ -230,27 +231,107 @@ async function hmacSha256Hex(secret: string, payload: string): Promise<string> {
 export async function getUserPlan(
   email: string | undefined,
   env: BillingEnv,
-): Promise<{ plan: PlanTier; isPro: boolean; isMax: boolean; limits: PlanLimits; record: PlanRecord | null }> {
-  if (!email) return { plan: "free", isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
+): Promise<{
+  plan: PlanTier;
+  isPro: boolean;
+  isMax: boolean;
+  isTrial: boolean;
+  limits: PlanLimits;
+  baseLimits: PlanLimits;
+  bonusGenerates: number;
+  bonusEdits: number;
+  record: PlanRecord | null;
+}> {
+  if (!email) {
+    return {
+      plan: "free",
+      isPro: false,
+      isMax: false,
+      isTrial: false,
+      limits: PLAN_LIMITS.free,
+      baseLimits: PLAN_LIMITS.free,
+      bonusGenerates: 0,
+      bonusEdits: 0,
+      record: null,
+    };
+  }
   const key = `plan:${email.trim().toLowerCase()}`;
   const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : (memPlans.get(key) ?? null);
-  if (!raw) return { plan: "free", isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
-  try {
-    const record = JSON.parse(raw) as PlanRecord;
-    const isExpired =
-      record.expiresAt && Number.isFinite(Date.parse(record.expiresAt)) && Date.now() > Date.parse(record.expiresAt);
-    const activePlan: PlanTier =
-      !isExpired && (record.plan === "max" || record.plan === "pro") ? record.plan : "free";
+  const refRec = await readReferralRecord(email, env);
+  const bonusGenerates = Math.max(0, refRec?.bonusGenerates ?? 0);
+  const bonusEdits = Math.max(0, refRec?.bonusEdits ?? 0);
+  const trialOn = isTrialActive(refRec);
+
+  let record: PlanRecord | null = null;
+  let paidPlan: PlanTier = "free";
+  if (raw) {
+    try {
+      record = JSON.parse(raw) as PlanRecord;
+      const isExpired =
+        record.expiresAt && Number.isFinite(Date.parse(record.expiresAt)) && Date.now() > Date.parse(record.expiresAt);
+      if (!isExpired && (record.plan === "max" || record.plan === "pro")) {
+        paidPlan = record.plan;
+      }
+    } catch {
+      record = null;
+    }
+  }
+
+  if (paidPlan === "pro" || paidPlan === "max") {
+    const base = PLAN_LIMITS[paidPlan];
     return {
-      plan: activePlan,
-      isPro: activePlan === "pro" || activePlan === "max",
-      isMax: activePlan === "max",
-      limits: PLAN_LIMITS[activePlan],
+      plan: paidPlan,
+      isPro: true,
+      isMax: paidPlan === "max",
+      isTrial: false,
+      limits: {
+        ...base,
+        generateLimit: base.generateLimit + bonusGenerates,
+        editLimit: base.editLimit + bonusEdits,
+      },
+      baseLimits: base,
+      bonusGenerates,
+      bonusEdits,
       record,
     };
-  } catch {
-    return { plan: "free", isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
   }
+
+  if (trialOn) {
+    // Referral Pro trial: unlocks Pro models, AI Live Refine & Visitor Insights,
+    // strictly capped by remaining earned bonus credits (never full monthly Pro quotas or AI avatars).
+    return {
+      plan: "pro",
+      isPro: true,
+      isMax: false,
+      isTrial: true,
+      limits: {
+        ...PLAN_LIMITS.free,
+        generateLimit: PLAN_LIMITS.free.generateLimit + bonusGenerates,
+        editLimit: bonusEdits,
+        avatarGenLimit: 0,
+        aiLiveEdit: bonusEdits > 0,
+      },
+      baseLimits: PLAN_LIMITS.free,
+      bonusGenerates,
+      bonusEdits,
+      record,
+    };
+  }
+
+  return {
+    plan: "free",
+    isPro: false,
+    isMax: false,
+    isTrial: false,
+    limits: {
+      ...PLAN_LIMITS.free,
+      generateLimit: PLAN_LIMITS.free.generateLimit + bonusGenerates,
+    },
+    baseLimits: PLAN_LIMITS.free,
+    bonusGenerates,
+    bonusEdits,
+    record,
+  };
 }
 
 export async function setUserPlan(email: string, record: PlanRecord, env: BillingEnv): Promise<void> {

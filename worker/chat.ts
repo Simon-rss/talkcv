@@ -165,8 +165,9 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
 
   const ownerPlan = storedRecord?.ownerEmail
     ? await getUserPlan(storedRecord.ownerEmail, env as BillingEnv)
-    : { plan: "free" as const, isPro: false, isMax: false, limits: PLAN_LIMITS.free, record: null };
-  if (storedRecord && !ownerPlan.isPro && Date.now() > Date.parse(storedRecord.expiresAt)) return jsonError(410, "Hosting period expired.");
+    : { plan: "free" as const, isPro: false, isMax: false, isTrial: false, limits: PLAN_LIMITS.free, record: null };
+  const hasPermanentHosting = ownerPlan.isPro && !ownerPlan.isTrial;
+  if (storedRecord && !hasPermanentHosting && Date.now() > Date.parse(storedRecord.expiresAt)) return jsonError(410, "Hosting period expired.");
   if (!byokCreds && !openaiKey && !deepseekKey) {
     return jsonError(
       503,

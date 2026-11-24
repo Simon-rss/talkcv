@@ -16,6 +16,7 @@ import {
   incrementDailyUsage,
 } from "./auth";
 import { getUserPlan, type BillingEnv } from "./billing";
+import { consumeReferralBonus, refundReferralBonus } from "./referral";
 import type { ChatEnv } from "./chat";
 
 const RATE_WINDOW_MS = 60_000;
@@ -278,7 +279,10 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   let model = "gpt-4o-mini";
   let hostedUserEmail: string | null = null;
   let activeQuotaPeriod: "lifetime" | "month" = "lifetime";
-  let activeQuotaLimit = DAILY_GENERATE_LIMIT;
+  let activeBaseLimit = DAILY_GENERATE_LIMIT;
+  let activeUsedBefore = 0;
+  let activeBonusGenerates = 0;
+  let reservedBonusGenerate = false;
 
   if (mode === "byok") {
     if (!byokKey) {
@@ -299,16 +303,20 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
         error: "Please sign in with your email to use TalkCV's free daily AI quota (or paste your own API key).",
       });
     }
-    const { plan, limits } = await getUserPlan(user.email, env as BillingEnv);
-    activeQuotaLimit = limits.generateLimit;
+    const { plan, limits, baseLimits, bonusGenerates } = await getUserPlan(user.email, env as BillingEnv);
+    activeBaseLimit = baseLimits.generateLimit;
     activeQuotaPeriod = limits.generatePeriod;
+    activeBonusGenerates = bonusGenerates;
     const used = await getDailyUsage(user.email, env, request, activeQuotaPeriod);
-    if (used >= activeQuotaLimit) {
+    activeUsedBefore = used;
+    const remaining = Math.max(0, activeBaseLimit - used) + bonusGenerates;
+    if (remaining <= 0) {
+      const displayLimit = Math.max(activeBaseLimit, used);
       return jsonResponse(429, {
         error:
           activeQuotaPeriod === "lifetime"
-            ? `Free account generation quota reached (${activeQuotaLimit} total). Upgrade to Pro (30/month) or use your own API key.`
-            : `Monthly generation limit reached (${activeQuotaLimit}/month). Upgrade to Max or use your own API key.`,
+            ? `Free account generation quota reached (${displayLimit} total). Upgrade to Pro (30/month) or use your own API key.`
+            : `Monthly generation limit reached (${displayLimit}/month). Upgrade to Max or use your own API key.`,
       });
     }
     hostedUserEmail = user.email;
@@ -341,6 +349,20 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
       return jsonResponse(503, {
         error: `Hosted ${chosen.provider} is not configured on this server.`,
       });
+    }
+
+    if (activeUsedBefore >= activeBaseLimit) {
+      const deducted = await consumeReferralBonus(user.email, "generate", env);
+      if (!deducted) {
+        const displayLimit = Math.max(activeBaseLimit, activeUsedBefore);
+        return jsonResponse(429, {
+          error:
+            activeQuotaPeriod === "lifetime"
+              ? `Free account generation quota reached (${displayLimit} total). Upgrade to Pro (30/month) or use your own API key.`
+              : `Monthly generation limit reached (${displayLimit}/month). Upgrade to Max or use your own API key.`,
+        });
+      }
+      reservedBonusGenerate = true;
     }
   }
 
@@ -399,10 +421,12 @@ ${JSON.stringify(sanitizedSample)}`;
       upstream = await callGenerate("deepseek-chat");
     }
   } catch {
+    if (reservedBonusGenerate && hostedUserEmail) await refundReferralBonus(hostedUserEmail, "generate", env);
     return jsonResponse(502, { error: "Unable to reach the configured AI API endpoint." });
   }
 
   if (!upstream.ok) {
+    if (reservedBonusGenerate && hostedUserEmail) await refundReferralBonus(hostedUserEmail, "generate", env);
     return jsonResponse(upstream.status === 401 ? 401 : 502, {
       error:
         upstream.status === 401
@@ -422,14 +446,23 @@ ${JSON.stringify(sanitizedSample)}`;
     let quota: { usedToday: number; dailyLimit: number } | undefined;
     let extraHeaders: Record<string, string> | undefined;
     if (hostedUserEmail) {
-      const usedToday = await incrementDailyUsage(hostedUserEmail, env, request, activeQuotaPeriod);
-      quota = { usedToday, dailyLimit: activeQuotaLimit };
-      extraHeaders = {
-        "set-cookie": await buildUsageCookie(request, hostedUserEmail, usedToday, env, activeQuotaPeriod),
-      };
+      if (!reservedBonusGenerate) {
+        const usedToday = await incrementDailyUsage(hostedUserEmail, env, request, activeQuotaPeriod);
+        quota = { usedToday, dailyLimit: activeBaseLimit + activeBonusGenerates };
+        extraHeaders = {
+          "set-cookie": await buildUsageCookie(request, hostedUserEmail, usedToday, env, activeQuotaPeriod),
+        };
+      } else {
+        const remainingBonus = Math.max(0, activeBonusGenerates - 1);
+        quota = {
+          usedToday: activeUsedBefore,
+          dailyLimit: Math.max(activeBaseLimit, activeUsedBefore) + remainingBonus,
+        };
+      }
     }
     return jsonResponse(200, { profile: normalized, ...(quota ? { quota } : {}) }, extraHeaders);
   } catch {
+    if (reservedBonusGenerate && hostedUserEmail) await refundReferralBonus(hostedUserEmail, "generate", env);
     return jsonResponse(502, { error: "Model response could not be parsed as valid JSON. Try again." });
   }
 }

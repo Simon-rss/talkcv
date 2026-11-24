@@ -217,3 +217,259 @@ test("existing profile records without privacy fields remain public", async () =
   assert.equal(signIn.status, 503);
   assert.equal((await signIn.json()).instantCode, undefined);
 });
+
+test("referral program grants credit-capped Pro trial to both sides only after first publish", async () => {
+  const env = {};
+  const inviterCookie = await login("inviter@example.org", env);
+  const inviterBefore = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
+  assert.match(inviterBefore.referral.code, /^[A-Z0-9]{6}$/);
+  assert.equal(inviterBefore.isPro, false);
+  assert.equal(inviterBefore.dailyLimit, 3);
+
+  // Invitee signs up with inviter's referral code — no reward yet before publishing
+  const { instantCode, challenge } = await (
+    await call("/api/auth/send-code", { method: "POST", body: { email: "invitee@example.org" }, env })
+  ).json();
+  const verifyRes = await call("/api/auth/verify", {
+    method: "POST",
+    body: { email: "invitee@example.org", code: instantCode, challenge, referralCode: inviterBefore.referral.code },
+    env,
+  });
+  assert.equal(verifyRes.status, 200);
+  const inviteeCookie = verifyRes.headers.get("set-cookie").split(";")[0];
+  const verifyData = await verifyRes.json();
+  assert.equal(verifyData.user.isPro, false);
+  assert.equal(verifyData.user.dailyLimit, 3);
+  assert.equal(verifyData.user.referral.hasPendingReferrer, true);
+
+  // Invitee publishes first site -> unlocks credit-capped Pro trial for both sides
+  const firstPub = await publish("invitee-first", inviteeCookie, {}, env);
+  assert.equal(firstPub.status, 200);
+  const firstPubJson = await firstPub.json();
+  assert.deepEqual(firstPubJson.referralReward, { generates: 3, edits: 10, trialDays: 3, inviterRewarded: true });
+
+  // Published profile exposes ownerRefCode for viral footer link
+  const profileJson = await (await call("/api/profiles/invitee-first", { env })).json();
+  assert.equal(profileJson.ownerRefCode, verifyData.user.referral.code);
+
+  // Invitee gets 3-day Pro trial with 3+3=6 generates, 10 AI edits, and NO AI avatar generation
+  const inviteeAfter = (await (await call("/api/auth/me", { cookie: inviteeCookie, env })).json()).user;
+  assert.equal(inviteeAfter.isPro, true);
+  assert.equal(inviteeAfter.isTrial, true);
+  assert.equal(inviteeAfter.dailyLimit, 6);
+  assert.equal(inviteeAfter.editDailyLimit, 10);
+  assert.equal(inviteeAfter.referral.hasPendingReferrer, false);
+  const avatarAttempt = await call("/api/avatar", {
+    method: "POST",
+    cookie: inviteeCookie,
+    body: { prompt: "minimalist portrait" },
+    env,
+  });
+  assert.equal(avatarAttempt.status, 403);
+
+  // Inviter gets 7-day Pro trial with 3+5=8 generates, 15 AI edits, invitedCount=1
+  const inviterAfter = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
+  assert.equal(inviterAfter.isPro, true);
+  assert.equal(inviterAfter.isTrial, true);
+  assert.equal(inviterAfter.dailyLimit, 8);
+  assert.equal(inviterAfter.editDailyLimit, 15);
+  assert.equal(inviterAfter.referral.invitedCount, 1);
+
+  // Second publish by the same invitee must NOT grant duplicate rewards
+  const secondPub = await publish("invitee-second", inviteeCookie, {}, env);
+  assert.equal(secondPub.status, 200);
+  assert.equal((await secondPub.json()).referralReward, undefined);
+  const inviterAfterSecond = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
+  assert.equal(inviterAfterSecond.referral.invitedCount, 1);
+  assert.equal(inviterAfterSecond.dailyLimit, 8);
+});
+
+test("referral guards block existing users, serialize concurrent friends, deduct bonus edits, and align trial expiry", async (t) => {
+  const env = { DEEPSEEK_API_KEY: "test-key", OPENAI_API_KEY: "test-key" };
+  const inviterCookie = await login("race-inviter@example.org", env);
+  const inviterCode = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user.referral.code;
+
+  // 1) Existing user who already published a site cannot bind a referral code or qualify on update
+  const { instantCode: vCode, challenge: vChallenge } = await (
+    await call("/api/auth/send-code", { method: "POST", body: { email: "veteran@example.org" }, env })
+  ).json();
+  const veteranFirstLogin = await call("/api/auth/verify", {
+    method: "POST",
+    body: { email: "veteran@example.org", code: vCode, challenge: vChallenge },
+    env,
+  });
+  assert.equal(veteranFirstLogin.status, 200);
+  const veteranCookie = veteranFirstLogin.headers.get("set-cookie").split(";")[0];
+  assert.equal((await publish("veteran-site", veteranCookie, {}, env)).status, 200);
+  const veteranRelogin = await call("/api/auth/verify", {
+    method: "POST",
+    body: { email: "veteran@example.org", code: vCode, challenge: vChallenge, referralCode: inviterCode },
+    env,
+  });
+  assert.equal(veteranRelogin.status, 200);
+  const veteranReloginData = await veteranRelogin.json();
+  assert.equal(veteranReloginData.user.referral.hasPendingReferrer, false);
+  const veteranUpdate = await publish("veteran-site", veteranCookie, {}, env);
+  assert.equal(veteranUpdate.status, 200);
+  assert.equal((await veteranUpdate.json()).referralReward, undefined);
+
+  // 2) Two friends publishing concurrently both credit the inviter without lost updates
+  async function signupWithRef(email) {
+    const { instantCode, challenge } = await (
+      await call("/api/auth/send-code", { method: "POST", body: { email }, env })
+    ).json();
+    const res = await call("/api/auth/verify", {
+      method: "POST",
+      body: { email, code: instantCode, challenge, referralCode: inviterCode },
+      env,
+    });
+    return res.headers.get("set-cookie").split(";")[0];
+  }
+  const friend1 = await signupWithRef("friend-one@example.org");
+  const friend2 = await signupWithRef("friend-two@example.org");
+  const [pub1, pub2] = await Promise.all([
+    call("/api/publish", {
+      method: "POST",
+      cookie: friend1,
+      env,
+      headers: { "x-forwarded-for": "10.0.1.1" },
+      body: { slug: "friend-one-site", profile },
+    }),
+    call("/api/publish", {
+      method: "POST",
+      cookie: friend2,
+      env,
+      headers: { "x-forwarded-for": "10.0.1.2" },
+      body: { slug: "friend-two-site", profile },
+    }),
+  ]);
+  assert.equal(pub1.status, 200);
+  assert.equal(pub2.status, 200);
+  const inviterAfterRace = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
+  assert.equal(inviterAfterRace.referral.invitedCount, 2);
+  assert.equal(inviterAfterRace.referral.bonusGenerates, 10);
+  assert.equal(inviterAfterRace.referral.bonusEdits, 30);
+
+  // 3) Trial AI edit actually deducts bonusEdits balance (10 -> 9), never re-granting across months
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      choices: [{ message: { content: JSON.stringify({ summary: "Refined", profile }) } }],
+    }),
+  );
+  const editRes = await call("/api/edit", {
+    method: "POST",
+    cookie: friend1,
+    env,
+    body: { profile, instruction: "Tighten headline" },
+  });
+  assert.equal(editRes.status, 200);
+  const friend1AfterEdit = (await (await call("/api/auth/me", { cookie: friend1, env })).json()).user;
+  assert.equal(friend1AfterEdit.referral.bonusEdits, 9);
+  assert.equal(friend1AfterEdit.editDailyLimit, 9);
+
+  // 4) Legacy site without stored ownerRefCode still resolves ownerRefCode & expired trial site returns 410 in chat
+  const values = new Map([
+    [
+      "profile:legacy-trial",
+      JSON.stringify({
+        profile,
+        ownerEmail: "friend-one@example.org",
+        createdAt: "2020-01-01T00:00:00.000Z",
+        expiresAt: "2020-02-01T00:00:00.000Z",
+      }),
+    ],
+    [
+      "profile:legacy-active",
+      JSON.stringify({
+        profile,
+        ownerEmail: "friend-one@example.org",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      }),
+    ],
+  ]);
+  const kvEnv = {
+    ...env,
+    PROFILES_KV: {
+      get: async (k) => values.get(k) ?? null,
+      put: async (k, v) => { values.set(k, v); },
+    },
+  };
+  const legacyRes = await (await call("/api/profiles/legacy-active", { env: kvEnv })).json();
+  assert.match(legacyRes.ownerRefCode, /^[A-Z0-9]{6}$/);
+  assert.equal((await call("/api/profiles/legacy-trial", { env: kvEnv })).status, 410);
+  const expiredChat = await call("/api/chat", {
+    method: "POST",
+    env: kvEnv,
+    body: { profileSlug: "legacy-trial", messages: [{ role: "user", content: "Hi" }] },
+  });
+  assert.equal(expiredChat.status, 410);
+});
+
+test("admin API enforces ADMIN_EMAILS session auth, returns overview stats, and mints redeem codes", async () => {
+  const store = new Map([
+    [
+      "profile:demo-user-site",
+      JSON.stringify({
+        profile,
+        ownerEmail: "member@example.org",
+        createdAt: "2026-11-20T00:00:00.000Z",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      }),
+    ],
+    ["user_sites:member@example.org", JSON.stringify(["demo-user-site"])],
+    [
+      "ref_user:member@example.org",
+      JSON.stringify({ code: "MEM123", invitedCount: 1, bonusGenerates: 5, bonusEdits: 15 }),
+    ],
+    ["insights:demo-user-site", JSON.stringify({ views: 12, questions: 4 })],
+  ]);
+  const kv = {
+    get: async (k) => store.get(k) ?? null,
+    put: async (k, v) => { store.set(k, v); },
+    delete: async (k) => { store.delete(k); },
+    listPrefix: async (prefix) =>
+      Array.from(store.entries())
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([key, value]) => ({ key, value, updatedAt: "2026-11-24T00:00:00.000Z" })),
+  };
+  const unverifiedEnv = { ADMIN_EMAILS: "boss@example.org", AUTH_SECRET: "admin-test-secret", PROFILES_KV: kv };
+  const adminEnv = { ...unverifiedEnv, RESEND_API_KEY: "re_test_verified" };
+
+  // Without verified email delivery configured -> 503
+  assert.equal((await call("/api/admin/overview", { env: unverifiedEnv })).status, 503);
+
+  // Unauthenticated -> 401
+  assert.equal((await call("/api/admin/overview", { env: adminEnv })).status, 401);
+
+  // Regular user -> 403
+  const regularCookie = await login("member@example.org", { AUTH_SECRET: "admin-test-secret" });
+  assert.equal((await call("/api/admin/overview", { cookie: regularCookie, env: adminEnv })).status, 403);
+  assert.equal((await call("/api/admin/codes", { method: "POST", cookie: regularCookie, env: adminEnv, body: { plan: "pro" } })).status, 403);
+
+  // Admin user -> 200 overview + mint code
+  const adminCookie = await login("boss@example.org", { AUTH_SECRET: "admin-test-secret" });
+  const createRes = await call("/api/admin/codes", {
+    method: "POST",
+    cookie: adminCookie,
+    env: adminEnv,
+    body: { plan: "max", days: 30, maxUses: 2, note: "admin-ui-test" },
+  });
+  assert.equal(createRes.status, 200);
+  const created = await createRes.json();
+  assert.equal(created.codes.length, 1);
+
+  const overviewRes = await call("/api/admin/overview", { cookie: adminCookie, env: adminEnv });
+  assert.equal(overviewRes.status, 200);
+  const overview = await overviewRes.json();
+  assert.equal(overview.adminEmail, "boss@example.org");
+  assert.equal(overview.summary.totalSites, 1);
+  assert.equal(overview.summary.totalViews, 12);
+  assert.equal(overview.summary.totalQuestions, 4);
+  assert.equal(overview.users.some((u) => u.email === "member@example.org"), true);
+  assert.equal(overview.codes.some((c) => c.code === created.codes[0].code && c.plan === "max"), true);
+
+  // /admin page renders with noindex meta
+  const pageHtml = await (await call("/admin", { env: adminEnv })).text();
+  assert.match(pageHtml, /noindex/);
+});

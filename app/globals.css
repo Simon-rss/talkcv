@@ -3136,3 +3136,192 @@ button {
   color: var(--ink);
   font-size: 12px;
 }
+
+/* ===== Project Cover Screenshots ===== */
+.af-card-cover {
+  margin: -22px -22px 16px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius, 18px) var(--radius, 18px) 0 0;
+  background: var(--bg);
+}
+
+.af-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s ease;
+}
+
+.af-card:hover .af-card-cover img {
+  transform: scale(1.03);
+}
+
+[data-project-layout="editorial-rows"] .af-card-cover {
+  grid-column: 1 / -1;
+  max-height: 280px;
+}
+
+/* ===== Deep Visual Skin Engine (bgPattern / cardStyle / buttonStyle) ===== */
+[data-bg-pattern="grid"] {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.11) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+[data-bg-pattern="dots"] {
+  background-image: radial-gradient(rgba(100, 116, 139, 0.22) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+
+[data-bg-pattern="glow"] {
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% -8%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 72%),
+    radial-gradient(ellipse 50% 35% at 85% 20%, color-mix(in srgb, var(--accent2, var(--accent)) 18%, transparent), transparent 70%);
+}
+
+[data-card-style="glass"] .af-card,
+[data-card-style="glass"] .af-cap-card,
+[data-card-style="glass"] .af-dossier-card {
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  box-shadow: 0 20px 44px -24px rgba(0, 0, 0, 0.45);
+}
+
+[data-card-style="brutalist"] .af-card,
+[data-card-style="brutalist"] .af-cap-card,
+[data-card-style="brutalist"] .af-dossier-card {
+  border: 2.5px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+  border-radius: var(--radius, 2px);
+}
+
+[data-card-style="brutalist"] .af-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+[data-card-style="minimal"] .af-card,
+[data-card-style="minimal"] .af-cap-card {
+  background: transparent;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 0;
+  box-shadow: none;
+  padding-inline: 4px;
+}
+
+[data-card-style="neon"] .af-card,
+[data-card-style="neon"] .af-cap-card,
+[data-card-style="neon"] .af-dossier-card {
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), 0 14px 36px -18px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+[data-button-style="sharp"] .af-btn,
+[data-button-style="sharp"] .af-skill-strip span {
+  border-radius: 2px;
+}
+
+[data-button-style="solid"] .af-btn {
+  border-radius: 10px;
+}
+
+[data-button-style="pill"] .af-btn {
+  border-radius: 999px;
+}
+
+/* ===== Route B: Full-Bleed Sandboxed Custom AI Web Page ===== */
+.af-custom-web-shell {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0b0d12;
+}
+
+.af-custom-web-frame {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 100vh;
+  border: none;
+  display: block;
+  background: #ffffff;
+}
+
+.af-custom-float-bar {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* Studio Preset Pills & Dual Mode */
+.af-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.af-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.af-mode-btn strong {
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.af-mode-btn span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.af-mode-btn.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.af-project-cover-upload {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+  flex-wrap: wrap;
+}
+
+.af-project-cover-thumb {
+  width: 72px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}

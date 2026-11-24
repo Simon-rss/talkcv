@@ -5,6 +5,8 @@ import { canUseModel } from "../lib/models";
 import {
   AI_BRIEF_LIMITS,
   normalizeSlug,
+  sanitizeCoverImage,
+  sanitizeCustomHtml,
   sanitizeDesignTokens,
   sanitizeLayoutPlan,
   type AiBrief,
@@ -89,7 +91,7 @@ const RESERVED_SLUGS = new Set([
 ]);
 
 const memoryStore = new Map<string, string>();
-const MAX_PROFILE_BYTES = 260_000;
+const MAX_PROFILE_BYTES = 2_000_000;
 const payloadTooLarge = () => jsonResponse(413, { error: "Profile payload is too large (max 260KB)." });
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
@@ -214,11 +216,23 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     }
   }
 
+  const sanitizedProjects = Array.isArray(profileObj.projects)
+    ? profileObj.projects.map((p) => {
+        const cleanCover = sanitizeCoverImage(p?.coverImage);
+        return cleanCover ? { ...p, coverImage: cleanCover } : { ...p, coverImage: undefined };
+      })
+    : [];
+  const cleanCustomHtml = sanitizeCustomHtml(profileObj.customHtml);
+  const cleanRenderMode = profileObj.renderMode === "custom" && cleanCustomHtml ? "custom" : "structured";
+
   const cleanProfile: PortfolioProfile = {
     ...(profileObj as PortfolioProfile),
     basics: { ...profileObj.basics, ...contacts },
+    projects: sanitizedProjects,
     designTokens: sanitizeDesignTokens(profileObj.designTokens),
     layoutPlan: sanitizeLayoutPlan(profileObj.layoutPlan),
+    renderMode: cleanRenderMode,
+    ...(cleanCustomHtml ? { customHtml: cleanCustomHtml } : { customHtml: undefined }),
   };
 
   const user = await getSessionUser(request, env);

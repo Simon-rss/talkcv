@@ -336,7 +336,11 @@ Rules:
   - "projectLayout": pick one of "bento-grid" (varied-size cards with featured hero project), "editorial-rows" (wide magazine rows for research/case studies), "timeline-cases" (chronological case flow), or "card-grid" (clean balanced cards).
   - "fontPair": pick one of "serif-editorial" (humanities/editorial/luxury/legal/admin), "sans-modern" (product/tech/business), or "mono-tech" (engineering/systems/security).
   - "sectionOrder": order ["work","capabilities","experience","contact"] to lead with this candidate's strongest proof (e.g., students/career-switchers/ops can lead with "experience" or "capabilities" before "work"; engineers/designers lead with "work").
-- Also tailor "designTokens" with a harmonious 6-digit hex "accent" color (and optional "radius" 0px-24px) suited to their domain (e.g. deep navy #1d4ed8, warm terracotta #b45309, burgundy #9f1239, emerald #0f766e, slate indigo #4338ca, forest #166534) while keeping high contrast for the ${theme} theme.
+- Also tailor "designTokens" with a harmonious visual skin suited to their domain & custom style prompt:
+  - "accent" (primary 6-digit hex), "accent2" (secondary 6-digit hex), optional "bg", "surface", "ink", "muted" (all 6-digit hex with strong WCAG contrast!), "radius" (0px-24px),
+  - "bgPattern": one of "none" | "grid" | "dots" | "glow",
+  - "cardStyle": one of "elevated" | "glass" | "brutalist" | "minimal" | "neon",
+  - "buttonStyle": one of "pill" | "sharp" | "solid".
 - Use lowercase ASCII kebab-case slugs.${styleInstruction}
 
 Reference schema example:

@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileUp,
   Globe,
+  ImagePlus,
   KeyRound,
   Lock,
   LogIn,
@@ -34,6 +35,7 @@ import {
   localize,
   normalizeSlug,
   PROJECT_LAYOUT_OPTIONS,
+  STYLE_PRESETS,
   THEMES,
   type AiBrief,
   type FontPair,
@@ -83,6 +85,22 @@ async function resizeImageToAvatarDataUrl(file: File): Promise<string> {
   return canvas.toDataURL("image/webp", 0.85);
 }
 
+async function resizeImageToProjectCoverDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const maxW = 1120;
+  const scale = bitmap.width > maxW ? maxW / bitmap.width : 1;
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return canvas.toDataURL("image/webp", 0.82);
+}
+
 interface ChatMeta {
   mode: "hosted" | "byok";
   hostedModelId: string;
@@ -91,29 +109,6 @@ interface ChatMeta {
   byokBaseUrl: string;
   byokModel: string;
 }
-
-const STYLE_PRESETS = [
-  {
-    id: "exec",
-    label: { en: "Global Tech Exec", zh: "外企技术总监风" },
-    prompt: "Crisp, executive engineering tone for global tech recruiters; deep slate blue accent (#1d4ed8), sharp metrics first.",
-  },
-  {
-    id: "hacker",
-    label: { en: "Hardcore Systems", zh: "极客硬核风" },
-    prompt: "Direct, no-fluff systems engineer voice focused on latency, locks, and reliability; neon emerald accent (#10b981).",
-  },
-  {
-    id: "editorial",
-    label: { en: "Warm Editorial", zh: "温润文艺杂志风" },
-    prompt: "Thoughtful, storytelling editorial tone highlighting product craft and user empathy; warm terracotta accent (#c2410c).",
-  },
-  {
-    id: "ocean",
-    label: { en: "Deep Ocean Tech", zh: "深海蓝科技感" },
-    prompt: "Modern AI product builder tone, structured and confident; deep ocean cyan accent (#0284c7), smooth 18px corners.",
-  },
-] as const;
 
 const BYOK_PRESETS = [
   { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
@@ -266,6 +261,9 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [checkoutBusyTier, setCheckoutBusyTier] = useState<"pro" | "max" | null>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [refineOpen, setRefineOpen] = useState(false);
+  const [customGenLoading, setCustomGenLoading] = useState(false);
+  const [customGenError, setCustomGenError] = useState<string | null>(null);
+  const [customRefineInput, setCustomRefineInput] = useState("");
   const [editingSkills, setEditingSkills] = useState(false);
   const [skillsDraft, setSkillsDraft] = useState("");
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -948,10 +946,60 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     ?? user?.sites.find((slug) => slug === normalizeSlug(handle)) ?? user?.sites[0];
   const remaining = user?.credits.remaining ?? PLAN_CREDITS.free;
   const balanceLabel = lang === "zh" ? `剩余 ${remaining} 点` : `${remaining} credits left`;
+  const generateCustomWebPage = async (isRefine = false) => {
+    if (!user && genMode !== "byok") {
+      setAuthModalOpen(true);
+      return;
+    }
+    const promptToUse = stylePrompt.trim() || STYLE_PRESETS[0].prompt;
+    if (isRefine && !customRefineInput.trim()) return;
+    setCustomGenLoading(true);
+    setCustomGenError(null);
+    try {
+      const res = await fetch("/api/generate-custom", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profile: generated,
+          stylePrompt: promptToUse,
+          lang,
+          ...(isRefine && generated.customHtml
+            ? { currentHtml: generated.customHtml, instruction: customRefineInput.trim() }
+            : {}),
+          providerMode: genMode,
+          hostedModelId: genModelId,
+          ...(genMode === "byok" ? { apiKey: genApiKey, baseUrl: genBaseUrl, model: genModel } : {}),
+        }),
+      });
+      const text = await res.text();
+      let json: { html?: string; credits?: CreditBalance; error?: string } = {};
+      try {
+        json = JSON.parse(text) as typeof json;
+      } catch {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      if (!res.ok || !json.html) {
+        if (res.status === 402 || res.status === 403) setPricingOpen(true);
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      if (json.credits) updateCredits(user?.email, json.credits);
+      setGenerated((prev) => ({ ...prev, renderMode: "custom", customHtml: json.html }));
+      setHasGenerated(true);
+      if (isRefine) setCustomRefineInput("");
+    } catch (err) {
+      setCustomGenError(localizeApiError(err instanceof Error ? err.message : "Failed to generate custom page.", lang));
+    } finally {
+      setCustomGenLoading(false);
+    }
+  };
+
   const previewStyleVars: React.CSSProperties = {
     ...(generated.designTokens?.accent ? ({ "--accent": generated.designTokens.accent } as React.CSSProperties) : {}),
+    ...(generated.designTokens?.accent2 ? ({ "--accent2": generated.designTokens.accent2 } as React.CSSProperties) : {}),
     ...(generated.designTokens?.bg ? ({ "--bg": generated.designTokens.bg } as React.CSSProperties) : {}),
     ...(generated.designTokens?.surface ? ({ "--surface": generated.designTokens.surface } as React.CSSProperties) : {}),
+    ...(generated.designTokens?.ink ? ({ "--ink": generated.designTokens.ink } as React.CSSProperties) : {}),
+    ...(generated.designTokens?.muted ? ({ "--muted": generated.designTokens.muted } as React.CSSProperties) : {}),
     ...(generated.designTokens?.radius ? ({ "--radius": generated.designTokens.radius } as React.CSSProperties) : {}),
   };
 
@@ -1236,7 +1284,17 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                 key={preset.id}
                 type="button"
                 className={stylePrompt === preset.prompt ? "active" : ""}
-                onClick={() => setStylePrompt(preset.prompt)}
+                onClick={() => {
+                  setStylePrompt(preset.prompt);
+                  setTheme(preset.theme);
+                  setGenerated((prev) => ({
+                    ...prev,
+                    theme: preset.theme,
+                    stylePrompt: preset.prompt,
+                    designTokens: { ...preset.designTokens },
+                    layoutPlan: { ...prev.layoutPlan, ...preset.layoutPlan },
+                  }));
+                }}
               >
                 {localize(preset.label, lang)}
               </button>
@@ -1667,6 +1725,126 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             />
           )}
 
+          <div style={{ padding: "10px 14px 0" }}>
+            <div className="af-mode-switch" role="tablist" aria-label={lang === "zh" ? "页面渲染模式" : "Page render mode"}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={generated.renderMode !== "custom"}
+                className={`af-mode-btn${generated.renderMode !== "custom" ? " active" : ""}`}
+                onClick={() => setGenerated((prev) => ({ ...prev, renderMode: "structured" }))}
+              >
+                <strong>✨ {lang === "zh" ? "智能排版模式（推荐）" : "Smart Layout Mode"}</strong>
+                <span>{lang === "zh" ? "支持点击改字、深度皮肤与 A4 PDF" : "Click-to-edit, deep skins & A4 PDF"}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={generated.renderMode === "custom"}
+                className={`af-mode-btn${generated.renderMode === "custom" ? " active" : ""}`}
+                onClick={() => setGenerated((prev) => ({ ...prev, renderMode: "custom" }))}
+              >
+                <strong>🎨 {lang === "zh" ? "自由创意网页模式" : "Custom AI Web Mode"}</strong>
+                <span>{lang === "zh" ? "AI 按提示词手写整站（含悬浮 AI 助手）" : "AI crafts bespoke HTML/CSS + AI chat"}</span>
+              </button>
+            </div>
+          </div>
+
+          {generated.renderMode === "custom" ? (
+            <div style={{ padding: "10px 14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="af-btn af-btn-primary"
+                  disabled={customGenLoading}
+                  onClick={() => void generateCustomWebPage(false)}
+                >
+                  <Wand2 size={14} />
+                  <span>
+                    {customGenLoading
+                      ? lang === "zh"
+                        ? "AI 正在手写整站网页…"
+                        : "Generating bespoke web page…"
+                      : generated.customHtml
+                        ? lang === "zh"
+                          ? `按当前风格重新生成 · ${creditCostLabel(CREDIT_COST.generate, lang, genMode === "byok")}`
+                          : `Regenerate custom page · ${creditCostLabel(CREDIT_COST.generate, lang, genMode === "byok")}`
+                        : lang === "zh"
+                          ? `生成自由创意网页 · ${creditCostLabel(CREDIT_COST.generate, lang, genMode === "byok")}`
+                          : `Generate custom web page · ${creditCostLabel(CREDIT_COST.generate, lang, genMode === "byok")}`}
+                  </span>
+                </button>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  {lang === "zh"
+                    ? "左侧可一键点选 Apple 发布会 / 复古 Win95 / 黑金画册 等内置风格，或输入任意自定义描述"
+                    : "Pick a built-in preset on the left or write any custom creative direction."}
+                </span>
+              </div>
+              {generated.customHtml && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    className="af-single-input"
+                    style={{ flex: 1, margin: 0 }}
+                    value={customRefineInput}
+                    onChange={(e) => setCustomRefineInput(e.target.value)}
+                    placeholder={
+                      lang === "zh"
+                        ? "一句话继续微调创意网页（如：把标题再放大、背景改成深蓝星云…）"
+                        : "Refine this custom page (e.g. make hero bolder, add subtle gold dividers…)"
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && customRefineInput.trim() && !customGenLoading) {
+                        e.preventDefault();
+                        void generateCustomWebPage(true);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="af-btn af-btn-secondary"
+                    disabled={customGenLoading || !customRefineInput.trim()}
+                    onClick={() => void generateCustomWebPage(true)}
+                  >
+                    {lang === "zh"
+                      ? `微调 · ${creditCostLabel(CREDIT_COST.edit, lang, genMode === "byok")}`
+                      : `Refine · ${creditCostLabel(CREDIT_COST.edit, lang, genMode === "byok")}`}
+                  </button>
+                </div>
+              )}
+              {customGenError && <div className="af-ai-error">{customGenError}</div>}
+              {generated.customHtml ? (
+                <iframe
+                  title="Custom AI portfolio preview"
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  srcDoc={generated.customHtml}
+                  style={{
+                    width: "100%",
+                    height: 620,
+                    border: "1px solid var(--line)",
+                    borderRadius: 14,
+                    background: "#ffffff",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    padding: "44px 20px",
+                    textAlign: "center",
+                    borderRadius: 14,
+                    border: "1.5px dashed var(--line)",
+                    color: "var(--muted)",
+                    fontSize: 13,
+                  }}
+                >
+                  {lang === "zh"
+                    ? "先在左侧选一个内置风格（如 Apple 官网发布会风 / 复古 Win95 / 黑金建筑画册风）或写自定义风格，再点上方「生成自由创意网页」。"
+                    : "Pick a built-in style preset on the left or write your own, then click Generate custom web page."}
+                </div>
+              )}
+            </div>
+          ) : (
+          <>
           <div className="af-layout-bar" aria-label={lang === "zh" ? "个性化布局与排版" : "Layout & Typography"}>
             <label>
               <span>{lang === "zh" ? "首屏骨架" : "Hero"}</span>
@@ -1747,6 +1925,9 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           <div
             className="af-preview-canvas"
             data-font={generated.layoutPlan?.fontPair ?? "sans-modern"}
+            data-bg-pattern={generated.designTokens?.bgPattern ?? "none"}
+            data-card-style={generated.designTokens?.cardStyle ?? "elevated"}
+            data-button-style={generated.designTokens?.buttonStyle ?? "pill"}
           >
             <div className="af-avatar-bar">
               <button
@@ -1956,6 +2137,55 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             <div className="af-preview-projects">
               {generated.projects.slice(0, 3).map((proj, pIdx) => (
                 <article key={proj.slug} className="af-card">
+                  <div className="af-project-cover-upload">
+                    {proj.coverImage && (
+                      <img src={proj.coverImage} alt="" className="af-project-cover-thumb" />
+                    )}
+                    <label className="af-icon-pill" style={{ cursor: "pointer" }}>
+                      <ImagePlus size={12} />
+                      <span>{proj.coverImage ? (lang === "zh" ? "更换项目截图" : "Replace cover") : (lang === "zh" ? "上传项目截图" : "Add screenshot")}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        hidden
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!file) return;
+                          try {
+                            const dataUrl = await resizeImageToProjectCoverDataUrl(file);
+                            setGenerated((prev) => ({
+                              ...prev,
+                              projects: prev.projects.map((item, idx) =>
+                                idx === pIdx ? { ...item, coverImage: dataUrl } : item,
+                              ),
+                            }));
+                            setHasGenerated(true);
+                          } catch {
+                            // ignore invalid image
+                          }
+                        }}
+                      />
+                    </label>
+                    {proj.coverImage && (
+                      <button
+                        type="button"
+                        className="af-icon-pill"
+                        onClick={() => {
+                          setGenerated((prev) => ({
+                            ...prev,
+                            projects: prev.projects.map((item, idx) =>
+                              idx === pIdx ? { ...item, coverImage: undefined } : item,
+                            ),
+                          }));
+                          setHasGenerated(true);
+                        }}
+                      >
+                        <X size={11} />
+                        <span>{lang === "zh" ? "移除" : "Remove"}</span>
+                      </button>
+                    )}
+                  </div>
                   <span
                     className="af-card-cat af-editable"
                     contentEditable
@@ -2070,6 +2300,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               ))}
             </div>
           </div>
+          </>
+          )}
         </section>
       </div>
 

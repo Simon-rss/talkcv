@@ -61,8 +61,17 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
   const { baseUrl, model, apiKey } = provider;
 
   const theme: ThemeId = isValidTheme(body.theme) ? body.theme : currentProfile.theme || "editorial";
-  const textProfile = { ...currentProfile, basics: { ...currentProfile.basics } };
+  const textProfile = {
+    ...currentProfile,
+    basics: { ...currentProfile.basics },
+    projects: currentProfile.projects.map((p) => {
+      const copy = { ...p };
+      delete copy.coverImage;
+      return copy;
+    }),
+  };
   delete textProfile.basics.avatar;
+  delete textProfile.customHtml;
   const history: EditHistoryTurn[] = Array.isArray(body.history)
     ? body.history
         .slice(-6)
@@ -85,7 +94,7 @@ Output ONLY a raw JSON object with this exact shape (no markdown fences):
 }
 Rules:
 - Keep both "en" and "zh" synced whenever you edit bilingual text fields.
-- If the user asks to change colors or border radius, update "profile.designTokens" with safe 6-digit hex colors (#RRGGBB) and radius (0px-28px).
+- If the user asks to change colors, visual style, card texture, or border radius, update "profile.designTokens" (accent, accent2, bg, surface, ink, muted as 6-digit hex #RRGGBB; radius 0px-28px; bgPattern: "none"|"grid"|"dots"|"glow"; cardStyle: "elevated"|"glass"|"brutalist"|"minimal"|"neon"; buttonStyle: "pill"|"sharp"|"solid").
 - If the user asks to change layout, section order, hero style, project layout, or typography, update "profile.layoutPlan" (heroStyle: "editorial-split"|"centered-minimal"|"sidebar-dossier"|"terminal-hero"; projectLayout: "bento-grid"|"editorial-rows"|"timeline-cases"|"card-grid"; fontPair: "sans-modern"|"serif-editorial"|"mono-tech"; sectionOrder: permutation of ["work","capabilities","experience","contact"]).
 - NEVER invent fake companies, URLs, or metrics that the user didn't ask for.
 - Preserve existing project slugs unless explicitly asked to change them.`;
@@ -129,13 +138,22 @@ Rules:
 
     const updatedTokens = sanitizeDesignTokens(parsed.profile.designTokens);
     const updatedLayout = sanitizeLayoutPlan(parsed.profile.layoutPlan);
+    const coverBySlug = new Map(currentProfile.projects.map((p) => [p.slug, p.coverImage]));
+    const restoredProjects = Array.isArray(parsed.profile.projects)
+      ? parsed.profile.projects.map((p, idx) => {
+          const prevCover = coverBySlug.get(p.slug) ?? currentProfile.projects[idx]?.coverImage;
+          return prevCover ? { ...p, coverImage: prevCover } : p;
+        })
+      : currentProfile.projects;
     const mergedProfile: PortfolioProfile = {
       ...currentProfile,
       ...parsed.profile,
       basics: { ...parsed.profile.basics, avatar: currentProfile.basics.avatar },
+      projects: restoredProjects,
       theme: isValidTheme(parsed.profile.theme) ? parsed.profile.theme : theme,
       ...(updatedTokens ? { designTokens: updatedTokens } : {}),
       ...(updatedLayout ? { layoutPlan: updatedLayout } : {}),
+      ...(currentProfile.customHtml ? { customHtml: currentProfile.customHtml } : {}),
     };
     return { ok: true, summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "Updated portfolio.", profile: mergedProfile };
   });

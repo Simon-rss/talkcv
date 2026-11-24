@@ -469,10 +469,47 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
 
   const tokenStyle: React.CSSProperties = {
     ...(profile.designTokens?.accent ? ({ "--accent": profile.designTokens.accent } as React.CSSProperties) : {}),
+    ...(profile.designTokens?.accent2 ? ({ "--accent2": profile.designTokens.accent2 } as React.CSSProperties) : {}),
     ...(profile.designTokens?.bg ? ({ "--bg": profile.designTokens.bg } as React.CSSProperties) : {}),
     ...(profile.designTokens?.surface ? ({ "--surface": profile.designTokens.surface } as React.CSSProperties) : {}),
+    ...(profile.designTokens?.ink ? ({ "--ink": profile.designTokens.ink } as React.CSSProperties) : {}),
+    ...(profile.designTokens?.muted ? ({ "--muted": profile.designTokens.muted } as React.CSSProperties) : {}),
     ...(profile.designTokens?.radius ? ({ "--radius": profile.designTokens.radius } as React.CSSProperties) : {}),
   };
+  const bgPattern = isPersonalHosted ? (profile.designTokens?.bgPattern ?? "none") : "none";
+  const cardStyle = isPersonalHosted ? (profile.designTokens?.cardStyle ?? "elevated") : "elevated";
+  const buttonStyle = isPersonalHosted ? (profile.designTokens?.buttonStyle ?? "pill") : "pill";
+
+  if (isPersonalHosted && profile.renderMode === "custom" && profile.customHtml) {
+    return (
+      <main className="af-custom-web-shell">
+        {profileSlug === "__draft__" && (
+          <div className="af-preview-strip">
+            <span>{lang === "zh" ? "自由创意网页预览 · 发布后立即上线" : "Custom AI web preview · Publish to go live"}</span>
+            <Link href={`/create?lang=${lang}`}>{lang === "zh" ? "返回工作台 →" : "Back to Studio →"}</Link>
+          </div>
+        )}
+        <div className="af-custom-float-bar">
+          {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
+          {profile.ai.enabled && (
+            <button type="button" className="af-btn af-btn-primary" onClick={() => setChatOpen(true)}>
+              <Sparkles size={14} />
+              <span>{lang === "en" ? "Ask AI" : "问 AI 助手"}</span>
+            </button>
+          )}
+        </div>
+        <iframe
+          className="af-custom-web-frame"
+          title={`${localize(profile.basics.name, lang)} — TalkCV`}
+          sandbox="allow-popups allow-popups-to-escape-sandbox"
+          srcDoc={profile.customHtml}
+        />
+        <div className="print-only">
+          <ResumeExport profile={profile} slug={exportSlug} lang={lang} />
+        </div>
+      </main>
+    );
+  }
 
   const heroBlock = (
     <section className="af-hero">
@@ -567,6 +604,11 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
       <div className="af-projects-grid">
         {visibleProjects.map((project) => (
           <article key={project.slug} id={`project-${project.slug}`} tabIndex={-1} className={`af-card accent-${project.accent}`}>
+            {project.coverImage && (
+              <div className="af-card-cover">
+                <img src={project.coverImage} alt={localize(project.title, lang)} loading="lazy" />
+              </div>
+            )}
             <div className="af-card-top">
               <span className="af-card-cat">{localize(project.category, lang)}</span>
               <div className="af-card-tags">
@@ -679,6 +721,9 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
       data-hero={heroStyle}
       data-project-layout={projectLayout}
       data-font={fontPair}
+      data-bg-pattern={bgPattern}
+      data-card-style={cardStyle}
+      data-button-style={buttonStyle}
       style={tokenStyle}
     >
       {profileSlug === "__draft__" && <div className="af-preview-strip">

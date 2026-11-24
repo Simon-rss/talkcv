@@ -605,8 +605,8 @@ test("the private AI brief is owner-editable, isolated per site and used only by
   assert.equal((await publish(slug, undefined, { aiBrief }, env)).status, 401);
   assert.equal((await publish(slug, owner, { profile: { ...profile, aiBrief } }, env)).status, 400);
   assert.equal((await publish(slug, owner, { aiBrief: { notes: "x".repeat(1001) } }, env)).status, 400);
-  assert.equal((await publish(slug, owner, { aiBrief, profile: { ...profile, stylePrompt: "文".repeat(87_000) } }, env)).status, 413);
-  assert.equal((await publish(slug, owner, { padding: "x".repeat(260_001) }, env)).status, 413);
+  assert.equal((await publish(slug, owner, { aiBrief, profile: { ...profile, stylePrompt: "文".repeat(670_000) } }, env)).status, 413);
+  assert.equal((await publish(slug, owner, { padding: "x".repeat(2_000_001) }, env)).status, 413);
   assert.equal((await publish(slug, owner, { aiBrief }, env)).status, 200);
   assert.equal((await publish(slug, owner, {}, env)).status, 200);
   for (const cookie of [undefined, other, owner]) {

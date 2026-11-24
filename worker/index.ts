@@ -27,6 +27,7 @@ import {
   type AdminEnv,
 } from "./admin";
 import { handleChatRequest, type ChatEnv } from "./chat";
+import { handleGenerateCustomPageRequest } from "./custom-page";
 import { handleAiEditRequest } from "./edit";
 import { handleGenerateRequest } from "./generate";
 import { handleDeleteProfileRequest, handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
@@ -88,6 +89,9 @@ const worker = {
     }
     if (url.pathname === "/api/generate") {
       return handleGenerateRequest(request, env);
+    }
+    if (url.pathname === "/api/generate-custom") {
+      return handleGenerateCustomPageRequest(request, env);
     }
     if (url.pathname === "/api/edit") {
       return handleAiEditRequest(request, env);

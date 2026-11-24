@@ -685,7 +685,7 @@ test("JD outreach checks login, model permissions, payload, factual output and c
   for (const config of [{}, byok]) assert.equal((await post(config, { cookie: undefined })).status, 401);
   for (const invalid of [{ profile: {} }, { profile: { ...profile, projects: [null] } }, { jdText: " " }, { jdText: "x".repeat(8001) },
     { lang: "de" }, { style: "other" }, { providerMode: "invalid" }]) assert.equal((await post(invalid)).status, 400);
-  assert.equal((await post({ hostedModelId: "gpt-4o" })).status, 403);
+  assert.equal((await post({ hostedModelId: "deepseek-reasoner" })).status, 403);
   assert.equal((await post({ providerMode: "byok" })).status, 401);
   const output = { matches: ["Backend work", "Project delivery", "Systems design"], improvements: ["Clarify team scope"], body: "I would like to discuss the role." };
   const calls = [];

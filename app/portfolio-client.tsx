@@ -18,6 +18,7 @@ import { SharePoster } from "./share-poster";
 import { ResumeExport } from "./resume-export";
 import { ContactLinks } from "./contact-links";
 import { SiteLinks } from "./public-navigation";
+import { PromoTopBanner } from "./promo-announcement";
 import { useRouter } from "next/navigation";
 import {
   createContext,
@@ -463,6 +464,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
         <span>{lang === "zh" ? "全屏草稿预览 · 二维码指向发布后的站点" : "Draft preview · The QR code links to the published site"}</span>
         <Link href={`/create?lang=${lang}`}>{lang === "zh" ? "返回工作台发布 →" : "Back to Studio to publish →"}</Link>
       </div>}
+      {!isPersonalHosted && <PromoTopBanner lang={lang} showCta />}
       <SiteHeader />
 
       {!isPersonalHosted && (

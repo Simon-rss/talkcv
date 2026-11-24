@@ -151,7 +151,7 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
       body: JSON.stringify({
         slug: "pro-test",
         profile: demoProfile,
-        chatConfig: { mode: "hosted", hostedModelId: "gpt-6.2-sol" },
+        chatConfig: { mode: "hosted", hostedModelId: "deepseek-reasoner" },
       }),
     }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },

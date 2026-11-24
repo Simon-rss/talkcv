@@ -8,6 +8,8 @@ export interface HostedModelOption {
   apiModel?: string;
 }
 
+export const OPENAI_PROMO_ACTIVE = true;
+
 export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
   {
     id: "auto",
@@ -29,7 +31,7 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     tier: "free",
     apiModel: "gpt-4o-mini",
   },
-  // Pro tier models ($9/mo)
+  // Pro tier models
   {
     id: "deepseek-v4.1-flash",
     provider: "deepseek",
@@ -58,7 +60,14 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     tier: "pro",
     apiModel: "o3-mini",
   },
-  // Max tier flagship models ($29/mo)
+  // Max tier flagship models
+  {
+    id: "gpt-6.2-astra",
+    provider: "openai",
+    label: { en: "OpenAI GPT-6.2 Astra (Latest Flagship)", zh: "OpenAI GPT-6.2 Astra（最新旗舰）" },
+    tier: "max",
+    apiModel: "gpt-6.2-astra",
+  },
   {
     id: "gpt-6.2-sol",
     provider: "openai",
@@ -71,7 +80,7 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     provider: "openai",
     label: { en: "OpenAI GPT-6.1", zh: "OpenAI GPT-6.1（旗舰）" },
     tier: "max",
-    apiModel: "gpt-6.1",
+    apiModel: "gpt-6.1-sol",
   },
   {
     id: "gpt-5.4",
@@ -82,8 +91,12 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
   },
 ];
 
+export function isPromoUnlockedModel(model: HostedModelOption): boolean {
+  return OPENAI_PROMO_ACTIVE && model.provider === "openai" && model.tier !== "free";
+}
+
 export const FREE_MODEL_IDS = new Set(
-  HOSTED_MODELS.filter((m) => m.tier === "free").map((m) => m.id),
+  HOSTED_MODELS.filter((m) => m.tier === "free" || isPromoUnlockedModel(m)).map((m) => m.id),
 );
 
 const TIER_RANK: Record<PlanTier, number> = { free: 0, pro: 1, max: 2 };
@@ -91,6 +104,7 @@ const TIER_RANK: Record<PlanTier, number> = { free: 0, pro: 1, max: 2 };
 export function canUseModel(modelId: string, userPlan: PlanTier): boolean {
   const model = HOSTED_MODELS.find((m) => m.id === modelId);
   if (!model) return false;
+  if (isPromoUnlockedModel(model)) return true;
   return TIER_RANK[userPlan] >= TIER_RANK[model.tier];
 }
 

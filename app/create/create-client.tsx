@@ -23,7 +23,8 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CREDIT_COST, PLAN_CREDITS, REFERRAL_CREDITS, creditCostLabel, type CreditBalance } from "../../lib/credits";
-import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
+import { canUseModel, HOSTED_MODELS, isPromoUnlockedModel, type PlanTier } from "../../lib/models";
+import { PromoAnnouncementCard, PromoTopBanner } from "../promo-announcement";
 import { captureReferral, readSession, type AuthUser } from "../../lib/login";
 import { profile as defaultProfile } from "../../lib/profile";
 import { AI_BRIEF_LIMITS, localize, normalizeSlug, THEMES, type AiBrief, type Lang, type PortfolioProfile, type ThemeId } from "../../lib/schema";
@@ -940,6 +941,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
 
   return (
     <main className="af-create-page" data-theme={theme}>
+      <PromoTopBanner lang={lang} />
       <header className="af-header">
         <Link className="af-brand" href="/">
           <span className="af-brand-mark">TC</span>
@@ -1112,6 +1114,17 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       {user && selectedSite && <SiteInsights key={`${user.email}:${selectedSite}:${currentPlan}`} slug={selectedSite}
         lang={lang} onUpgrade={() => setPricingOpen(true)} />}
 
+      <div className="af-shell">
+        <PromoAnnouncementCard
+          lang={lang}
+          activeModelId={genModelId}
+          onPickAstra={() => {
+            setGenModelId("gpt-6.2-astra");
+            setChatHostedModelId("gpt-6.2-astra");
+          }}
+        />
+      </div>
+
       <div className="af-shell af-create-grid">
         <form className="af-create-panel" onSubmit={(e) => { e.preventDefault(); startDraftAction("generate"); }}>
           <div className="af-panel-top">
@@ -1261,9 +1274,13 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                     {localize(m.label, lang)}{" "}
                     {m.tier === "free"
                       ? "· Free"
-                      : canUseModel(m.id, currentPlan)
-                        ? `★ ${m.tier.toUpperCase()}`
-                        : `🔒 ${m.tier.toUpperCase()}`}
+                      : isPromoUnlockedModel(m)
+                        ? lang === "zh"
+                          ? "· 🎁 限时免费"
+                          : "· 🎁 Free Promo"
+                        : canUseModel(m.id, currentPlan)
+                          ? `★ ${m.tier.toUpperCase()}`
+                          : `🔒 ${m.tier.toUpperCase()}`}
                   </option>
                 ))}
               </select>
@@ -1407,9 +1424,13 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                     {localize(m.label, lang)}{" "}
                     {m.tier === "free"
                       ? "· Free"
-                      : canUseModel(m.id, currentPlan)
-                        ? `★ ${m.tier.toUpperCase()}`
-                        : `🔒 ${m.tier.toUpperCase()}`}
+                      : isPromoUnlockedModel(m)
+                        ? lang === "zh"
+                          ? "· 🎁 限时免费"
+                          : "· 🎁 Free Promo"
+                        : canUseModel(m.id, currentPlan)
+                          ? `★ ${m.tier.toUpperCase()}`
+                          : `🔒 ${m.tier.toUpperCase()}`}
                   </option>
                 ))}
               </select>

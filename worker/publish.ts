@@ -227,7 +227,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
     saveProfile(slug, cleanProfile, body, user, new URL(request.url).origin, lockedEnv));
   if (!result.ok) return result.response;
 
-  let referralReward: { generates: number; edits: number; trialDays: number; inviterRewarded: boolean } | undefined;
+  let referralReward: { credits: number; trialDays: number; inviterRewarded: boolean } | undefined;
   if (user) {
     const qualified = await qualifyReferralOnPublish(user.email, clientIp, env, result.isFirstSite);
     if (qualified.rewarded) referralReward = qualified.inviteeBonus;

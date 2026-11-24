@@ -1,3 +1,4 @@
+import type { CreditBalance } from "./credits";
 import type { PlanTier } from "./models";
 
 export interface AuthUser {
@@ -8,6 +9,7 @@ export interface AuthUser {
   isTrial?: boolean;
   hasBilling?: boolean;
   hasBillingPortal?: boolean;
+  credits: CreditBalance;
   usedToday: number;
   dailyLimit: number;
   quotaPeriod?: "lifetime" | "month";
@@ -19,8 +21,7 @@ export interface AuthUser {
     code: string;
     invitedCount: number;
     maxRewards: number;
-    bonusGenerates: number;
-    bonusEdits: number;
+    bonusCredits: number;
     trialExpiresAt?: string;
     hasPendingReferrer?: boolean;
   };

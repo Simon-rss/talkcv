@@ -1,12 +1,8 @@
+import { CREDIT_COST, REFERRAL_CREDITS } from "../lib/credits";
 import { withSiteWrite, type PublishEnv } from "./publish";
 
 export const MAX_REFERRAL_REWARDS = 6;
-export const INVITER_BONUS_GENERATES = 5;
-export const INVITER_BONUS_EDITS = 15;
 export const INVITER_TRIAL_DAYS = 7;
-
-export const INVITEE_BONUS_GENERATES = 3;
-export const INVITEE_BONUS_EDITS = 10;
 export const INVITEE_TRIAL_DAYS = 3;
 
 const MAX_QUALIFICATIONS_PER_IP_DAY = 2;
@@ -33,8 +29,9 @@ export interface ReferralRecord {
   inviterCreditPending?: boolean;
   creditedInvitees?: string[];
   invitedCount: number;
-  bonusGenerates: number;
-  bonusEdits: number;
+  awardedCredits?: number;
+  bonusGenerates?: number; // Remaining allowances on pre-credits accounts
+  bonusEdits?: number;
   trialExpiresAt?: string;
 }
 
@@ -95,8 +92,7 @@ export async function getOrCreateReferralRecord(email: string, env: PublishEnv):
   const record: ReferralRecord = {
     code,
     invitedCount: 0,
-    bonusGenerates: 0,
-    bonusEdits: 0,
+    awardedCredits: 0,
   };
   await kvPut(key, JSON.stringify(record), memRefRecords, env);
   await kvPut(`ref_owner:${code}`, norm, memRefOwners, env);
@@ -124,62 +120,8 @@ export function isTrialActive(record: ReferralRecord | null): boolean {
   return Number.isFinite(ts) && ts > Date.now();
 }
 
-const memEmailLocks = new Map<string, Promise<unknown>>();
-
-function withEmailLock<T>(email: string, env: PublishEnv, op: (lockedEnv: PublishEnv) => Promise<T>): Promise<T> {
-  const norm = cleanEmail(email);
-  if (env.PROFILES_KV?.withSiteWrite) {
-    return withSiteWrite("", norm, env, op);
-  }
-  const prev = memEmailLocks.get(norm) ?? Promise.resolve();
-  const next = prev.catch(() => undefined).then(() => op(env));
-  memEmailLocks.set(norm, next);
-  return next.finally(() => {
-    if (memEmailLocks.get(norm) === next) memEmailLocks.delete(norm);
-  });
-}
-
-/**
- * Atomically deduct 1 one-time referral bonus credit ("generate" or "edit").
- * Returns true if a bonus credit was available and deducted.
- */
-export async function consumeReferralBonus(
-  email: string,
-  kind: "generate" | "edit",
-  env: PublishEnv,
-): Promise<boolean> {
-  const norm = cleanEmail(email);
-  return withEmailLock(norm, env, async (lockedEnv) => {
-    const rec = await readReferralRecord(norm, lockedEnv);
-    if (!rec) return false;
-    if (kind === "generate") {
-      if ((rec.bonusGenerates ?? 0) <= 0) return false;
-      rec.bonusGenerates -= 1;
-    } else {
-      if ((rec.bonusEdits ?? 0) <= 0) return false;
-      rec.bonusEdits -= 1;
-    }
-    await saveReferralRecord(norm, rec, lockedEnv);
-    return true;
-  });
-}
-
-/**
- * Refund 1 bonus credit if an upstream LLM call failed after reserving it.
- */
-export async function refundReferralBonus(
-  email: string,
-  kind: "generate" | "edit",
-  env: PublishEnv,
-): Promise<void> {
-  const norm = cleanEmail(email);
-  await withEmailLock(norm, env, async (lockedEnv) => {
-    const rec = await readReferralRecord(norm, lockedEnv);
-    if (!rec) return;
-    if (kind === "generate") rec.bonusGenerates = (rec.bonusGenerates ?? 0) + 1;
-    else rec.bonusEdits = (rec.bonusEdits ?? 0) + 1;
-    await saveReferralRecord(norm, rec, lockedEnv);
-  });
+export function referralCreditGrant(record?: ReferralRecord | null): number {
+  return record?.awardedCredits ?? (record?.bonusGenerates ?? 0) * CREDIT_COST.generate + (record?.bonusEdits ?? 0) * CREDIT_COST.edit;
 }
 
 /**
@@ -193,7 +135,7 @@ export async function bindReferralOnLogin(
   options?: { isExistingUser?: boolean },
 ): Promise<ReferralRecord> {
   const invitee = cleanEmail(inviteeEmail);
-  return withEmailLock(invitee, env, async (lockedEnv) => {
+  return withSiteWrite("", invitee, env, async (lockedEnv) => {
     const existedBefore = Boolean(await readReferralRecord(invitee, lockedEnv));
     const record = await getOrCreateReferralRecord(invitee, lockedEnv);
     if (existedBefore || record.referredBy || record.qualifiedAt || options?.isExistingUser) return record;
@@ -234,15 +176,14 @@ async function consumeIpReferralCap(ip: string, env: PublishEnv): Promise<boolea
 }
 
 async function creditInviterIdempotent(inviter: string, invitee: string, env: PublishEnv): Promise<boolean> {
-  return withEmailLock(inviter, env, async (lockedEnv) => {
+  return withSiteWrite("", inviter, env, async (lockedEnv) => {
     const inviterRec = await getOrCreateReferralRecord(inviter, lockedEnv);
     const credited = inviterRec.creditedInvitees ?? [];
     if (credited.includes(invitee)) return true;
     if (inviterRec.invitedCount >= MAX_REFERRAL_REWARDS) return false;
     inviterRec.creditedInvitees = [...credited, invitee];
     inviterRec.invitedCount += 1;
-    inviterRec.bonusGenerates += INVITER_BONUS_GENERATES;
-    inviterRec.bonusEdits += INVITER_BONUS_EDITS;
+    inviterRec.awardedCredits = referralCreditGrant(inviterRec) + REFERRAL_CREDITS.inviter;
     inviterRec.trialExpiresAt = extendTrialIso(inviterRec.trialExpiresAt, INVITER_TRIAL_DAYS);
     await saveReferralRecord(inviter, inviterRec, lockedEnv);
     return true;
@@ -262,10 +203,10 @@ export async function qualifyReferralOnPublish(
 ): Promise<{
   rewarded: boolean;
   inviterRewarded?: boolean;
-  inviteeBonus?: { generates: number; edits: number; trialDays: number; inviterRewarded: boolean };
+  inviteeBonus?: { credits: number; trialDays: number; inviterRewarded: boolean };
 }> {
   const invitee = cleanEmail(inviteeEmail);
-  const step = await withEmailLock(invitee, env, async (lockedEnv) => {
+  const step = await withSiteWrite("", invitee, env, async (lockedEnv) => {
     const record = await readReferralRecord(invitee, lockedEnv);
     if (!record?.referredBy) return null;
 
@@ -287,8 +228,7 @@ export async function qualifyReferralOnPublish(
 
     record.qualifiedAt = new Date().toISOString();
     record.inviterCreditPending = true;
-    record.bonusGenerates += INVITEE_BONUS_GENERATES;
-    record.bonusEdits += INVITEE_BONUS_EDITS;
+    record.awardedCredits = referralCreditGrant(record) + REFERRAL_CREDITS.invitee;
     record.trialExpiresAt = extendTrialIso(record.trialExpiresAt, INVITEE_TRIAL_DAYS);
     await saveReferralRecord(invitee, record, lockedEnv);
     return { inviterEmail, isRetry: false };
@@ -298,7 +238,7 @@ export async function qualifyReferralOnPublish(
 
   const inviterRewarded = await creditInviterIdempotent(step.inviterEmail, invitee, env);
 
-  await withEmailLock(invitee, env, async (lockedEnv) => {
+  await withSiteWrite("", invitee, env, async (lockedEnv) => {
     const latest = await readReferralRecord(invitee, lockedEnv);
     if (latest?.inviterCreditPending) {
       latest.inviterCreditPending = false;
@@ -312,8 +252,7 @@ export async function qualifyReferralOnPublish(
     rewarded: true,
     inviterRewarded,
     inviteeBonus: {
-      generates: INVITEE_BONUS_GENERATES,
-      edits: INVITEE_BONUS_EDITS,
+      credits: REFERRAL_CREDITS.invitee,
       trialDays: INVITEE_TRIAL_DAYS,
       inviterRewarded,
     },

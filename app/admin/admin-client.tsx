@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import type { CreditBalance } from "../../lib/credits";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface AdminUserRow {
@@ -24,10 +25,8 @@ interface AdminUserRow {
   planExpiresAt: string | null;
   planSource: string;
   sites: string[];
-  generatedCount: number;
-  editCount: number;
-  bonusGenerates: number;
-  bonusEdits: number;
+  credits: CreditBalance;
+  consumedCredits: number;
   refCode: string;
   referredBy: string | null;
   invitedCount: number;
@@ -317,7 +316,7 @@ export function AdminClient() {
                 <th>用户邮箱</th>
                 <th>套餐 / 到期</th>
                 <th>已发布站点</th>
-                <th>生成 / 精修 / 奖励余量</th>
+                <th>创作点数</th>
                 <th>邀请码 / 拉新</th>
                 <th>最近活跃</th>
               </tr>
@@ -349,10 +348,9 @@ export function AdminClient() {
                     )}
                   </td>
                   <td>
-                    <span>生成 {u.generatedCount} · 精修 {u.editCount}</span>
-                    {(u.bonusGenerates > 0 || u.bonusEdits > 0) && (
-                      <div className="af-admin-muted">奖励余量 +{u.bonusGenerates} 生成 / +{u.bonusEdits} 精修</div>
-                    )}
+                    <strong>剩余 {u.credits.remaining} 点</strong>
+                    <div className="af-admin-muted">基础 {u.credits.remaining - u.credits.bonusRemaining} · 奖励 {u.credits.bonusRemaining}</div>
+                    <div className="af-admin-muted">累计已用 {u.consumedCredits} 点</div>
                   </td>
                   <td>
                     <code>{u.refCode || "—"}</code>

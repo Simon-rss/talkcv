@@ -2,6 +2,7 @@
 
 import { Check, KeyRound, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { PLAN_CREDITS, creationPricing } from "../../lib/credits";
 import type { PlanTier } from "../../lib/models";
 import type { Lang } from "../../lib/schema";
 
@@ -58,15 +59,15 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
       features: isZh
         ? [
             "DeepSeek Chat / GPT-4o mini 免费托管",
-            "每账号 3 次 AI 简历生成（终身体验）",
-            "免费所见即所得点改 + 上传自定义头像",
+            `每账号一次性 ${PLAN_CREDITS.free} 点（终身体验）`,
+            "点击编辑简历，可上传照片或选择 4 款预设头像",
             "最多 2 个托管个人站（30 天有效）",
             "访客托管对话 30 次/天（自带 Key 无限）",
           ]
         : [
             "DeepSeek Chat & GPT-4o mini hosted",
-            "3 AI resume generations per account",
-            "Free inline click-to-edit + custom avatar upload",
+            `${PLAN_CREDITS.free} one-time lifetime credits per account`,
+            "Inline editing, photo upload and 4 preset avatars",
             "Up to 2 hosted sites (30-day validity)",
             "30 hosted visitor chats/day (BYOK unlimited)",
           ],
@@ -74,24 +75,22 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
     {
       id: "pro" as const,
       name: "Pro",
-      tagline: isZh ? "求职季主力 · 解锁 AI 实时精修与头像" : "Best for active job seekers",
+      tagline: isZh ? "求职季主力 · 解锁 AI 实时精修" : "Best for active job seekers",
       priceMonth: "$20",
       priceYear: "$190",
       popular: true,
       features: isZh
         ? [
             "解锁 DeepSeek V4.1 Flash / R1 / GPT-4o / o3-mini",
-            "每月 30 次 AI 简历生成",
-            "专属「AI 多轮实时精修 + 版本回退」（100 次/月）",
-            "专属「AI 生成职业头像」（5 次/月）",
+            `每个自然月 ${PLAN_CREDITS.pro} 点`,
+            "专属「AI 多轮实时精修 + 版本回退」",
             "最多 10 个个人站 · 订阅期内永不过期",
             "访客托管 AI 对话 200 次/天",
           ]
         : [
             "Unlock DeepSeek V4.1 Flash, R1, GPT-4o, o3-mini",
-            "30 AI resume generations / month",
-            "Multi-turn AI Live Refine + rollback (100/month)",
-            "AI Portrait Avatar generator (5/month)",
+            `${PLAN_CREDITS.pro} credits per calendar month`,
+            "Multi-turn AI Live Refine + rollback",
             "Up to 10 sites · never expires while subscribed",
             "200 hosted visitor AI chats / day",
           ],
@@ -106,16 +105,16 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
       features: isZh
         ? [
             "解锁全部旗舰模型（GPT-6.2 Sol / 6.1 / 5.4）",
-            "每月 100 次 AI 简历生成 + 300 次 AI 精修/月",
-            "AI 生成职业头像（20 次/月）",
+            `每个自然月 ${PLAN_CREDITS.max.toLocaleString("en-US")} 点`,
+            "AI 多轮实时精修与版本回退",
             "白标商用：支持隐藏底部 TalkCV 水印",
             "最多 30 个客户个人站 · 订阅期内永不过期",
             "访客托管 AI 对话 600 次/天 + 优先路由",
           ]
         : [
             "Unlock all flagship models (GPT-6.2 Sol, 6.1, 5.4)",
-            "100 generations/month + 300 AI refines/month",
-            "AI Portrait Avatar generator (20/month)",
+            `${PLAN_CREDITS.max.toLocaleString("en-US")} credits per calendar month`,
+            "Multi-turn AI Live Refine and rollback",
             "Agency White-label: hide TalkCV footer watermark",
             "Up to 30 client sites · never expires while subscribed",
             "600 hosted visitor AI chats/day + priority routing",
@@ -144,6 +143,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
         </button>
       </div>
 
+      <p className="af-quota-note">{creationPricing(lang)}</p>
       <div className="af-pricing-grid">
         {tiers.map((t) => {
           const isCurrent = !isTrial && currentPlan === t.id;

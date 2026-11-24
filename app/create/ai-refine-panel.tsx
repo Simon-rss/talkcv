@@ -2,6 +2,7 @@
 
 import { History, RotateCcw, Send, Sparkles, X } from "lucide-react";
 import { useState } from "react";
+import { CREDIT_COST, creditCostLabel, type CreditBalance } from "../../lib/credits";
 import type { Lang, PortfolioProfile, ThemeId } from "../../lib/schema";
 
 export interface RefineTurn {
@@ -23,9 +24,8 @@ interface AiRefinePanelProps {
   apiKey?: string;
   baseUrl?: string;
   byokModel?: string;
-  remainingEdits: number;
-  editDailyLimit: number;
-  onApplyProfile: (next: PortfolioProfile, quota?: { usedToday: number; dailyLimit: number }) => void;
+  onCredits: (credits: CreditBalance) => void;
+  onApplyProfile: (next: PortfolioProfile) => void;
   onClose: () => void;
 }
 
@@ -53,8 +53,7 @@ export function AiRefinePanel({
   apiKey,
   baseUrl,
   byokModel,
-  remainingEdits,
-  editDailyLimit,
+  onCredits,
   onApplyProfile,
   onClose,
 }: AiRefinePanelProps) {
@@ -95,9 +94,10 @@ export function AiRefinePanel({
         ok?: boolean;
         summary?: string;
         profile?: PortfolioProfile;
-        editQuota?: { usedToday: number; dailyLimit: number };
+        credits?: CreditBalance;
         error?: string;
       };
+      if (data.credits) onCredits(data.credits);
       if (!res.ok || !data.profile) {
         throw new Error(data.error || "AI refine failed.");
       }
@@ -108,7 +108,7 @@ export function AiRefinePanel({
         ...prev,
         { label: `v${prev.length} · ${instruction.slice(0, 12)}${instruction.length > 12 ? "…" : ""}`, profile: data.profile! },
       ]);
-      onApplyProfile(data.profile, data.editQuota);
+      onApplyProfile(data.profile);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "AI refine failed.");
       setTurns(turns);
@@ -123,11 +123,7 @@ export function AiRefinePanel({
         <div className="af-refine-title">
           <Sparkles size={14} />
           <strong>{isZh ? "AI 多轮实时精修" : "AI Multi-turn Live Refine"}</strong>
-          {providerMode === "hosted" && editDailyLimit > 0 && (
-            <span className="af-refine-quota">
-              {isZh ? `本月剩 ${remainingEdits}/${editDailyLimit} 次` : `${remainingEdits}/${editDailyLimit} left/mo`}
-            </span>
-          )}
+          <span className="af-refine-quota">{creditCostLabel(CREDIT_COST.edit, lang, providerMode === "byok")}</span>
         </div>
         <button type="button" className="af-icon-pill" onClick={onClose} aria-label="Close AI Refine">
           <X size={13} />

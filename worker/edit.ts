@@ -1,8 +1,9 @@
-import { canUseModel, getHostedModel } from "../lib/models";
+import { CREDIT_COST } from "../lib/credits";
+import { resolveStudioModel } from "./generate";
+import { withCreationCredits } from "./credits";
 import { isValidTheme, sanitizeDesignTokens, type PortfolioProfile, type ThemeId } from "../lib/schema";
 import { getSessionUser } from "./auth";
-import { getMonthlyEditUsage, getUserPlan, incrementMonthlyEditUsage, type BillingEnv } from "./billing";
-import { consumeReferralBonus, refundReferralBonus } from "./referral";
+import { getUserPlan, type BillingEnv } from "./billing";
 import type { ChatEnv } from "./chat";
 
 interface EditHistoryTurn {
@@ -49,89 +50,18 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
     return jsonResponse(400, { error: "Valid current profile JSON is required." });
   }
 
-  const byokKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
-  const isByok = body.providerMode === "byok" && Boolean(byokKey);
-
-  let apiKey = "";
-  let baseUrl = "https://api.openai.com/v1";
-  let model = "gpt-4o-mini";
-  let userEmail: string | null = null;
-  let editBaseLimit = 0;
-  let editUsedBefore = 0;
-  let editBonusRemaining = 0;
-  let editIsTrial = false;
-  let reservedBonusEdit = false;
-
-  if (isByok) {
-    apiKey = byokKey;
-    baseUrl = ((typeof body.baseUrl === "string" && body.baseUrl.trim()) || "https://api.openai.com/v1").replace(
-      /\/+$/,
-      "",
-    );
-    model = (typeof body.model === "string" && body.model.trim()) || "gpt-4o-mini";
-  } else {
-    const user = await getSessionUser(request, env);
-    if (!user) {
-      return jsonResponse(401, {
-        error: "Please sign in and upgrade to TalkCV Pro or Max to use AI Live Refine.",
-      });
-    }
-    const { plan, isTrial, limits, baseLimits, bonusEdits } = await getUserPlan(user.email, env);
-    if (!limits.aiLiveEdit) {
-      return jsonResponse(403, {
-        error: "AI Live Refine is a TalkCV Pro / Max feature. Upgrade your plan to unlock multi-turn AI editing.",
-      });
-    }
-    editIsTrial = isTrial;
-    editBaseLimit = isTrial ? 0 : baseLimits.editLimit;
-    editBonusRemaining = bonusEdits;
-    const used = isTrial ? 0 : await getMonthlyEditUsage(user.email, env);
-    editUsedBefore = used;
-    const remaining = Math.max(0, editBaseLimit - used) + bonusEdits;
-    if (remaining <= 0) {
-      const displayLimit = Math.max(editBaseLimit, used);
-      return jsonResponse(429, {
-        error: `Monthly AI refine limit reached (${displayLimit}/month). Upgrade to Max for 300/month.`,
-      });
-    }
-    userEmail = user.email;
-
-    const requestedId =
-      typeof body.hostedModelId === "string" && body.hostedModelId.trim()
-        ? body.hostedModelId.trim()
-        : "deepseek-chat";
-    if (!canUseModel(requestedId, plan)) {
-      return jsonResponse(403, {
-        error: `Model "${requestedId}" requires a higher TalkCV plan.`,
-      });
-    }
-    const chosen = getHostedModel(requestedId === "auto" ? "deepseek-chat" : requestedId);
-    if (chosen.provider === "deepseek") {
-      apiKey = env.DEEPSEEK_API_KEY?.trim() || "";
-      baseUrl = "https://api.deepseek.com/v1";
-      model = chosen.apiModel || "deepseek-chat";
-    } else {
-      apiKey = env.OPENAI_API_KEY?.trim() || "";
-      baseUrl = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
-      model = chosen.apiModel || env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
-    }
-    if (!apiKey) {
-      return jsonResponse(503, { error: `Hosted ${chosen.provider} is not configured on this server.` });
-    }
-
-    if (editIsTrial || editUsedBefore >= editBaseLimit) {
-      const deducted = await consumeReferralBonus(user.email, "edit", env);
-      if (!deducted) {
-        const displayLimit = Math.max(editBaseLimit, editUsedBefore);
-        return jsonResponse(429, {
-          error: `Monthly AI refine limit reached (${displayLimit}/month). Upgrade to Max for 300/month.`,
-        });
-      }
-      reservedBonusEdit = true;
-    }
-  }
+  const byok = body.providerMode === "byok";
+  const user = await getSessionUser(request, env);
+  if (!byok && !user) return jsonResponse(401, { error: "Sign in to use AI Live Refine." });
+  const access = !byok && user ? await getUserPlan(user.email, env) : null;
+  if (access && !access.limits.aiLiveEdit) return jsonResponse(403, { error: "AI Live Refine requires Pro, a Pro trial or Max." });
+  const provider = resolveStudioModel(body, byok ? "byok" : "hosted", access?.plan ?? "free", env);
+  if (provider instanceof Response) return provider;
+  const { baseUrl, model, apiKey } = provider;
 
   const theme: ThemeId = isValidTheme(body.theme) ? body.theme : currentProfile.theme || "editorial";
+  const textProfile = { ...currentProfile, basics: { ...currentProfile.basics } };
+  delete textProfile.basics.avatar;
   const history: EditHistoryTurn[] = Array.isArray(body.history)
     ? body.history
         .slice(-6)
@@ -158,47 +88,33 @@ Rules:
 - NEVER invent fake companies, URLs, or metrics that the user didn't ask for.
 - Preserve existing project slugs unless explicitly asked to change them.`;
 
-  const callEdit = (targetModel: string) =>
-    fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: targetModel,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...history,
-          {
-            role: "user",
-            content: `Current profile JSON (theme: ${theme}):\n${JSON.stringify(currentProfile).slice(0, 24000)}\n\nEdit instruction:\n${instruction}`,
-          },
-        ],
-      }),
-    });
-
-  let upstream: Response;
-  try {
-    upstream = await callEdit(model);
-    if (!upstream.ok && baseUrl.includes("api.deepseek.com") && model !== "deepseek-chat") {
+  return withCreationCredits(user?.email, byok ? 0 : CREDIT_COST.edit, env, request, async (signal) => {
+    const callEdit = (targetModel: string) =>
+      fetch(`${baseUrl}/chat/completions`, {
+        method: "POST", signal,
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...history,
+            {
+              role: "user",
+              content: `Current profile JSON (theme: ${theme}):\n${JSON.stringify(textProfile).slice(0, 24000)}\n\nEdit instruction:\n${instruction}`,
+            },
+          ],
+        }),
+      });
+    let upstream = await callEdit(model);
+    if ([400, 404].includes(upstream.status) && baseUrl === "https://api.deepseek.com/v1" && model !== "deepseek-chat") {
       upstream = await callEdit("deepseek-chat");
     }
-  } catch {
-    if (reservedBonusEdit && userEmail) await refundReferralBonus(userEmail, "edit", env);
-    return jsonResponse(502, { error: "Unable to reach AI provider." });
-  }
-
-  if (!upstream.ok) {
-    if (reservedBonusEdit && userEmail) await refundReferralBonus(userEmail, "edit", env);
-    return jsonResponse(upstream.status === 401 ? 401 : 502, {
-      error: `AI provider returned HTTP ${upstream.status}.`,
-    });
-  }
-
-  try {
+    if (upstream.status !== 200) return jsonResponse(upstream.status === 401 ? 401 : 502, { error: `AI provider returned HTTP ${upstream.status}.` });
     const payload = (await upstream.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
@@ -213,32 +129,10 @@ Rules:
     const mergedProfile: PortfolioProfile = {
       ...currentProfile,
       ...parsed.profile,
+      basics: { ...parsed.profile.basics, avatar: currentProfile.basics.avatar },
       theme: isValidTheme(parsed.profile.theme) ? parsed.profile.theme : theme,
       ...(updatedTokens ? { designTokens: updatedTokens } : {}),
     };
-
-    let editQuota: { usedToday: number; dailyLimit: number } | undefined;
-    if (userEmail) {
-      if (!reservedBonusEdit) {
-        const usedToday = await incrementMonthlyEditUsage(userEmail, env);
-        editQuota = { usedToday, dailyLimit: editBaseLimit + editBonusRemaining };
-      } else {
-        const remainingBonus = Math.max(0, editBonusRemaining - 1);
-        editQuota = {
-          usedToday: editUsedBefore,
-          dailyLimit: Math.max(editBaseLimit, editUsedBefore) + remainingBonus,
-        };
-      }
-    }
-
-    return jsonResponse(200, {
-      ok: true,
-      summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "Updated portfolio.",
-      profile: mergedProfile,
-      ...(editQuota ? { editQuota } : {}),
-    });
-  } catch {
-    if (reservedBonusEdit && userEmail) await refundReferralBonus(userEmail, "edit", env);
-    return jsonResponse(502, { error: "Could not parse AI edit response. Please try again." });
-  }
+    return { ok: true, summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "Updated portfolio.", profile: mergedProfile };
+  });
 }

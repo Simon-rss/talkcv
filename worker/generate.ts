@@ -8,15 +8,10 @@ import {
   type ProjectAccent,
   type ThemeId,
 } from "../lib/schema";
-import {
-  buildUsageCookie,
-  DAILY_GENERATE_LIMIT,
-  getDailyUsage,
-  getSessionUser,
-  incrementDailyUsage,
-} from "./auth";
-import { getUserPlan, type BillingEnv } from "./billing";
-import { consumeReferralBonus, refundReferralBonus } from "./referral";
+import { CREDIT_COST } from "../lib/credits";
+import { getSessionUser } from "./auth";
+import { getUserPlan } from "./billing";
+import { withCreationCredits } from "./credits";
 import type { ChatEnv } from "./chat";
 
 const RATE_WINDOW_MS = 60_000;
@@ -304,56 +299,12 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
         ? "byok"
         : "hosted";
 
-  let modelPlan: PlanTier = "free";
-  let hostedUserEmail: string | null = null;
-  let activeQuotaPeriod: "lifetime" | "month" = "lifetime";
-  let activeBaseLimit = DAILY_GENERATE_LIMIT;
-  let activeUsedBefore = 0;
-  let activeBonusGenerates = 0;
-  let reservedBonusGenerate = false;
-
-  if (mode !== "byok") {
-    const user = await getSessionUser(request, env);
-    if (!user) {
-      return jsonResponse(401, {
-        error: "Please sign in with your email to use TalkCV's free daily AI quota (or paste your own API key).",
-      });
-    }
-    const { plan, limits, baseLimits, bonusGenerates } = await getUserPlan(user.email, env as BillingEnv);
-    modelPlan = plan;
-    activeBaseLimit = baseLimits.generateLimit;
-    activeQuotaPeriod = limits.generatePeriod;
-    activeBonusGenerates = bonusGenerates;
-    const used = await getDailyUsage(user.email, env, request, activeQuotaPeriod);
-    activeUsedBefore = used;
-    const remaining = Math.max(0, activeBaseLimit - used) + bonusGenerates;
-    if (remaining <= 0) {
-      const displayLimit = Math.max(activeBaseLimit, used);
-      return jsonResponse(429, {
-        error:
-          activeQuotaPeriod === "lifetime"
-            ? `Free account generation quota reached (${displayLimit} total). Upgrade to Pro (30/month) or use your own API key.`
-            : `Monthly generation limit reached (${displayLimit}/month). Upgrade to Max or use your own API key.`,
-      });
-    }
-    hostedUserEmail = user.email;
-  }
-  const provider = resolveStudioModel(body, mode, modelPlan, env);
+  const user = await getSessionUser(request, env);
+  if (mode !== "byok" && !user) return jsonResponse(401, { error: "Please sign in with your email to use hosted credits." });
+  const plan = mode !== "byok" && user ? (await getUserPlan(user.email, env)).plan : "free";
+  const provider = resolveStudioModel(body, mode, plan, env);
   if (provider instanceof Response) return provider;
   const { apiKey, baseUrl, model } = provider;
-  if (hostedUserEmail && activeUsedBefore >= activeBaseLimit) {
-    const deducted = await consumeReferralBonus(hostedUserEmail, "generate", env);
-    if (!deducted) {
-      const displayLimit = Math.max(activeBaseLimit, activeUsedBefore);
-      return jsonResponse(429, {
-        error:
-          activeQuotaPeriod === "lifetime"
-            ? `Free account generation quota reached (${displayLimit} total). Upgrade to Pro (30/month) or use your own API key.`
-            : `Monthly generation limit reached (${displayLimit}/month). Upgrade to Max or use your own API key.`,
-      });
-    }
-    reservedBonusGenerate = true;
-  }
 
   const theme: ThemeId = isValidTheme(body.theme) ? body.theme : "editorial";
   const siteUrl =
@@ -382,76 +333,27 @@ Rules:
 Reference schema example:
 ${JSON.stringify(sanitizedSample)}`;
 
-  const callGenerate = (targetModel: string) =>
-    fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
+  return withCreationCredits(user?.email, mode === "byok" ? 0 : CREDIT_COST.generate, env, request, async (signal) => {
+    const callGenerate = (targetModel: string) => fetch(`${baseUrl}/chat/completions`, {
+      method: "POST", signal,
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: targetModel,
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Convert this resume into TalkCV profile.json:\n\n${resumeText.slice(0, 14000)}`,
-          },
-        ],
+        model: targetModel, temperature: 0.1, response_format: { type: "json_object" },
+        messages: [{ role: "system", content: systemPrompt },
+          { role: "user", content: `Convert this resume into TalkCV profile.json:\n\n${resumeText.slice(0, 14000)}` }],
       }),
     });
-
-  let upstream: Response;
-  try {
-    upstream = await callGenerate(model);
-    if (!upstream.ok && baseUrl.includes("api.deepseek.com") && model !== "deepseek-chat") {
+    let upstream = await callGenerate(model);
+    if ([400, 404].includes(upstream.status) && baseUrl === "https://api.deepseek.com/v1" && model !== "deepseek-chat") {
       upstream = await callGenerate("deepseek-chat");
     }
-  } catch {
-    if (reservedBonusGenerate && hostedUserEmail) await refundReferralBonus(hostedUserEmail, "generate", env);
-    return jsonResponse(502, { error: "Unable to reach the configured AI API endpoint." });
-  }
-
-  if (!upstream.ok) {
-    if (reservedBonusGenerate && hostedUserEmail) await refundReferralBonus(hostedUserEmail, "generate", env);
-    return jsonResponse(upstream.status === 401 ? 401 : 502, {
-      error:
-        upstream.status === 401
-          ? "Invalid API key."
-          : `AI provider returned HTTP ${upstream.status}. Check your base URL, model name, or region availability.`,
+    if (upstream.status !== 200) return jsonResponse(upstream.status === 401 ? 401 : 502, {
+      error: upstream.status === 401 ? "Invalid API key." : `AI provider returned HTTP ${upstream.status}.`,
     });
-  }
-
-  try {
-    const payload = (await upstream.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
+    const payload = await upstream.json();
     const content = payload.choices?.[0]?.message?.content?.trim() ?? "";
-    const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-    const normalized = normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt, resumeText);
-    let quota: { usedToday: number; dailyLimit: number } | undefined;
-    let extraHeaders: Record<string, string> | undefined;
-    if (hostedUserEmail) {
-      if (!reservedBonusGenerate) {
-        const usedToday = await incrementDailyUsage(hostedUserEmail, env, request, activeQuotaPeriod);
-        quota = { usedToday, dailyLimit: activeBaseLimit + activeBonusGenerates };
-        extraHeaders = {
-          "set-cookie": await buildUsageCookie(request, hostedUserEmail, usedToday, env, activeQuotaPeriod),
-        };
-      } else {
-        const remainingBonus = Math.max(0, activeBonusGenerates - 1);
-        quota = {
-          usedToday: activeUsedBefore,
-          dailyLimit: Math.max(activeBaseLimit, activeUsedBefore) + remainingBonus,
-        };
-      }
-    }
-    return jsonResponse(200, { profile: normalized, ...(quota ? { quota } : {}) }, extraHeaders);
-  } catch {
-    if (reservedBonusGenerate && hostedUserEmail) await refundReferralBonus(hostedUserEmail, "generate", env);
-    return jsonResponse(502, { error: "Model response could not be parsed as valid JSON. Try again." });
-  }
+    const parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+    if (!parsed?.basics?.name) return jsonResponse(502, { error: "Model response is missing a résumé." });
+    return { profile: normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt, resumeText) };
+  });
 }

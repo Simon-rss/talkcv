@@ -1,6 +1,9 @@
+import { CREDIT_COST, PLAN_CREDITS } from "../lib/credits";
+import { getCredits } from "./credits";
+import { withSiteWrite } from "./publish";
 import type { PlanTier } from "../lib/models";
 import { getSessionUser, type AuthEnv } from "./auth";
-import { isTrialActive, readReferralRecord } from "./referral";
+import { isTrialActive, readReferralRecord, referralCreditGrant } from "./referral";
 
 export interface BillingEnv extends AuthEnv {
   CREEM_API_KEY?: string;
@@ -22,10 +25,6 @@ export interface PlanRecord {
 }
 
 export interface PlanLimits {
-  generateLimit: number;
-  generatePeriod: "lifetime" | "month";
-  editLimit: number;
-  avatarGenLimit: number;
   dailyChatLimitPerSite: number;
   hostingDays: number;
   maxSites: number;
@@ -34,100 +33,24 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
-    generateLimit: 3,
-    generatePeriod: "lifetime",
-    editLimit: 0,
-    avatarGenLimit: 0,
     dailyChatLimitPerSite: 30,
     hostingDays: 30,
     maxSites: 2,
     aiLiveEdit: false,
   },
   pro: {
-    generateLimit: 30,
-    generatePeriod: "month",
-    editLimit: 100,
-    avatarGenLimit: 5,
     dailyChatLimitPerSite: 200,
     hostingDays: 365,
     maxSites: 10,
     aiLiveEdit: true,
   },
   max: {
-    generateLimit: 100,
-    generatePeriod: "month",
-    editLimit: 300,
-    avatarGenLimit: 20,
     dailyChatLimitPerSite: 600,
     hostingDays: 365,
     maxSites: 30,
     aiLiveEdit: true,
   },
 };
-
-const memEditUsage = new Map<string, number>();
-const memAvatarUsage = new Map<string, number>();
-
-function currentMonthKey(): string {
-  return new Date().toISOString().slice(0, 7); // YYYY-MM
-}
-
-function editUsageKey(email: string): string {
-  return `edit_usage_month:${email.trim().toLowerCase()}:${currentMonthKey()}`;
-}
-
-export async function getMonthlyEditUsage(email: string, env: BillingEnv): Promise<number> {
-  const key = editUsageKey(email);
-  if (env.PROFILES_KV) {
-    const raw = await env.PROFILES_KV.get(key);
-    const n = Number(raw ?? "0");
-    return Number.isFinite(n) ? n : 0;
-  }
-  return memEditUsage.get(key) ?? 0;
-}
-
-export async function incrementMonthlyEditUsage(email: string, env: BillingEnv): Promise<number> {
-  const current = await getMonthlyEditUsage(email, env);
-  const next = current + 1;
-  const key = editUsageKey(email);
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(key, String(next));
-  } else {
-    memEditUsage.set(key, next);
-  }
-  return next;
-}
-
-function avatarUsageKey(email: string): string {
-  return `avatar_usage_month:${email.trim().toLowerCase()}:${currentMonthKey()}`;
-}
-
-export async function getMonthlyAvatarUsage(email: string, env: BillingEnv): Promise<number> {
-  const key = avatarUsageKey(email);
-  if (env.PROFILES_KV) {
-    const raw = await env.PROFILES_KV.get(key);
-    const n = Number(raw ?? "0");
-    return Number.isFinite(n) ? n : 0;
-  }
-  return memAvatarUsage.get(key) ?? 0;
-}
-
-export async function incrementMonthlyAvatarUsage(email: string, env: BillingEnv): Promise<number> {
-  const current = await getMonthlyAvatarUsage(email, env);
-  const next = current + 1;
-  const key = avatarUsageKey(email);
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(key, String(next));
-  } else {
-    memAvatarUsage.set(key, next);
-  }
-  return next;
-}
-
-export const PRO_DAILY_GENERATE_LIMIT = PLAN_LIMITS.pro.generateLimit;
-export const PRO_DAILY_CHAT_LIMIT_PER_SITE = PLAN_LIMITS.pro.dailyChatLimitPerSite;
-export const PRO_HOSTING_DAYS = PLAN_LIMITS.pro.hostingDays;
-export const PRO_MAX_SITES_PER_USER = PLAN_LIMITS.pro.maxSites;
 
 export interface RedeemCodeRecord {
   code: string;
@@ -237,9 +160,7 @@ export async function getUserPlan(
   isMax: boolean;
   isTrial: boolean;
   limits: PlanLimits;
-  baseLimits: PlanLimits;
-  bonusGenerates: number;
-  bonusEdits: number;
+  rewardCredits: number;
   record: PlanRecord | null;
 }> {
   if (!email) {
@@ -249,17 +170,14 @@ export async function getUserPlan(
       isMax: false,
       isTrial: false,
       limits: PLAN_LIMITS.free,
-      baseLimits: PLAN_LIMITS.free,
-      bonusGenerates: 0,
-      bonusEdits: 0,
+      rewardCredits: 0,
       record: null,
     };
   }
   const key = `plan:${email.trim().toLowerCase()}`;
   const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : (memPlans.get(key) ?? null);
   const refRec = await readReferralRecord(email, env);
-  const bonusGenerates = Math.max(0, refRec?.bonusGenerates ?? 0);
-  const bonusEdits = Math.max(0, refRec?.bonusEdits ?? 0);
+  const rewardCredits = referralCreditGrant(refRec);
   const trialOn = isTrialActive(refRec);
 
   let record: PlanRecord | null = null;
@@ -277,71 +195,26 @@ export async function getUserPlan(
     }
   }
 
-  if (paidPlan === "pro" || paidPlan === "max") {
-    const base = PLAN_LIMITS[paidPlan];
-    return {
-      plan: paidPlan,
-      isPro: true,
-      isMax: paidPlan === "max",
-      isTrial: false,
-      limits: {
-        ...base,
-        generateLimit: base.generateLimit + bonusGenerates,
-        editLimit: base.editLimit + bonusEdits,
-      },
-      baseLimits: base,
-      bonusGenerates,
-      bonusEdits,
-      record,
-    };
-  }
-
-  if (trialOn) {
-    // Referral Pro trial: unlocks Pro models, AI Live Refine & Visitor Insights,
-    // strictly capped by remaining earned bonus credits (never full monthly Pro quotas or AI avatars).
-    return {
-      plan: "pro",
-      isPro: true,
-      isMax: false,
-      isTrial: true,
-      limits: {
-        ...PLAN_LIMITS.free,
-        generateLimit: PLAN_LIMITS.free.generateLimit + bonusGenerates,
-        editLimit: bonusEdits,
-        avatarGenLimit: 0,
-        aiLiveEdit: bonusEdits > 0,
-      },
-      baseLimits: PLAN_LIMITS.free,
-      bonusGenerates,
-      bonusEdits,
-      record,
-    };
-  }
-
+  const isTrial = paidPlan === "free" && trialOn;
   return {
-    plan: "free",
-    isPro: false,
-    isMax: false,
-    isTrial: false,
-    limits: {
-      ...PLAN_LIMITS.free,
-      generateLimit: PLAN_LIMITS.free.generateLimit + bonusGenerates,
-    },
-    baseLimits: PLAN_LIMITS.free,
-    bonusGenerates,
-    bonusEdits,
+    plan: isTrial ? "pro" : paidPlan,
+    isPro: paidPlan !== "free" || isTrial,
+    isMax: paidPlan === "max",
+    isTrial,
+    limits: isTrial ? { ...PLAN_LIMITS.free, aiLiveEdit: true } : PLAN_LIMITS[paidPlan],
+    rewardCredits,
     record,
   };
 }
 
 export async function setUserPlan(email: string, record: PlanRecord, env: BillingEnv): Promise<void> {
-  const key = `plan:${email.trim().toLowerCase()}`;
-  const serialized = JSON.stringify(record);
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(key, serialized);
-  } else {
-    memPlans.set(key, serialized);
-  }
+  const normalized = email.trim().toLowerCase();
+  await withSiteWrite("", normalized, env, async (locked) => {
+    const key = `plan:${normalized}`;
+    const serialized = JSON.stringify(record);
+    if (locked.PROFILES_KV) await locked.PROFILES_KV.put(key, serialized);
+    else memPlans.set(key, serialized);
+  });
 }
 
 function billingProducts(env: BillingEnv) {
@@ -720,10 +593,11 @@ export async function handleRedeemCodeRequest(request: Request, env: BillingEnv)
     plan: effectiveTier,
     isPro: true,
     isMax: effectiveTier === "max",
-    dailyLimit: PLAN_LIMITS[effectiveTier].generateLimit,
+    credits: await getCredits(email, env, request),
+    dailyLimit: Math.floor(PLAN_CREDITS[effectiveTier] / CREDIT_COST.generate),
     maxSites: PLAN_LIMITS[effectiveTier].maxSites,
-    quotaPeriod: PLAN_LIMITS[effectiveTier].generatePeriod,
-    editDailyLimit: PLAN_LIMITS[effectiveTier].editLimit,
+    quotaPeriod: "month",
+    editDailyLimit: Math.floor(PLAN_CREDITS[effectiveTier] / CREDIT_COST.edit),
     days: record.days,
     expiresAt: nextExpiresAt,
   });

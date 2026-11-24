@@ -37,6 +37,7 @@ import {
   type ProjectItem,
   type ThemeId,
 } from "../lib/schema";
+import { creationPricing, PLAN_CREDITS } from "../lib/credits";
 import { AccountMenu } from "./account-menu";
 import {
   CommandPalette,
@@ -458,8 +459,9 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
                 </h2>
                 <p className="af-storefront-desc">
                   {lang === "zh"
-                    ? "上传 PDF / Word 或粘贴文本，几秒生成专属 /u/你的名字 交互式简历站：支持访客 AI 对话、JD 匹配、可扫码 A4 PDF 导出、访客洞察与在职隐私保护。Free $0（账号限 3 次体验）· Pro $20/月（$190/年）· Max $49/月（$469/年）。"
-                    : "Upload PDF/DOCX or paste your résumé to publish a personal /u/handle portfolio with visitor AI chat, JD matching, QR-enabled A4 PDF export, visitor insights, and passcode privacy. Plans: Free $0 (3 generations/account) · Pro $20/mo ($190/yr) · Max $49/mo ($469/yr)."}
+                    ? `上传 PDF / Word 或粘贴简历，几秒生成专属 /u/你的名字 个人站，支持访客 AI 对话、JD 匹配、扫码 A4 PDF 导出、访客洞察和口令保护。Free 免费领取终身 ${PLAN_CREDITS.free} 点。Pro $20/月（$190/年），每月 ${PLAN_CREDITS.pro} 点。Max $49/月（$469/年），每月 ${PLAN_CREDITS.max.toLocaleString("en-US")} 点。`
+                    : `Upload PDF/DOCX or paste your résumé to publish a personal /u/handle portfolio with visitor AI chat, JD matching, QR-enabled A4 PDF export, visitor insights and passcode privacy. Free includes ${PLAN_CREDITS.free} lifetime credits. Pro is $20/mo ($190/yr) with ${PLAN_CREDITS.pro} monthly credits. Max is $49/mo ($469/yr) with ${PLAN_CREDITS.max.toLocaleString("en-US")} monthly credits.`}
+                  {" "}{creationPricing(lang)}
                 </p>
               </div>
               <div className="af-storefront-actions">

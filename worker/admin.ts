@@ -1,8 +1,10 @@
-import { getSessionUser, type AuthEnv } from "./auth";
-import { handleCreateRedeemCodesRequest, type BillingEnv, type PlanRecord, type RedeemCodeRecord } from "./billing";
+import { CREDIT_COST } from "../lib/credits";
+import { creditBalance, creditPeriod, listCreditRows, releaseExpiredCredits, type CreditLedger } from "./credits";
+import { getSessionUser, legacyUsageCount, type AuthEnv } from "./auth";
+import { getUserPlan, handleCreateRedeemCodesRequest, type BillingEnv, type PlanRecord, type RedeemCodeRecord } from "./billing";
 import type { StoredProfileRecord } from "./publish";
 import { countLeads } from "./leads";
-import { isTrialActive, type ReferralRecord } from "./referral";
+import { isTrialActive, readReferralRecord, referralCreditGrant, type ReferralRecord } from "./referral";
 
 export interface AdminEnv extends AuthEnv, BillingEnv {
   ADMIN_EMAILS?: string;
@@ -73,20 +75,19 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
   const gate = await requireAdmin(request, env);
   if (!gate.ok) return gate.response;
 
-  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, insightRows, codeRows, totalLeads] =
+  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, creditRows, insightRows, codeRows, totalLeads] =
     await Promise.all([
       listByPrefix("profile:", env, 5000),
       listByPrefix("user_sites:", env, 5000),
       listByPrefix("plan:", env, 5000),
       listByPrefix("ref_user:", env, 5000),
-      listByPrefix("usage:", env, 10000),
-      listByPrefix("edit_usage_month:", env, 10000),
+      listCreditRows("usage:", env),
+      listCreditRows("edit_usage_month:", env),
+      listCreditRows("credits:", env),
       listByPrefix("insights:", env, 5000),
       listByPrefix("redeem:", env, 1000),
       countLeads(env),
     ]);
-
-  const currentMonth = new Date().toISOString().slice(0, 7);
 
   // Insights by slug
   const insightsBySlug = new Map<string, { views: number; questions: number }>();
@@ -134,11 +135,8 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
   const sitesByEmail = new Map<string, string[]>();
   const planByEmail = new Map<string, PlanRecord>();
   const refByEmail = new Map<string, ReferralRecord>();
-  const lifetimeUsageByEmail = new Map<string, number>();
-  const monthlyUsageByEmail = new Map<string, number>();
-  const legacyDailyUsageByEmail = new Map<string, number>();
-  const legacyMonthDailyUsageByEmail = new Map<string, number>();
-  const monthlyEditByEmail = new Map<string, number>();
+  const legacyUsage = new Map<string, Map<string, { credits: number; generations: number }>>();
+  const ledgerByEmail = new Map<string, CreditLedger>();
   const updatedByEmail = new Map<string, string>();
 
   const bumpUpdated = (email: string, ts?: string) => {
@@ -184,35 +182,36 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
     }
   }
 
-  for (const row of usageRows) {
-    const rest = row.key.slice("usage:".length);
-    const idx = rest.lastIndexOf(":");
-    if (idx <= 0) continue;
-    const email = rest.slice(0, idx).toLowerCase();
-    const win = rest.slice(idx + 1);
-    const count = Number(row.value) || 0;
-    emailSet.add(email);
-    bumpUpdated(email, row.updatedAt);
-    if (win === "lifetime") lifetimeUsageByEmail.set(email, count);
-    else if (win === currentMonth) monthlyUsageByEmail.set(email, count);
-    else if (/^\d{4}-\d{2}-\d{2}$/.test(win)) {
-      legacyDailyUsageByEmail.set(email, (legacyDailyUsageByEmail.get(email) ?? 0) + count);
-      if (win.startsWith(`${currentMonth}-`)) {
-        legacyMonthDailyUsageByEmail.set(email, (legacyMonthDailyUsageByEmail.get(email) ?? 0) + count);
-      }
+  for (const [prefix, rows, cost] of [
+    ["usage:", usageRows, CREDIT_COST.generate], ["edit_usage_month:", editUsageRows, CREDIT_COST.edit],
+  ] as const) {
+    for (const row of rows) {
+      const split = row.key.lastIndexOf(":");
+      const email = row.key.slice(prefix.length, split).toLowerCase();
+      const period = row.key.slice(split + 1);
+      if (!email || !/^(?:lifetime|\d{4}-\d{2}(?:-\d{2})?)$/.test(period)) continue;
+      const count = legacyUsageCount(row.value);
+      const periods = legacyUsage.get(email) ?? new Map<string, { credits: number; generations: number }>();
+      const usage = periods.get(period) ?? { credits: 0, generations: 0 };
+      usage.credits += count * cost;
+      if (prefix === "usage:") usage.generations += count;
+      periods.set(period, usage);
+      legacyUsage.set(email, periods);
+      emailSet.add(email);
+      bumpUpdated(email, row.updatedAt);
     }
   }
 
-  for (const row of editUsageRows) {
-    const rest = row.key.slice("edit_usage_month:".length);
-    const idx = rest.lastIndexOf(":");
-    if (idx <= 0) continue;
-    const email = rest.slice(0, idx).toLowerCase();
-    const win = rest.slice(idx + 1);
-    if (win === currentMonth) {
-      monthlyEditByEmail.set(email, Number(row.value) || 0);
-      emailSet.add(email);
-      bumpUpdated(email, row.updatedAt);
+  for (const row of creditRows) {
+    const email = row.key.slice("credits:".length);
+    const ledger = JSON.parse(row.value) as CreditLedger;
+    releaseExpiredCredits(ledger);
+    ledgerByEmail.set(email, ledger);
+    emailSet.add(email);
+    if (!env.PROFILES_KV?.listPrefix) {
+      const [plan, ref] = await Promise.all([getUserPlan(email, env), readReferralRecord(email, env)]);
+      if (plan.record) planByEmail.set(email, plan.record);
+      if (ref) refByEmail.set(email, ref);
     }
   }
 
@@ -236,18 +235,32 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
       const invitedCount = refRec?.invitedCount ?? 0;
       totalReferrals += invitedCount;
 
+      const creditTier = isPaidActive ? planRec!.plan : "free";
+      const period = creditPeriod(creditTier);
+      const ledger = ledgerByEmail.get(email);
+      const old = legacyUsage.get(email);
+      let legacyTotal = 0;
+      let legacyCurrent = 0;
+      for (const [window, usage] of old ?? []) {
+        legacyTotal += usage.credits;
+        if (window === period || (window.length === 10 && (period === "lifetime" || window.startsWith(period + "-")))) {
+          legacyCurrent += usage.credits;
+        }
+      }
+      // Signed legacy cookies can prove generation usage beyond the last persisted counter.
+      for (const [window, pool] of Object.entries(ledger?.pools ?? {})) {
+        legacyTotal += Math.max(0, pool.legacyGenerations - (old?.get(window)?.generations ?? 0)) * CREDIT_COST.generate;
+      }
+      const baseUsed = ledger?.pools[period]?.used ?? legacyCurrent;
+      const credits = creditBalance(creditTier, referralCreditGrant(refRec), baseUsed, ledger?.bonusUsed ?? 0);
       return {
         email,
         tier,
         planExpiresAt: isPaidActive ? planRec?.expiresAt ?? null : trialOn ? refRec?.trialExpiresAt ?? null : null,
         planSource: isPaidActive ? (planRec?.subscriptionId ? "creem" : "redeem") : trialOn ? "referral" : "free",
         sites: sitesByEmail.get(email) ?? [],
-        generatedCount: isPaidActive
-          ? (monthlyUsageByEmail.get(email) ?? 0) + (legacyMonthDailyUsageByEmail.get(email) ?? 0)
-          : (lifetimeUsageByEmail.get(email) ?? 0) + (legacyDailyUsageByEmail.get(email) ?? 0),
-        editCount: monthlyEditByEmail.get(email) ?? 0,
-        bonusGenerates: refRec?.bonusGenerates ?? 0,
-        bonusEdits: refRec?.bonusEdits ?? 0,
+        credits,
+        consumedCredits: legacyTotal + (ledger?.settledCredits ?? 0),
         refCode: refRec?.code ?? "",
         referredBy: refRec?.referredBy ?? null,
         invitedCount,

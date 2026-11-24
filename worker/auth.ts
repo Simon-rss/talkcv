@@ -1,6 +1,8 @@
-import { getMonthlyEditUsage, getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
+import { CREDIT_COST } from "../lib/credits";
+import { getCreditAccount } from "./credits";
+import { getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
 import type { PublishEnv } from "./publish";
-import { bindReferralOnLogin, getOrCreateReferralRecord, isTrialActive, MAX_REFERRAL_REWARDS } from "./referral";
+import { bindReferralOnLogin, getOrCreateReferralRecord, isTrialActive, MAX_REFERRAL_REWARDS, type ReferralRecord } from "./referral";
 
 export interface AuthEnv extends PublishEnv {
   RESEND_API_KEY?: string;
@@ -15,11 +17,9 @@ export interface SessionUser {
   createdAt: string;
 }
 
-export const DAILY_GENERATE_LIMIT = 3;
 export const MAX_SITES_PER_USER = 2;
 export const FREE_HOSTING_DAYS = 30;
 
-const memUsage = new Map<string, number>();
 const memUserSites = new Map<string, string[]>();
 const otpCooldown = new Map<string, number>();
 const OTP_COOLDOWN_MS = 30_000;
@@ -39,10 +39,6 @@ function normalizeEmail(raw: unknown): string | null {
   const email = raw.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 160) return null;
   return email;
-}
-
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function randomCode(): string {
@@ -120,7 +116,12 @@ function usageWindowToken(period: "lifetime" | "month"): string {
   return period === "month" ? new Date().toISOString().slice(0, 7) : "lifetime";
 }
 
-async function getCookieUsage(
+export function legacyUsageCount(raw: string | null): number {
+  const count = Number(raw);
+  return Number.isSafeInteger(count) && count > 0 ? count : 0;
+}
+
+export async function getCookieUsage(
   request: Request,
   email: string,
   period: "lifetime" | "month",
@@ -134,23 +135,7 @@ async function getCookieUsage(
   if (cEmail !== email || cWin !== usageWindowToken(period)) return 0;
   const expected = await hmacHex(getSigningSecret(env), `usage:${cEmail}|${cWin}|${cCountStr}`);
   if (!timingSafeEqual(sig, expected)) return 0;
-  const count = Number(cCountStr);
-  return Number.isFinite(count) && count > 0 ? count : 0;
-}
-
-export async function buildUsageCookie(
-  request: Request,
-  email: string,
-  count: number,
-  env: AuthEnv,
-  period: "lifetime" | "month" = "lifetime",
-): Promise<string> {
-  const win = usageWindowToken(period);
-  const sig = await hmacHex(getSigningSecret(env), `usage:${email}|${win}|${count}`);
-  const val = encodeURIComponent(`${email}|${win}|${count}|${sig}`);
-  const isHttps = request.url.startsWith("https://");
-  const maxAge = period === "lifetime" ? 31536000 : 2678400;
-  return `talkcv_usage=${val}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps ? "; Secure" : ""}`;
+  return legacyUsageCount(cCountStr);
 }
 
 export async function getDailyUsage(
@@ -161,34 +146,9 @@ export async function getDailyUsage(
 ): Promise<number> {
   const win = usageWindowToken(period);
   const key = `usage:${email}:${win}`;
-  let kvCount = 0;
-  if (env.PROFILES_KV) {
-    const raw = await env.PROFILES_KV.get(key);
-    const num = Number(raw ?? "0");
-    kvCount = Number.isFinite(num) ? num : 0;
-  } else {
-    kvCount = memUsage.get(key) ?? 0;
-  }
+  const kvCount = env.PROFILES_KV ? legacyUsageCount(await env.PROFILES_KV.get(key)) : 0;
   const cookieCount = request ? await getCookieUsage(request, email, period, env) : 0;
   return Math.max(kvCount, cookieCount);
-}
-
-export async function incrementDailyUsage(
-  email: string,
-  env: AuthEnv,
-  request?: Request,
-  period: "lifetime" | "month" = "lifetime",
-): Promise<number> {
-  const current = await getDailyUsage(email, env, request, period);
-  const next = current + 1;
-  const win = usageWindowToken(period);
-  const key = `usage:${email}:${win}`;
-  if (env.PROFILES_KV) {
-    await env.PROFILES_KV.put(key, String(next));
-  } else {
-    memUsage.set(key, next);
-  }
-  return next;
 }
 
 export async function getUserSites(email: string, env: AuthEnv): Promise<string[]> {
@@ -319,94 +279,39 @@ export async function handleVerifyCodeRequest(request: Request, env: AuthEnv): P
     existingSites.length > 0 || existingLifetimeUsage > 0 || (existingPlan.isPro && !existingPlan.isTrial);
 
   const refRec = await bindReferralOnLogin(email, body.referralCode, env, { isExistingUser });
-  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits, record } = await getUserPlan(
-    email,
-    env as BillingEnv,
-  );
-  const usedToday = await getDailyUsage(email, env, request, limits.generatePeriod);
-  const editUsedToday = isTrial ? 0 : await getMonthlyEditUsage(email, env as BillingEnv);
-  const effectiveDailyLimit = Math.max(baseLimits.generateLimit, usedToday) + bonusGenerates;
-  const effectiveEditLimit = Math.max(isTrial ? 0 : baseLimits.editLimit, editUsedToday) + bonusEdits;
-  const sites = existingSites;
+  const user = await sessionDetails(email, refRec, existingSites, env, request);
   const isHttps = request.url.startsWith("https://");
   const cookie = `talkcv_session=${sessionValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`;
 
-  return jsonResponse(
-    200,
-    {
-      ok: true,
-      user: {
-        email,
-        plan,
-        isPro,
-        isMax,
-        isTrial,
-        hasBilling: isBillingConfigured(env as BillingEnv),
-        hasBillingPortal: Boolean(record?.customerId),
-        maxSites: limits.maxSites,
-        usedToday,
-        dailyLimit: effectiveDailyLimit,
-        quotaPeriod: limits.generatePeriod,
-        editUsedToday,
-        editDailyLimit: effectiveEditLimit,
-        sites,
-        referral: {
-          code: refRec.code,
-          invitedCount: refRec.invitedCount,
-          maxRewards: MAX_REFERRAL_REWARDS,
-          bonusGenerates: refRec.bonusGenerates,
-          bonusEdits: refRec.bonusEdits,
-          trialExpiresAt: isTrialActive(refRec) ? refRec.trialExpiresAt : undefined,
-          hasPendingReferrer: Boolean(refRec.referredBy && !refRec.qualifiedAt),
-        },
-      },
+  return jsonResponse(200, { ok: true, user, credits: user.credits }, { "set-cookie": cookie });
+}
+
+async function sessionDetails(email: string, referral: ReferralRecord, sites: string[], env: AuthEnv, request: Request) {
+  const { plan, credits } = await getCreditAccount(email, env, request);
+  // Older clients display the equivalent number of generations or edits.
+  const dailyLimit = Math.floor(credits.total / CREDIT_COST.generate);
+  const editDailyLimit = plan.limits.aiLiveEdit ? Math.floor(credits.total / CREDIT_COST.edit) : 0;
+  return {
+    email, plan: plan.plan, isPro: plan.isPro, isMax: plan.isMax, isTrial: plan.isTrial,
+    hasBilling: isBillingConfigured(env), hasBillingPortal: Boolean(plan.record?.customerId),
+    maxSites: plan.limits.maxSites, sites, credits, quotaPeriod: credits.period,
+    dailyLimit, usedToday: dailyLimit - Math.floor(credits.remaining / CREDIT_COST.generate),
+    editDailyLimit, editUsedToday: plan.limits.aiLiveEdit ? editDailyLimit - Math.floor(credits.remaining / CREDIT_COST.edit) : 0,
+    referral: {
+      code: referral.code, invitedCount: referral.invitedCount, maxRewards: MAX_REFERRAL_REWARDS,
+      bonusCredits: credits.bonusRemaining,
+      trialExpiresAt: isTrialActive(referral) ? referral.trialExpiresAt : undefined,
+      hasPendingReferrer: Boolean(referral.referredBy && !referral.qualifiedAt),
     },
-    { "set-cookie": cookie },
-  );
+  };
 }
 
 export async function handleMeRequest(request: Request, env: AuthEnv): Promise<Response> {
-  const user = await getSessionUser(request, env);
-  if (!user) {
-    return jsonResponse(200, { user: null });
-  }
-  const refRec = await getOrCreateReferralRecord(user.email, env);
-  const { plan, isPro, isMax, isTrial, limits, baseLimits, bonusGenerates, bonusEdits, record } = await getUserPlan(
-    user.email,
-    env as BillingEnv,
-  );
-  const usedToday = await getDailyUsage(user.email, env, request, limits.generatePeriod);
-  const editUsedToday = isTrial ? 0 : await getMonthlyEditUsage(user.email, env as BillingEnv);
-  const effectiveDailyLimit = Math.max(baseLimits.generateLimit, usedToday) + bonusGenerates;
-  const effectiveEditLimit = Math.max(isTrial ? 0 : baseLimits.editLimit, editUsedToday) + bonusEdits;
-  const sites = await getUserSites(user.email, env);
-  return jsonResponse(200, {
-    user: {
-      email: user.email,
-      plan,
-      isPro,
-      isMax,
-      isTrial,
-      hasBilling: isBillingConfigured(env as BillingEnv),
-      hasBillingPortal: Boolean(record?.customerId),
-      maxSites: limits.maxSites,
-      usedToday,
-      dailyLimit: effectiveDailyLimit,
-      quotaPeriod: limits.generatePeriod,
-      editUsedToday,
-      editDailyLimit: effectiveEditLimit,
-      sites,
-      referral: {
-        code: refRec.code,
-        invitedCount: refRec.invitedCount,
-        maxRewards: MAX_REFERRAL_REWARDS,
-        bonusGenerates: refRec.bonusGenerates,
-        bonusEdits: refRec.bonusEdits,
-        trialExpiresAt: isTrialActive(refRec) ? refRec.trialExpiresAt : undefined,
-        hasPendingReferrer: Boolean(refRec.referredBy && !refRec.qualifiedAt),
-      },
-    },
-  });
+  const session = await getSessionUser(request, env);
+  if (!session) return jsonResponse(200, { user: null, credits: null });
+  const [referral, sites] = await Promise.all([getOrCreateReferralRecord(session.email, env), getUserSites(session.email, env)]);
+  const user = await sessionDetails(session.email, referral, sites, env, request);
+  return jsonResponse(200, { user, credits: user.credits });
 }
 
 export async function handleLogoutRequest(request: Request): Promise<Response> {

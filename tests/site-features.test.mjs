@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import test from "node:test";
 import worker from "../dist/server/index.js";
 
@@ -20,9 +21,9 @@ function fixtureKv(store) {
   };
 }
 
-async function login(email, env = {}) {
+async function login(email, env = {}, referralCode) {
   const { instantCode, challenge } = await (await call("/api/auth/send-code", { method: "POST", body: { email }, env })).json();
-  const response = await call("/api/auth/verify", { method: "POST", body: { email, code: instantCode, challenge }, env });
+  const response = await call("/api/auth/verify", { method: "POST", body: { email, code: instantCode, challenge, referralCode }, env });
   assert.equal(response.status, 200);
   return response.headers.get("set-cookie").split(";")[0];
 }
@@ -55,7 +56,13 @@ test("pricing, refunds and privacy are public in both languages and linked from 
       assert.equal(res.status, 200);
       const html = await res.text();
       assert.ok(html.includes(title));
-      if (path === "/pricing") for (const price of ["$0", "$20", "$49"]) assert.ok(html.includes(price));
+      if (path === "/pricing") {
+        const terms = query ? ["30 one-time lifetime", "300 credits per calendar month", "1,000 credits per calendar month",
+          "10 credits per résumé site", "3 per refinement", "2 per JD", "use no author credits", "4 preset avatars"] :
+          ["一次性 30 点", "自然月 300 点", "自然月 1,000 点", "简历每次 10 点", "精修每轮 3 点", "文案每篇 2 点", "不消耗作者点数", "4 款预设头像"];
+        for (const term of ["$0", "$20", "$49", ...terms]) assert.ok(html.includes(term), term);
+        assert.doesNotMatch(html, /AI 生成职业头像|AI Portrait Avatar generator|AI portrait generation/i);
+      }
     }
   }
   for (const path of ["/", "/create"]) {
@@ -276,7 +283,7 @@ test("referral program grants credit-capped Pro trial to both sides only after f
   const inviterBefore = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
   assert.match(inviterBefore.referral.code, /^[A-Z0-9]{6}$/);
   assert.equal(inviterBefore.isPro, false);
-  assert.equal(inviterBefore.dailyLimit, 3);
+  assert.deepEqual(inviterBefore.credits, { remaining: 30, total: 30, period: "lifetime", bonusRemaining: 0 });
 
   // Invitee signs up with inviter's referral code — no reward yet before publishing
   const { instantCode, challenge } = await (
@@ -291,40 +298,33 @@ test("referral program grants credit-capped Pro trial to both sides only after f
   const inviteeCookie = verifyRes.headers.get("set-cookie").split(";")[0];
   const verifyData = await verifyRes.json();
   assert.equal(verifyData.user.isPro, false);
-  assert.equal(verifyData.user.dailyLimit, 3);
+  assert.deepEqual(verifyData.credits, inviterBefore.credits);
+  assert.deepEqual(verifyData.user.credits, verifyData.credits);
   assert.equal(verifyData.user.referral.hasPendingReferrer, true);
 
   // Invitee publishes first site -> unlocks credit-capped Pro trial for both sides
   const firstPub = await publish("invitee-first", inviteeCookie, {}, env);
   assert.equal(firstPub.status, 200);
   const firstPubJson = await firstPub.json();
-  assert.deepEqual(firstPubJson.referralReward, { generates: 3, edits: 10, trialDays: 3, inviterRewarded: true });
+  assert.deepEqual(firstPubJson.referralReward, { credits: 30, trialDays: 3, inviterRewarded: true });
 
   // Published profile exposes ownerRefCode for viral footer link
   const profileJson = await (await call("/api/profiles/invitee-first", { env })).json();
   assert.equal(profileJson.ownerRefCode, verifyData.user.referral.code);
 
-  // Invitee gets 3-day Pro trial with 3+3=6 generates, 10 AI edits, and NO AI avatar generation
+  // Trial membership keeps the lifetime base pool and unlocks live editing.
   const inviteeAfter = (await (await call("/api/auth/me", { cookie: inviteeCookie, env })).json()).user;
   assert.equal(inviteeAfter.isPro, true);
   assert.equal(inviteeAfter.isTrial, true);
   assert.equal(inviteeAfter.dailyLimit, 6);
-  assert.equal(inviteeAfter.editDailyLimit, 10);
+  assert.deepEqual(inviteeAfter.credits, { remaining: 60, total: 60, period: "lifetime", bonusRemaining: 30 });
   assert.equal(inviteeAfter.referral.hasPendingReferrer, false);
-  const avatarAttempt = await call("/api/avatar", {
-    method: "POST",
-    cookie: inviteeCookie,
-    body: { prompt: "minimalist portrait" },
-    env,
-  });
-  assert.equal(avatarAttempt.status, 403);
-
-  // Inviter gets 7-day Pro trial with 3+5=8 generates, 15 AI edits, invitedCount=1
+  // Both grants are independent of the monthly paid subscription pool.
   const inviterAfter = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
   assert.equal(inviterAfter.isPro, true);
   assert.equal(inviterAfter.isTrial, true);
   assert.equal(inviterAfter.dailyLimit, 8);
-  assert.equal(inviterAfter.editDailyLimit, 15);
+  assert.deepEqual(inviterAfter.credits, { remaining: 80, total: 80, period: "lifetime", bonusRemaining: 50 });
   assert.equal(inviterAfter.referral.invitedCount, 1);
 
   // Second publish by the same invitee must NOT grant duplicate rewards
@@ -333,10 +333,10 @@ test("referral program grants credit-capped Pro trial to both sides only after f
   assert.equal((await secondPub.json()).referralReward, undefined);
   const inviterAfterSecond = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
   assert.equal(inviterAfterSecond.referral.invitedCount, 1);
-  assert.equal(inviterAfterSecond.dailyLimit, 8);
+  assert.deepEqual(inviterAfterSecond.credits, inviterAfter.credits);
 });
 
-test("referral guards block existing users, serialize concurrent friends, deduct bonus edits, and align trial expiry", async (t) => {
+test("referral guards block existing users, serialize concurrent friends, deduct shared credits, and align trial expiry", async (t) => {
   const env = { DEEPSEEK_API_KEY: "test-key", OPENAI_API_KEY: "test-key" };
   const inviterCookie = await login("race-inviter@example.org", env);
   const inviterCode = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user.referral.code;
@@ -399,10 +399,10 @@ test("referral guards block existing users, serialize concurrent friends, deduct
   assert.equal(pub2.status, 200);
   const inviterAfterRace = (await (await call("/api/auth/me", { cookie: inviterCookie, env })).json()).user;
   assert.equal(inviterAfterRace.referral.invitedCount, 2);
-  assert.equal(inviterAfterRace.referral.bonusGenerates, 10);
-  assert.equal(inviterAfterRace.referral.bonusEdits, 30);
+  assert.equal(inviterAfterRace.credits.bonusRemaining, 100);
+  assert.equal(inviterAfterRace.credits.remaining, 130);
 
-  // 3) Trial AI edit actually deducts bonusEdits balance (10 -> 9), never re-granting across months
+  // 3) A trial edit spends 3 base credits first and preserves the referral reward.
   t.mock.method(globalThis, "fetch", async () =>
     Response.json({
       choices: [{ message: { content: JSON.stringify({ summary: "Refined", profile }) } }],
@@ -416,8 +416,8 @@ test("referral guards block existing users, serialize concurrent friends, deduct
   });
   assert.equal(editRes.status, 200);
   const friend1AfterEdit = (await (await call("/api/auth/me", { cookie: friend1, env })).json()).user;
-  assert.equal(friend1AfterEdit.referral.bonusEdits, 9);
-  assert.equal(friend1AfterEdit.editDailyLimit, 9);
+  assert.deepEqual(friend1AfterEdit.credits, { remaining: 57, total: 60, period: "lifetime", bonusRemaining: 30 });
+  assert.deepEqual((await editRes.json()).credits, friend1AfterEdit.credits);
 
   // 4) Legacy site without stored ownerRefCode still resolves ownerRefCode & expired trial site returns 410 in chat
   const values = new Map([
@@ -697,7 +697,7 @@ test("JD outreach checks login, model permissions, payload, factual output and c
   const first = await post({ ...byok, style: "email", lang: "en",
     profile: { ...profile, aiBrief: { notes: "private-sentinel" }, basics: { ...profile.basics, avatar: "avatar-sentinel" } } });
   assert.equal(first.status, 200);
-  assert.deepEqual(await first.json(), output);
+  assert.deepEqual(await first.json(), { ...output, credits: { remaining: 30, total: 30, period: "lifetime", bonusRemaining: 0 } });
   assert.equal(calls[0].url, "https://upstream.test/v1/chat/completions");
   assert.equal(calls[0].model, byok.model);
   assert.equal(calls[0].auth, "Bearer byok-fixture");
@@ -710,10 +710,250 @@ test("JD outreach checks login, model permissions, payload, factual output and c
   reply = { ...output, body: "I improved conversion by 98765%." };
   assert.equal((await post(byok)).status, 502);
   reply = output;
-  const attempts = await Promise.all(Array.from({ length: 8 }, () => post()));
-  assert.equal(attempts.filter((res) => res.status === 200).length, 6);
+  const attempts = await Promise.all(Array.from({ length: 17 }, () => post()));
+  assert.equal(attempts.filter((res) => res.status === 200).length, 15);
   assert.equal(attempts.filter((res) => res.status === 429).length, 2);
   assert.match(calls.at(-1).messages[0].content, /Chinese.*BOSS/);
   assert.equal(calls.at(-1).auth, "Bearer hosted-fixture");
-  assert.equal((await post(byok)).status, 200);
+  const denied = await attempts.find((res) => res.status === 429).json();
+  assert.equal(denied.required, 2);
+  assert.equal(denied.remaining, 0);
+  assert.equal((await (await post(byok)).json()).credits.remaining, 0);
+  assert.equal(calls.filter((c) => c.auth === "Bearer hosted-fixture").length, 15);
+});
+
+async function creditFixture(id, tier = "free") {
+  const email = `${id}@example.test`;
+  const auth = { AUTH_SECRET: `fixture-${id}` };
+  const cookie = await login(email, auth);
+  const store = new Map();
+  if (tier !== "free") store.set("plan:" + email, JSON.stringify({ plan: tier }));
+  const env = { ...auth, OPENAI_API_KEY: "test-model", PROFILES_KV: fixtureKv(store), ADMIN_EMAILS: email, ADMIN_ALLOW_DEV_AUTH: "1" };
+  const post = (route, body) => call("/api/" + route, { env, cookie, method: "POST", body, headers: { "cf-connecting-ip": id } });
+  const balance = async () => (await (await call("/api/auth/me", { env, cookie })).json()).user.credits;
+  const admin = async () => (await (await call("/api/admin/overview", { env, cookie })).json()).users.find((u) => u.email === email);
+  return { email, env, cookie, store, post, balance, admin };
+}
+
+const generation = { resumeText: "A synthetic engineer with experience in distributed applications.", hostedModelId: "gpt-4o-mini" };
+const refinement = { profile, instruction: "Refine the headline", hostedModelId: "gpt-4o-mini" };
+const outreach = { profile, jdText: "Backend engineer", style: "boss", lang: "en", hostedModelId: "gpt-4o-mini" };
+const draft = { matches: ["Engineering", "Delivery", "Systems"], improvements: ["Clarify scope"], body: "I am interested in this role." };
+const completion = (value) => Response.json({ choices: [{ message: { content: JSON.stringify(value) } }] });
+
+test("all three hosted creations share a wallet; BYOK and visitor chat leave the balance intact", async (t) => {
+  const fx = await creditFixture("creation-costs", "pro");
+  const events = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const body = JSON.parse(options.body);
+    events.push({ url, remaining: (await fx.balance()).remaining });
+    if (body.stream) return new Response('data: {"choices":[{"delta":{"content":"Answer"}}]}\n\ndata: [DONE]\n\n');
+    const system = body.messages[0].content;
+    return completion(system.includes("portfolio AI editor") ? { profile, summary: "Edited" } : system.includes("compiler") ? profile : draft);
+  });
+  const before = { remaining: 300, total: 300, period: "month", bonusRemaining: 0 };
+  assert.deepEqual(await fx.balance(), before);
+  for (const [route, args, remaining] of [["generate", generation, 290], ["edit", refinement, 287], ["outreach", outreach, 285]]) {
+    const res = await fx.post(route, args);
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).credits, { ...before, remaining });
+  }
+  assert.deepEqual(events.map((e) => e.remaining), [290, 287, 285]);
+  for (const [route, args] of [["generate", generation], ["edit", refinement], ["outreach", outreach]]) {
+    const res = await fx.post(route, { ...args, providerMode: "byok", apiKey: "fixture-byok", baseUrl: "https://byok.test/v1" });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).credits.remaining, 285);
+  }
+  assert.ok(events.slice(-3).every((event) => event.url === "https://byok.test/v1/chat/completions"));
+  assert.equal((await publish("credit-visitor", fx.cookie, {}, fx.env)).status, 200);
+  const chat = await fx.post("chat", { profileSlug: "credit-visitor", messages: [{ role: "user", content: "What is your role?" }] });
+  assert.equal(chat.status, 200);
+  await chat.text();
+  assert.deepEqual(await fx.balance(), { ...before, remaining: 285 });
+  const admin = await fx.admin();
+  assert.deepEqual(admin.credits, await fx.balance());
+  assert.equal(admin.consumedCredits, 15);
+});
+
+test("the retired portrait endpoint is unavailable to every plan and never calls a model or spends credits", async (t) => {
+  const upstream = t.mock.method(globalThis, "fetch", async () => { throw new Error("Unexpected upstream request"); });
+  for (const tier of ["free", "pro", "max"]) {
+    const fx = await creditFixture("retired-portrait-" + tier, tier);
+    const before = await fx.balance();
+    const res = await fx.post("avatar", { prompt: "Portrait" });
+    assert.equal(res.status, 404);
+    assert.deepEqual(await fx.balance(), before);
+  }
+  assert.equal(upstream.mock.callCount(), 0);
+});
+
+test("failed hosted generation, refinement and outreach each release their reservation on parse or provider errors", async (t) => {
+  const fx = await creditFixture("upstream-refunds", "pro");
+  let expectedCost, response;
+  t.mock.method(globalThis, "fetch", async () => {
+    assert.equal((await fx.balance()).remaining, 300 - expectedCost);
+    return response();
+  });
+  for (const [route, args, cost] of [["generate", generation, 10], ["edit", refinement, 3], ["outreach", outreach, 2]]) {
+    expectedCost = cost;
+    for (const [reply, status] of [[() => new Response(null, { status: 201 }), 502], [() => completion({}), 502],
+      [() => { throw new DOMException("timed out", "TimeoutError"); }, 504]]) {
+      response = reply;
+      const res = await fx.post(route, args);
+      assert.equal(res.status, status);
+      assert.equal((await res.json()).credits.remaining, 300);
+    }
+  }
+  assert.equal((await fx.admin()).consumedCredits, 0);
+});
+
+test("text refinement preserves uploaded and preset avatars and sends only résumé text to the model", async (t) => {
+  const fx = await creditFixture("text-refinement", "pro");
+  const modelAvatar = "https://fixture.test/model-proposed-avatar";
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const prompt = JSON.parse(options.body).messages.at(-1).content;
+    assert.doesNotMatch(prompt, /"avatar"|data:image/);
+    return completion({ profile: { ...profile, basics: { ...profile.basics, avatar: modelAvatar } } });
+  });
+  for (const avatar of [undefined, "data:image/png;base64,aW1n", "data:image/svg+xml,%3Csvg%2F%3E"]) {
+    const res = await fx.post("edit", { ...refinement, profile: { ...profile, basics: { ...profile.basics, avatar } } });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).profile.basics.avatar, avatar);
+  }
+});
+
+test("existing lifetime usage can be reconciled from a signed legacy cookie without recharging it", async () => {
+  const fx = await creditFixture("legacy-cookie");
+  fx.store.set(`usage:${fx.email}:lifetime`, "1");
+  assert.equal((await fx.balance()).remaining, 20);
+  const counter = `${fx.email}|lifetime|2`;
+  const signature = createHmac("sha256", fx.env.AUTH_SECRET).update("usage:" + counter).digest("hex");
+  const cookie = fx.cookie + "; talkcv_usage=" + encodeURIComponent(counter + "|" + signature);
+  for (let i = 0; i < 2; i++) {
+    const me = await call("/api/auth/me", { env: fx.env, cookie });
+    assert.equal((await me.json()).credits.remaining, 10);
+  }
+  assert.equal((await fx.balance()).remaining, 10);
+  assert.equal((await fx.admin()).consumedCredits, 20);
+});
+
+test("legacy usage and remaining rewards migrate once; split reservations refund to their original pools", async (t) => {
+  const fx = await creditFixture("legacy-credit", "pro");
+  const month = new Date().toISOString().slice(0, 7);
+  fx.store.set(`usage:${fx.email}:${month}`, "28");
+  fx.store.set(`usage:${fx.email}:${month}-01`, "1");
+  fx.store.set(`edit_usage_month:${fx.email}:${month}`, "2");
+  fx.store.set("ref_user:" + fx.email, JSON.stringify({ code: "LEGACY", bonusGenerates: 1, bonusEdits: 2 }));
+  const before = { remaining: 20, total: 316, period: "month", bonusRemaining: 16 };
+  assert.deepEqual((await fx.admin()).credits, before);
+  assert.deepEqual(await fx.balance(), before);
+  let respond = () => new Response("invalid JSON");
+  const reservations = [];
+  t.mock.method(globalThis, "fetch", async () => { reservations.push(await fx.balance()); return respond(); });
+  for (const failure of [() => new Response("invalid JSON"), () => completion({}), () => new Response(null, { status: 500 })]) {
+    respond = failure;
+    const res = await fx.post("generate", generation);
+    assert.equal(res.status, 502);
+    assert.deepEqual((await res.json()).credits, before);
+    assert.deepEqual(await fx.balance(), before);
+  }
+  respond = () => completion(profile);
+  const success = await fx.post("generate", generation);
+  assert.equal(success.status, 200);
+  assert.deepEqual((await success.json()).credits, { ...before, remaining: 10, bonusRemaining: 10 });
+  assert.ok(reservations.every((s) => s.remaining === 10 && s.bonusRemaining === 10));
+  assert.equal((await fx.admin()).consumedCredits, 306);
+  assert.deepEqual(JSON.parse(fx.store.get("credits:" + fx.email)).holds, {});
+  fx.store.set(`usage:${fx.email}:lifetime`, "1");
+  fx.store.delete("plan:" + fx.email);
+  assert.deepEqual(await fx.balance(), { remaining: 20, total: 46, period: "lifetime", bonusRemaining: 10 });
+  fx.store.set("plan:" + fx.email, JSON.stringify({ plan: "max" }));
+  assert.deepEqual(await fx.balance(), { remaining: 710, total: 1016, period: "month", bonusRemaining: 10 });
+});
+
+test("a month-end failure returns the prior month's base share and restores only its actual bonus share", async (t) => {
+  const end = Date.UTC(2031, 0, 31, 23, 59, 59, 500);
+  t.mock.timers.enable({ apis: ["Date"], now: end });
+  const fx = await creditFixture("rollover", "pro");
+  fx.store.set(`usage:${fx.email}:2031-01`, "29");
+  fx.store.set(`edit_usage_month:${fx.email}:2031-01`, "2");
+  fx.store.set("ref_user:" + fx.email, JSON.stringify({ code: "GRANTS", awardedCredits: 30 }));
+  let phase = 0;
+  const observed = [];
+  t.mock.method(globalThis, "fetch", async () => {
+    observed.push(await fx.balance());
+    if (++phase === 1) return completion({ profile });
+    t.mock.timers.setTime(end + 1000);
+    return new Response(null, { status: 500 });
+  });
+  assert.equal((await fx.post("edit", refinement)).status, 200);
+  const failure = await fx.post("generate", generation);
+  assert.deepEqual(observed.map((b) => [b.remaining, b.bonusRemaining]), [[31, 30], [21, 21]]);
+  assert.equal(failure.status, 502);
+  assert.deepEqual((await failure.json()).credits, { remaining: 330, total: 330, period: "month", bonusRemaining: 30 });
+  const ledger = JSON.parse(fx.store.get("credits:" + fx.email));
+  assert.equal(ledger.pools["2031-01"].used, 299);
+  assert.equal(ledger.pools["2031-02"].used, 0);
+});
+
+test("spent bonus credits stay spent after a monthly reset and cumulative admin spend spans both months", async (t) => {
+  const end = Date.UTC(2032, 0, 31, 23, 59, 59, 500);
+  t.mock.timers.enable({ apis: ["Date"], now: end });
+  const fx = await creditFixture("permanent-reward", "pro");
+  fx.store.set(`usage:${fx.email}:2032-01`, "30");
+  fx.store.set("ref_user:" + fx.email, JSON.stringify({ code: "INVITE", awardedCredits: 50 }));
+  t.mock.method(globalThis, "fetch", async () => completion(draft));
+  const january = await fx.post("outreach", outreach);
+  assert.equal(january.status, 200);
+  assert.deepEqual((await january.json()).credits, { remaining: 48, total: 350, period: "month", bonusRemaining: 48 });
+  t.mock.timers.setTime(end + 1000);
+  assert.deepEqual(await fx.balance(), { remaining: 348, total: 350, period: "month", bonusRemaining: 48 });
+  assert.equal((await fx.admin()).consumedCredits, 302);
+  const february = await fx.post("outreach", outreach);
+  assert.equal(february.status, 200);
+  assert.deepEqual((await february.json()).credits, { remaining: 346, total: 350, period: "month", bonusRemaining: 48 });
+  assert.equal((await fx.admin()).consumedCredits, 304);
+});
+
+test("an interrupted reservation expires exactly once even if the upstream later returns success", async (t) => {
+  const start = Date.UTC(2033, 5, 1);
+  t.mock.timers.enable({ apis: ["Date"], now: start });
+  const fx = await creditFixture("expired-hold");
+  t.mock.method(globalThis, "fetch", async () => {
+    assert.equal((await fx.balance()).remaining, 28);
+    assert.equal((await fx.admin()).consumedCredits, 0);
+    t.mock.timers.setTime(start + 121_000);
+    assert.equal((await fx.balance()).remaining, 30);
+    return completion(draft);
+  });
+  const late = await fx.post("outreach", outreach);
+  assert.equal(late.status, 504);
+  assert.deepEqual((await late.json()).credits, { remaining: 30, total: 30, period: "lifetime", bonusRemaining: 0 });
+  assert.equal((await fx.admin()).consumedCredits, 0);
+  assert.deepEqual(JSON.parse(fx.store.get("credits:" + fx.email)).holds, {});
+});
+
+test("seven first publications award all seven friends but cap the inviter at 300 credits and 42 trial days", async (t) => {
+  const now = Date.UTC(2034, 0, 2);
+  t.mock.timers.enable({ apis: ["Date"], now });
+  const env = { AUTH_SECRET: "cap-test" };
+  const user = async (cookie) => (await (await call("/api/auth/me", { cookie, env })).json()).user;
+  const inviter = await login("cap-inviter@example.org", env);
+  const { referral } = await user(inviter);
+  for (let i = 0; i < 7; i++) {
+    const friend = await login(`cap-friend-${i}@example.org`, env, referral.code);
+    const post = () => call("/api/publish", { method: "POST", cookie: friend, env, headers: { "cf-connecting-ip": `192.0.2.${i + 20}` },
+      body: { slug: `cap-friend-${i}`, profile } });
+    const first = await post();
+    assert.equal(first.status, 200);
+    assert.deepEqual((await first.json()).referralReward, { credits: 30, trialDays: 3, inviterRewarded: i < 6 });
+    const friendState = await user(friend);
+    assert.equal(friendState.credits.bonusRemaining, 30);
+    assert.equal(Date.parse(friendState.referral.trialExpiresAt), now + 3 * 86400_000);
+    assert.equal((await (await post()).json()).referralReward, undefined);
+  }
+  const me = await user(inviter);
+  assert.equal(me.referral.invitedCount, 6);
+  assert.equal(Date.parse(me.referral.trialExpiresAt), now + 42 * 86400_000);
+  assert.deepEqual(me.credits, { remaining: 330, total: 330, period: "lifetime", bonusRemaining: 300 });
 });

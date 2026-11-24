@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CREDIT_COST, PLAN_CREDITS, REFERRAL_CREDITS, creditCostLabel, type CreditBalance } from "../../lib/credits";
 import { canUseModel, HOSTED_MODELS, type PlanTier } from "../../lib/models";
 import { captureReferral, readSession, type AuthUser } from "../../lib/login";
 import { profile as defaultProfile } from "../../lib/profile";
@@ -115,13 +116,13 @@ function localizeApiError(raw: string, lang: Lang): string {
   if (lang !== "zh") return raw;
   const s = raw.trim();
   if (/An OpenAI-compatible API key is required/i.test(s)) {
-    return "自有 Key 模式需要填入 OpenAI 兼容 API Key（或登录账号使用账号托管额度）。";
+    return "自有 Key 模式需要填入 OpenAI 兼容 API Key（或登录后使用托管点数）。";
   }
   if (/Please sign in with your email/i.test(s)) {
-    return "请先使用邮箱登录以使用 TalkCV 免费托管额度（或切换为自有 API Key）。";
+    return "请先使用邮箱登录以使用 TalkCV 托管点数（或切换为自有 API Key）。";
   }
   if (/Daily free generation limit reached/i.test(s)) {
-    return "账号的免费生成额度已用完，可升级套餐或使用自有 API Key。";
+    return "账号剩余点数不足，可升级套餐或使用自有 API Key。";
   }
   if (/Please enter your visitor chat API key/i.test(s)) {
     return "请先填写访客对话的自有 API Key（或切换回免费托管模型）。";
@@ -243,8 +244,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     plan: PlanTier;
     days: number;
     expiresAt: string;
-    dailyLimit: number;
-    editDailyLimit: number;
   } | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [checkoutBusyTier, setCheckoutBusyTier] = useState<"pro" | "max" | null>(null);
@@ -256,7 +255,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [uploadNote, setUploadNote] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
-  const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
 
   const resetDraft = useCallback(() => {
@@ -285,7 +283,9 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [copiedRef, setCopiedRef] = useState(false);
 
   const currentPlan: PlanTier = user?.plan ?? "free";
-  const remainingEdits = user ? Math.max(0, (user.editDailyLimit ?? 0) - (user.editUsedToday ?? 0)) : 0;
+  function updateCredits(email: string | undefined, credits?: CreditBalance | null) {
+    if (email && credits) setUser((current) => current?.email === email ? { ...current, credits } : current);
+  }
 
   // Restore user session + check ?upgraded= / ?ref=
   useEffect(() => {
@@ -300,8 +300,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           const upgradedTier = upgradedParam === "max" ? "Max" : "Pro";
           setBillingBanner(
             lang === "zh"
-              ? `支付已完成！TalkCV ${upgradedTier} 权益（高级模型 + AI 实时精修 + 更高额度）正在同步生效。`
-              : `Payment received! Your TalkCV ${upgradedTier} models, AI Live Refine & higher quotas are activating.`,
+              ? `支付已完成！TalkCV ${upgradedTier} 权益（高级模型、AI 实时精修和每月点数）正在同步生效。`
+              : `Payment received! Your TalkCV ${upgradedTier} models, AI Live Refine and monthly credits are activating.`,
           );
         }
       });
@@ -397,6 +397,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         isMax?: boolean;
         dailyLimit: number;
         editDailyLimit: number;
+        credits: CreditBalance;
         maxSites: number;
         days?: number;
         expiresAt?: string;
@@ -413,6 +414,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         plan: nextPlan,
         quotaPeriod: "month",
         maxSites: data.maxSites,
+        credits: data.credits,
         isPro: true,
         isMax: nextPlan === "max",
         isTrial: false,
@@ -431,8 +433,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         plan: nextPlan,
         days: data.days ?? 30,
         expiresAt: expDate,
-        dailyLimit: nextDailyLimit,
-        editDailyLimit: nextEditLimit,
       });
       setBillingBanner(
         lang === "zh"
@@ -752,38 +752,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     }
   };
 
-  const generateAiAvatar = async () => {
-    if (!user?.isPro) {
-      setAvatarMenuOpen(false);
-      setPricingOpen(true);
-      return;
-    }
-    setAvatarBusy(true);
-    setAvatarErr(null);
-    try {
-      const res = await fetch("/api/avatar", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: localize(generated.basics.name, lang),
-          role: localize(generated.basics.role, lang),
-          stylePrompt: stylePrompt.trim() || undefined,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; avatar?: string; error?: string };
-      if (!res.ok || !data.avatar) {
-        throw new Error(data.error || "AI avatar generation failed.");
-      }
-      setGenerated((prev) => ({ ...prev, basics: { ...prev.basics, avatar: data.avatar } }));
-      setHasGenerated(true);
-      setAvatarMenuOpen(false);
-    } catch (err) {
-      setAvatarErr(err instanceof Error ? err.message : "AI avatar generation failed.");
-    } finally {
-      setAvatarBusy(false);
-    }
-  };
-
   const generateProfile = async (account: AuthUser, keepDraftSettings = false) => {
     setError(null);
     setLoading(true);
@@ -809,17 +777,16 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       });
       const data = (await res.json()) as {
         profile?: PortfolioProfile;
-        quota?: { usedToday: number; dailyLimit: number };
+        credits?: CreditBalance;
         error?: string;
       };
+      updateCredits(account.email, data.credits);
       if (!res.ok || !data.profile) {
         throw new Error(data.error || "Generation failed.");
       }
       setGenerated(data.profile);
       setHasGenerated(true);
       setPublishedUrl(null);
-      const quota = data.quota;
-      if (quota) setUser((current) => current?.email === account.email ? { ...current, ...quota } : current);
       const suggested = data.profile.basics.name.en
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
@@ -901,7 +868,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         expiresAt?: string;
         privacy?: { noindex: boolean; protected: boolean };
         chatMeta?: ChatMeta;
-        referralReward?: { generates: number; edits: number; trialDays: number; inviterRewarded?: boolean };
+        referralReward?: { credits: number; trialDays: number; inviterRewarded?: boolean };
         error?: string;
       };
       if (!res.ok || !data.url) {
@@ -926,16 +893,17 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         setBillingBanner(
           lang === "zh"
             ? r.inviterRewarded !== false
-              ? `🎁 好友邀请奖励已发放！你已解锁 ${r.trialDays} 天 Pro 体验（+${r.generates} 次生成 & +${r.edits} 次 AI 精修），好友也同步获得 7 天 Pro 体验奖励！`
-              : `🎁 好友邀请奖励已发放！你已解锁 ${r.trialDays} 天 Pro 体验（+${r.generates} 次生成 & +${r.edits} 次 AI 精修）！`
+              ? `🎁 好友邀请奖励已发放！你已解锁 ${r.trialDays} 天 Pro 体验（+${r.credits} 奖励点），好友获得 +${REFERRAL_CREDITS.inviter} 点及 7 天 Pro 体验。`
+              : `🎁 好友邀请奖励已发放！你已解锁 ${r.trialDays} 天 Pro 体验（+${r.credits} 奖励点）！`
             : r.inviterRewarded !== false
-              ? `🎁 Referral reward unlocked! You received ${r.trialDays}-day Pro trial (+${r.generates} generations & +${r.edits} AI refines), and your friend earned 7 days!`
-              : `🎁 Referral reward unlocked! You received ${r.trialDays}-day Pro trial (+${r.generates} generations & +${r.edits} AI refines)!`,
+              ? `🎁 Referral reward unlocked! You received ${r.trialDays}-day Pro trial (+${r.credits} bonus credits), and your friend earned ${REFERRAL_CREDITS.inviter} credits and 7 days of Pro.`
+              : `🎁 Referral reward unlocked! You received ${r.trialDays}-day Pro trial (+${r.credits} bonus credits)!`,
         );
         fetch("/api/auth/me")
           .then((resp) => (resp.ok ? resp.json() : null))
           .then((me: { user?: AuthUser | null } | null) => {
-            if (me?.user) setUser(me.user);
+            const updated = me?.user;
+            if (updated?.email === account.email) setUser((current) => current?.email === account.email ? updated : current);
           })
           .catch(() => {});
       } else if (data.slug) {
@@ -960,7 +928,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
 
   const selectedSite = user?.sites.find((slug) => publishedUrl?.endsWith(`/u/${slug}`))
     ?? user?.sites.find((slug) => slug === normalizeSlug(handle)) ?? user?.sites[0];
-  const remaining = user ? Math.max(0, user.dailyLimit - user.usedToday) : 3;
+  const remaining = user?.credits.remaining ?? PLAN_CREDITS.free;
+  const balanceLabel = lang === "zh" ? `剩余 ${remaining} 点` : `${remaining} credits left`;
   const previewStyleVars: React.CSSProperties = {
     ...(generated.designTokens?.accent ? ({ "--accent": generated.designTokens.accent } as React.CSSProperties) : {}),
     ...(generated.designTokens?.bg ? ({ "--bg": generated.designTokens.bg } as React.CSSProperties) : {}),
@@ -989,13 +958,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   </em>
                 )}
                 <em>
-                  {lang === "zh"
-                    ? user.quotaPeriod === "month"
-                      ? `本月剩 ${remaining}/${user.dailyLimit} 次`
-                      : `剩余 ${remaining}/${user.dailyLimit} 次`
-                    : user.quotaPeriod === "month"
-                      ? `${remaining}/${user.dailyLimit}/mo`
-                      : `${remaining}/${user.dailyLimit} left`}
+                  {balanceLabel}
                 </em>
                 <button type="button" onClick={logout} title={lang === "zh" ? "退出登录" : "Sign out"}>
                   <LogOut size={12} />
@@ -1044,7 +1007,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           ) : (
             <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
               <LogIn size={13} />
-              <span>{lang === "zh" ? "邮箱登录（免费生成 3 次）" : "Sign in with Email"}</span>
+              <span>{lang === "zh" ? "邮箱登录（赠 30 点）" : "Sign in with Email"}</span>
             </button>
           )}
           <Link className="af-icon-pill" href="/">
@@ -1066,8 +1029,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           <Sparkles size={14} />
           <span>
             {lang === "zh"
-              ? `🎁 你正在通过好友邀请码（${pendingRefCode}）体验 TalkCV：登录并发布首个个人站后，你立得 3 天 Pro 体验（+3 次生成 & +10 次 AI 精修），好友同获 7 天奖励！`
-              : `🎁 Invited via code ${pendingRefCode}: sign in & publish your first site to unlock a 3-day Pro trial (+3 generations & +10 AI refines) for you and 7 days for your friend!`}
+              ? `🎁 好友邀请码为 ${pendingRefCode}。登录并发布首个个人站后，你立得 3 天 Pro 体验（+${REFERRAL_CREDITS.invitee} 点），好友同获 ${REFERRAL_CREDITS.inviter} 点及 7 天体验！`
+              : `🎁 Sign in with invite code ${pendingRefCode} and publish your first site to unlock a 3-day Pro trial (+${REFERRAL_CREDITS.invitee} credits) for you and ${REFERRAL_CREDITS.inviter} credits plus 7 days for your friend!`}
           </span>
           <button type="button" className="af-icon-pill af-login-pill" onClick={() => setAuthModalOpen(true)}>
             {lang === "zh" ? "立即登录领取" : "Sign in to claim"}
@@ -1080,8 +1043,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           <span className="af-mysites-label">
             <Sparkles size={13} />{" "}
             {lang === "zh"
-              ? `邀请有礼：每拉 1 位新用户建站，你得 +5 生成/+15 精修/+7 天 Pro，好友得 +3 生成/+10 精修/+3 天 Pro（已邀 ${user.referral.invitedCount}/${user.referral.maxRewards} 人）`
-              : `Invite & Earn: +5 gen / +15 AI refines / 7d Pro per friend who publishes (${user.referral.invitedCount}/${user.referral.maxRewards} invited)`}
+              ? `好友首次发布简历站后，你得 +${REFERRAL_CREDITS.inviter} 点及 7 天 Pro 体验，好友得 +${REFERRAL_CREDITS.invitee} 点及 3 天 Pro 体验（已邀 ${user.referral.invitedCount}/${user.referral.maxRewards} 人）`
+              : `Earn ${REFERRAL_CREDITS.inviter} credits and 7 days of Pro when a friend first publishes. They get ${REFERRAL_CREDITS.invitee} credits & 3 days of Pro (${user.referral.invitedCount}/${user.referral.maxRewards} invited)`}
           </span>
           <button
             type="button"
@@ -1273,7 +1236,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               className={genMode === "hosted" ? "active" : ""}
               onClick={() => setGenMode("hosted")}
             >
-              {lang === "zh" ? "TalkCV 免费托管额度" : "TalkCV Hosted Free"}
+              {lang === "zh" ? "TalkCV 托管点数" : "TalkCV hosted credits"}
             </button>
             <button
               type="button"
@@ -1306,15 +1269,13 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               <div className="af-quota-note">
                 {user ? (
                   <span>
-                    {lang === "zh"
-                      ? `已登录 ${user.email} · ${user.quotaPeriod === "month" ? "本月" : "账号"}剩余生成 ${remaining}/${user.dailyLimit} 次`
-                      : `Signed in as ${user.email} · ${remaining}/${user.dailyLimit} generations left ${user.quotaPeriod === "month" ? "this month" : "on this account"}`}
+                    {user.email} · {balanceLabel}
                   </span>
                 ) : (
                   <button type="button" className="af-inline-link" onClick={() => setAuthModalOpen(true)}>
                     {lang === "zh"
-                      ? "👉 点击先用邮箱登录，领取每账号 3 次免费生成额度"
-                      : "👉 Sign in for 3 free generations per account"}
+                      ? "邮箱登录后领取 30 点终身体验点数"
+                      : "Sign in for 30 lifetime credits"}
                   </button>
                 )}
               </div>
@@ -1378,7 +1339,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   : "Generating your TalkCV…"
                 : lang === "zh"
                   ? "开始生成简历网站"
-                  : "Generate résumé site"}
+                  : "Generate résumé site"} · {creditCostLabel(CREDIT_COST.generate, lang, genMode === "byok")}
             </span>
           </button>
         </form>
@@ -1638,19 +1599,13 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             >
               <Sparkles size={13} />
               <span>
-                {lang === "zh"
-                  ? user?.isPro
-                    ? `AI 实时精修（剩 ${remainingEdits}/${user.editDailyLimit ?? 30}）`
-                    : "✨ AI 实时精修 (Pro/Max)"
-                  : user?.isPro
-                    ? `AI Refine (${remainingEdits}/${user.editDailyLimit ?? 30})`
-                    : "✨ AI Live Refine (Pro)"}
+                {lang === "zh" ? "AI 实时精修" : "AI Live Refine"} · {creditCostLabel(CREDIT_COST.edit, lang, genMode === "byok")}
               </span>
             </button>
           </div>
 
           <OutreachPanel key={`${user?.email ?? ""}:${lang}`} lang={lang} signedIn={Boolean(user)}
-            profile={hasGenerated ? generated : undefined} onSignIn={() => setAuthModalOpen(true)}
+            profile={hasGenerated ? generated : undefined} onCredits={(credits) => updateCredits(user?.email, credits)} onSignIn={() => setAuthModalOpen(true)}
             provider={{ providerMode: genMode, hostedModelId: genModelId,
               ...(genMode === "byok" && { apiKey: genApiKey, baseUrl: genBaseUrl, model: genModel }) }} />
 
@@ -1664,15 +1619,11 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               apiKey={genApiKey}
               baseUrl={genBaseUrl}
               byokModel={genModel}
-              remainingEdits={remainingEdits}
-              editDailyLimit={user?.editDailyLimit ?? 30}
-              onApplyProfile={(nextProfile, quota) => {
+              onCredits={(credits) => updateCredits(user?.email, credits)}
+              onApplyProfile={(nextProfile) => {
                 setGenerated(nextProfile);
                 setHasGenerated(true);
                 if (nextProfile.theme) setTheme(nextProfile.theme);
-                if (quota && user) {
-                  setUser({ ...user, editUsedToday: quota.usedToday, editDailyLimit: quota.dailyLimit });
-                }
               }}
               onClose={() => setRefineOpen(false)}
             />
@@ -1710,27 +1661,6 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                       <span>{lang === "zh" ? "上传照片" : "Upload Photo"}</span>
                       <input type="file" accept="image/*" onChange={onAvatarFileUpload} hidden />
                     </label>
-                    <button
-                      type="button"
-                      className="af-icon-pill af-login-pill"
-                      onClick={generateAiAvatar}
-                      disabled={avatarBusy}
-                    >
-                      <Sparkles size={12} />
-                      <span>
-                        {avatarBusy
-                          ? lang === "zh"
-                            ? "AI 绘制中…"
-                            : "Generating…"
-                          : lang === "zh"
-                            ? user?.isPro
-                              ? "AI 生成头像"
-                              : "✨ AI 头像 (Pro)"
-                            : user?.isPro
-                              ? "AI Avatar"
-                              : "✨ AI Avatar (Pro)"}
-                      </span>
-                    </button>
                     {generated.basics.avatar && (
                       <button
                         type="button"
@@ -2093,10 +2023,10 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                     ✓ {lang === "zh" ? `已增加 ${redeemSuccess.days} 天会员，有效期至 ${redeemSuccess.expiresAt}` : `+${redeemSuccess.days} days active until ${redeemSuccess.expiresAt}`}
                   </span>
                   <span>
-                    ✓ {lang === "zh" ? `每月可生成 ${redeemSuccess.dailyLimit} 份简历` : `${redeemSuccess.dailyLimit} AI generations / month`}
+                    ✓ {lang === "zh" ? `每月 ${PLAN_CREDITS[redeemSuccess.plan]} 基础点` : `${PLAN_CREDITS[redeemSuccess.plan]} base credits per month`}
                   </span>
                   <span>
-                    ✓ {lang === "zh" ? `已解锁 AI 多轮实时精修（${redeemSuccess.editDailyLimit} 次/月）` : `AI Multi-turn Live Refine unlocked (${redeemSuccess.editDailyLimit}/month)`}
+                    ✓ {lang === "zh" ? `AI 多轮精修每次 ${CREDIT_COST.edit} 点` : `AI Live Refine costs ${CREDIT_COST.edit} credits per turn`}
                   </span>
                   <span>
                     ✓{" "}
@@ -2122,8 +2052,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               <form className="af-auth-form" onSubmit={submitRedeemCode}>
                 <p>
                   {lang === "zh"
-                    ? "输入内测或活动兑换码，立即解锁高级模型、AI 多轮实时精修与更高托管额度。"
-                    : "Enter your invite code to unlock premium models, AI Live Refine, and higher quotas."}
+                    ? "输入内测或活动兑换码，立即解锁高级模型、AI 多轮实时精修与每月创作点数。"
+                    : "Enter your invite code to unlock premium models, AI Live Refine, and monthly creation credits."}
                 </p>
                 <input
                   type="text"

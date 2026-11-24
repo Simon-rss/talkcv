@@ -1,21 +1,31 @@
-MIT License
+TalkCV Noncommercial Source-Available License
 
-Copyright (c) 2026 TalkCV Contributors
+Copyright (c) 2026 Sishuo Ren (TalkCV). All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Permitted Noncommercial Use
+You are granted a free, non-exclusive, worldwide license to view, copy, modify,
+and self-host this software solely for personal, educational, or noncommercial
+purposes — including building and hosting your own personal résumé/portfolio site
+for your own job search.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. Prohibited Commercial Use
+Without prior written commercial authorization from the copyright holder, you
+may NOT use this software (in whole or in part, modified or unmodified) for any
+commercial purpose, including but not limited to:
+- Offering this software as a hosted, managed, or paid SaaS / web service to
+  third parties (free or paid, ad-supported or subscription-based);
+- Selling, reselling, sublicensing, or redistributing this software or derivative
+  works as a commercial product or paid template;
+- Providing paid client resume-building or agency services using this codebase.
 
+3. Attribution & Notice
+Any permitted noncommercial copy or derivative work must retain this copyright
+and license notice.
+
+4. Commercial Licensing
+For commercial licensing inquiries, please contact: rss1549596771@163.com
+
+5. Disclaimer of Warranty & Limitation of Liability
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.

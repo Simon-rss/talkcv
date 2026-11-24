@@ -2,7 +2,7 @@
   "name": "talkcv",
   "version": "0.1.0",
   "description": "TalkCV — Drop your resume + API key, pick a theme, and ship a resume website that talks back.",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"

@@ -29,6 +29,7 @@ import {
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleGenerateCustomPageRequest } from "./custom-page";
 import { handleAiEditRequest } from "./edit";
+import { proxyExternalMountedSite, resolveExternalOrigin, type ExternalMountEnv } from "./external-mount";
 import { handleOgImageRequest } from "./og";
 import { handleParseResumeImageRequest } from "./parse-image";
 import { recordSiteTraffic, shouldTrackTraffic } from "./traffic";
@@ -41,7 +42,7 @@ import {
   buildSitemapResponse,
 } from "./site-meta";
 
-interface WorkerEnv extends ChatEnv, BillingEnv, AdminEnv {
+interface WorkerEnv extends ChatEnv, BillingEnv, AdminEnv, ExternalMountEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
@@ -133,7 +134,7 @@ const worker = {
     if (url.pathname === "/resume.json") {
       return buildResumeJsonResponse();
     }
-    if (url.pathname.startsWith("/u/") && (request.method === "GET" || request.method === "HEAD")) {
+    if (url.pathname.startsWith("/u/")) {
       const slug = normalizeSlug(decodeURIComponent(url.pathname.slice("/u/".length).split("/")[0] || ""));
       const record = slug ? await loadStoredRecord(slug, env) : null;
       const ownerPlan = record?.ownerEmail ? await getUserPlan(record.ownerEmail, env) : null;
@@ -141,6 +142,22 @@ const worker = {
       const expired = record && !hasPermanentHosting && Date.now() > Date.parse(record.expiresAt);
       const hidden = Boolean(record?.noindex || record?.passcode);
       const locked = record && !expired && !await siteUnlocked(request, slug, record.passcode);
+
+      const externalOrigin = slug ? resolveExternalOrigin(slug, record, env) : null;
+      if (externalOrigin && !expired) {
+        const subPath = url.pathname.slice(`/u/${slug}`.length) || "/";
+        if (locked) {
+          if (subPath.startsWith("/api/")) {
+            return Response.json({ error: "Site is locked." }, { status: 403 });
+          }
+        } else {
+          return proxyExternalMountedSite(request, slug, externalOrigin, record, env, ctx);
+        }
+      }
+
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response(null, { status: 405 });
+      }
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set("x-talkcv-robots", hidden ? "noindex" : "index");
       requestHeaders.set("x-talkcv-site-state", !record ? "not_found" : expired ? "expired" : locked ? "locked" : "loading");

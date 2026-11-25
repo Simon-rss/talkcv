@@ -159,6 +159,7 @@ const env = {
   CREEM_MAX_ONETIME_PRODUCT_ID: process.env.CREEM_MAX_ONETIME_PRODUCT_ID,
   CREEM_MAX_YEARLY_ONETIME_PRODUCT_ID: process.env.CREEM_MAX_YEARLY_ONETIME_PRODUCT_ID,
   CREEM_API_BASE: process.env.CREEM_API_BASE,
+  EXTERNAL_SITE_MOUNTS: process.env.EXTERNAL_SITE_MOUNTS,
   PROFILES_KV: pgKv,
   ASSETS: {
     fetch: async () => new Response("Not found", { status: 404 }),

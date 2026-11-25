@@ -73,6 +73,7 @@ export interface StoredProfileRecord {
   chatConfig?: SiteChatConfig;
   noindex?: boolean;
   passcode?: PasscodeHash;
+  externalOrigin?: string;
 }
 
 const RESERVED_SLUGS = new Set([

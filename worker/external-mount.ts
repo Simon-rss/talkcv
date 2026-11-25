@@ -99,8 +99,6 @@ export async function proxyExternalMountedSite(
     "accept-language",
     "content-type",
     "user-agent",
-    "x-forwarded-for",
-    "cf-connecting-ip",
     "if-none-match",
     "if-modified-since",
   ]) {
@@ -108,8 +106,6 @@ export async function proxyExternalMountedSite(
     if (val) forwardHeaders.set(name, val);
   }
   forwardHeaders.set("x-talkcv-proxy", "1");
-  forwardHeaders.set("x-forwarded-host", url.host);
-  forwardHeaders.set("x-forwarded-proto", url.protocol.replace(":", ""));
 
   let bodyText: string | undefined;
   let chatQuestion: string | undefined;

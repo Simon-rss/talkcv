@@ -5,6 +5,7 @@ import { getUserPlan, handleCreateRedeemCodesRequest, type BillingEnv, type Plan
 import type { StoredProfileRecord } from "./publish";
 import { countLeads } from "./leads";
 import { isTrialActive, readReferralRecord, referralCreditGrant, type ReferralRecord } from "./referral";
+import { readTrafficSummary } from "./traffic";
 
 export interface AdminEnv extends AuthEnv, BillingEnv {
   ADMIN_EMAILS?: string;
@@ -119,7 +120,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
   const gate = await requireAdmin(request, env);
   if (!gate.ok) return gate.response;
 
-  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, creditRows, insightRows, codeRows, discountRows, totalLeads] =
+  const [profileRows, userSitesRows, planRows, refRows, usageRows, editUsageRows, creditRows, insightRows, codeRows, discountRows, totalLeads, traffic] =
     await Promise.all([
       listByPrefix("profile:", env, 5000),
       listByPrefix("user_sites:", env, 5000),
@@ -132,6 +133,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
       listByPrefix("redeem:", env, 1000),
       listByPrefix("discount:", env, 1000),
       countLeads(env),
+      readTrafficSummary(env, 14),
     ]);
 
   // Insights by slug
@@ -352,6 +354,7 @@ export async function handleAdminOverviewRequest(request: Request, env: AdminEnv
     sites,
     codes,
     discounts,
+    traffic,
   });
 }
 

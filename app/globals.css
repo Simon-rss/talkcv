@@ -2848,6 +2848,206 @@ button {
   font-size: 12.5px;
 }
 
+.af-admin-traffic {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.af-admin-traffic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.af-admin-traffic-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.af-admin-traffic-card h2,
+.af-admin-traffic-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.af-admin-traffic-card h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.af-admin-traffic-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.af-admin-traffic-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.af-admin-traffic-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.af-admin-traffic-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.af-admin-traffic-legend i.is-pv,
+.af-admin-bar.is-pv {
+  background: rgba(0, 113, 227, 0.28);
+}
+
+.af-admin-traffic-legend i.is-uv,
+.af-admin-bar.is-uv {
+  background: #0071e3;
+}
+
+.af-admin-chart {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  height: 180px;
+  padding-top: 12px;
+}
+
+.af-admin-chart-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.af-admin-chart-bars {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+
+.af-admin-bar {
+  width: 42%;
+  max-width: 14px;
+  border-radius: 4px 4px 1px 1px;
+  transition: height 0.2s ease;
+}
+
+.af-admin-chart-val {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  min-height: 14px;
+}
+
+.af-admin-chart-label {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.af-admin-rank-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.af-admin-rank-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.af-admin-rank-row strong small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.af-admin-rank-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.af-admin-rank-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #0071e3;
+}
+
+.af-admin-rank-track span.is-ref {
+  background: #34c759;
+}
+
+.af-admin-device-box {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.af-admin-device-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-alt);
+  gap: 2px;
+}
+
+.af-admin-device-bar .is-mobile {
+  background: #0071e3;
+}
+
+.af-admin-device-bar .is-desktop {
+  background: #8e8e93;
+}
+
+.af-admin-device-labels {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.af-admin-device-labels span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 /* Passcode unlock card polish */
 .af-passcode-body {
   padding: 22px 20px 24px;

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Activity,
   Check,
   Copy,
   ExternalLink,
@@ -9,10 +10,12 @@ import {
   KeyRound,
   Lock,
   MessageSquare,
+  Monitor,
   Percent,
   RefreshCw,
   Search,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -73,6 +76,19 @@ interface AdminDiscountRow {
   createdAt: string;
 }
 
+interface AdminTraffic {
+  todayPv: number;
+  todayUv: number;
+  last7dPv: number;
+  last7dUv: number;
+  totalPv: number;
+  totalUv: number;
+  daily: Array<{ date: string; pv: number; uv: number }>;
+  pages: Array<{ path: string; pv: number }>;
+  referrers: Array<{ source: string; pv: number }>;
+  devices: { mobile: number; desktop: number };
+}
+
 interface AdminOverview {
   adminEmail: string;
   summary: {
@@ -89,7 +105,32 @@ interface AdminOverview {
   sites: AdminSiteRow[];
   codes: AdminCodeRow[];
   discounts?: AdminDiscountRow[];
+  traffic?: AdminTraffic;
 }
+
+const PAGE_LABELS: Record<string, string> = {
+  "/": "首页 (/)",
+  "/create": "工作台 (/create)",
+  "/u/*": "用户个人站 (/u/*)",
+  "/pricing": "定价页 (/pricing)",
+  "/projects/*": "项目详情 (/projects/*)",
+  "/login": "登录页 (/login)",
+  "/preview": "全屏预览 (/preview)",
+  "/legal": "隐私 / 条款",
+  "/other": "其他页面",
+};
+
+const REFERRER_LABELS: Record<string, string> = {
+  direct: "直接访问 / 书签",
+  wechat: "微信内置浏览器",
+  "xiaohongshu.com": "小红书",
+  "v2ex.com": "V2EX",
+  "github.com": "GitHub",
+  "x.com": "X (Twitter)",
+  "google.com": "Google 搜索",
+  "zhihu.com": "知乎",
+  "juejin.cn": "稀土掘金",
+};
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -112,7 +153,7 @@ export function AdminClient() {
   const [data, setData] = useState<AdminOverview | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "unauth" | "forbidden" | "error">("loading");
   const [errMsg, setErrMsg] = useState("");
-  const [tab, setTab] = useState<"users" | "sites" | "codes">("users");
+  const [tab, setTab] = useState<"users" | "sites" | "traffic" | "codes">("users");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
@@ -318,6 +359,11 @@ export function AdminClient() {
 
       <section className="af-admin-kpis">
         <div className="af-admin-kpi">
+          <span className="af-admin-kpi-label"><Activity size={13} /> 今日访客 (UV)</span>
+          <strong>{data.traffic?.todayUv ?? 0}</strong>
+          <small>今日 PV {data.traffic?.todayPv ?? 0} · 近 7 天 {data.traffic?.last7dPv ?? 0}</small>
+        </div>
+        <div className="af-admin-kpi">
           <span className="af-admin-kpi-label"><Users size={13} /> 总用户</span>
           <strong>{data.summary.totalUsers}</strong>
           <small>付费 {data.summary.paidUsers} · 体验 {data.summary.trialUsers}</small>
@@ -328,14 +374,14 @@ export function AdminClient() {
           <small>有效拉新 {data.summary.totalReferrals} 人</small>
         </div>
         <div className="af-admin-kpi">
-          <span className="af-admin-kpi-label"><Eye size={13} /> 累计浏览</span>
+          <span className="af-admin-kpi-label"><Eye size={13} /> 个人站浏览</span>
           <strong>{data.summary.totalViews}</strong>
-          <small>所有个人站合计</small>
+          <small>所有 /u/* 站点合计</small>
         </div>
         <div className="af-admin-kpi">
           <span className="af-admin-kpi-label"><MessageSquare size={13} /> 访客 AI 提问</span>
           <strong>{data.summary.totalQuestions}</strong>
-          <small>累计约面线索 / Recruiter leads · {data.summary.totalLeads}</small>
+          <small>约面线索 · {data.summary.totalLeads}</small>
         </div>
       </section>
 
@@ -347,11 +393,14 @@ export function AdminClient() {
           <button type="button" role="tab" aria-selected={tab === "sites"} className={tab === "sites" ? "active" : ""} onClick={() => setTab("sites")}>
             已发布站点 ({data.sites.length})
           </button>
+          <button type="button" role="tab" aria-selected={tab === "traffic"} className={tab === "traffic" ? "active" : ""} onClick={() => setTab("traffic")}>
+            流量分析 ({data.traffic?.todayPv ?? 0} 今日PV)
+          </button>
           <button type="button" role="tab" aria-selected={tab === "codes"} className={tab === "codes" ? "active" : ""} onClick={() => setTab("codes")}>
             兑换码 &amp; 打折券 ({data.codes.length + (data.discounts?.length ?? 0)})
           </button>
         </div>
-        {tab !== "codes" && (
+        {(tab === "users" || tab === "sites") && (
           <label className="af-admin-search">
             <Search size={14} />
             <input
@@ -482,6 +531,138 @@ export function AdminClient() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {tab === "traffic" && (
+        <section className="af-admin-traffic">
+          {(() => {
+            const t = data.traffic ?? {
+              todayPv: 0,
+              todayUv: 0,
+              last7dPv: 0,
+              last7dUv: 0,
+              totalPv: 0,
+              totalUv: 0,
+              daily: [],
+              pages: [],
+              referrers: [],
+              devices: { mobile: 0, desktop: 0 },
+            };
+            const maxPv = Math.max(1, ...t.daily.map((d) => d.pv));
+            const totalPagePv = Math.max(1, t.pages.reduce((sum, p) => sum + p.pv, 0));
+            const totalRefPv = Math.max(1, t.referrers.reduce((sum, r) => sum + r.pv, 0));
+            const totalDev = t.devices.mobile + t.devices.desktop;
+            const mobilePct = totalDev > 0 ? Math.round((t.devices.mobile / totalDev) * 100) : 0;
+            const desktopPct = totalDev > 0 ? 100 - mobilePct : 0;
+
+            return (
+              <>
+                <div className="af-admin-traffic-card">
+                  <div className="af-admin-traffic-head">
+                    <div>
+                      <h2>近 14 天全站访问趋势</h2>
+                      <p className="af-admin-muted">
+                        已自动过滤爬虫与探测请求（按北京时间 UTC+8 统计）· 累计 {t.totalPv} PV / {t.totalUv} 日均去重 UV
+                      </p>
+                    </div>
+                    <div className="af-admin-traffic-legend">
+                      <span><i className="is-pv" /> PV 浏览量</span>
+                      <span><i className="is-uv" /> UV 独立访客</span>
+                    </div>
+                  </div>
+                  <div className="af-admin-chart" role="img" aria-label="近 14 天全站 PV 与 UV 趋势图">
+                    {t.daily.map((d) => {
+                      const pvH = Math.max(d.pv > 0 ? 6 : 2, Math.round((d.pv / maxPv) * 100));
+                      const uvH = Math.max(d.uv > 0 ? 6 : 2, Math.round((d.uv / maxPv) * 100));
+                      return (
+                        <div
+                          key={d.date}
+                          className="af-admin-chart-col"
+                          title={`${d.date} · ${d.pv} PV · ${d.uv} UV`}
+                        >
+                          <div className="af-admin-chart-bars">
+                            <span className="af-admin-bar is-pv" style={{ height: `${pvH}%` }} />
+                            <span className="af-admin-bar is-uv" style={{ height: `${uvH}%` }} />
+                          </div>
+                          <span className="af-admin-chart-val">{d.uv > 0 ? d.uv : ""}</span>
+                          <span className="af-admin-chart-label">{d.date.slice(5)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="af-admin-traffic-grid">
+                  <div className="af-admin-traffic-card">
+                    <h3>近 7 天热门页面</h3>
+                    {t.pages.length === 0 ? (
+                      <p className="af-admin-muted">暂无访问记录，打开首页或 Studio 后刷新即可看到实时统计。</p>
+                    ) : (
+                      <ul className="af-admin-rank-list">
+                        {t.pages.map((p) => {
+                          const pct = Math.max(2, Math.round((p.pv / totalPagePv) * 100));
+                          return (
+                            <li key={p.path}>
+                              <div className="af-admin-rank-row">
+                                <span>{PAGE_LABELS[p.path] ?? p.path}</span>
+                                <strong>{p.pv} PV <small>({pct}%)</small></strong>
+                              </div>
+                              <div className="af-admin-rank-track">
+                                <span style={{ width: `${pct}%` }} />
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="af-admin-traffic-card">
+                    <h3>近 7 天来源渠道</h3>
+                    {t.referrers.length === 0 ? (
+                      <p className="af-admin-muted">暂无来源记录</p>
+                    ) : (
+                      <ul className="af-admin-rank-list">
+                        {t.referrers.map((r) => {
+                          const pct = Math.max(2, Math.round((r.pv / totalRefPv) * 100));
+                          return (
+                            <li key={r.source}>
+                              <div className="af-admin-rank-row">
+                                <span>{REFERRER_LABELS[r.source] ?? r.source}</span>
+                                <strong>{r.pv} PV <small>({pct}%)</small></strong>
+                              </div>
+                              <div className="af-admin-rank-track">
+                                <span className="is-ref" style={{ width: `${pct}%` }} />
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+
+                    <div className="af-admin-device-box">
+                      <h4>近 7 天设备分布</h4>
+                      {totalDev === 0 ? (
+                        <p className="af-admin-muted">暂无设备数据</p>
+                      ) : (
+                        <>
+                          <div className="af-admin-device-bar">
+                            <span className="is-mobile" style={{ width: `${mobilePct}%` }} />
+                            <span className="is-desktop" style={{ width: `${desktopPct}%` }} />
+                          </div>
+                          <div className="af-admin-device-labels">
+                            <span><Smartphone size={13} /> 手机端 {mobilePct}% ({t.devices.mobile})</span>
+                            <span><Monitor size={13} /> 电脑端 {desktopPct}% ({t.devices.desktop})</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </section>
       )}
 
       {tab === "codes" && (

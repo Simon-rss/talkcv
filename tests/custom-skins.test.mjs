@@ -292,3 +292,106 @@ test("/api/generate keeps 401 for bare unauthenticated calls and enforces 1x/day
   const secondJson = await secondTrial.json();
   assert.equal(secondJson.guestTrialExhausted, true);
 });
+
+test("site traffic tracker counts PV/UV, filters bots, tracks referrers & devices, and exposes stats in /api/admin/overview", async () => {
+  const { recordSiteTraffic, readTrafficSummary, resetMemoryTrafficForTests, shouldTrackTraffic } = await import("../worker/traffic.ts");
+  resetMemoryTrafficForTests();
+
+  const htmlRes = new Response("<html>ok</html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+  const botReq = new Request("https://mytalkcv.com/", { headers: { "user-agent": "Googlebot/2.1" } });
+  const adminReq = new Request("https://mytalkcv.com/admin", { headers: { "user-agent": "Mozilla/5.0 Chrome/128.0" } });
+  const humanMobileReq = new Request("https://mytalkcv.com/", {
+    headers: {
+      "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
+      "cf-connecting-ip": "198.51.100.10",
+      referer: "https://www.xiaohongshu.com/explore/123",
+    },
+  });
+  const humanMobileReq2 = new Request("https://mytalkcv.com/create", {
+    headers: {
+      "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
+      "cf-connecting-ip": "198.51.100.10",
+    },
+  });
+  const humanDesktopReq = new Request("https://mytalkcv.com/u/simon-test", {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/128.0",
+      "cf-connecting-ip": "198.51.100.20",
+      referer: "https://v2ex.com/t/999",
+    },
+  });
+
+  assert.equal(shouldTrackTraffic(botReq, "/", htmlRes), false);
+  assert.equal(shouldTrackTraffic(adminReq, "/admin", htmlRes), false);
+  assert.equal(shouldTrackTraffic(humanMobileReq, "/", htmlRes), true);
+
+  const kvStore = new Map();
+  const PROFILES_KV = {
+    get: async (k) => kvStore.get(k) ?? null,
+    put: async (k, v) => { kvStore.set(k, v); },
+    delete: async (k) => { kvStore.delete(k); },
+    listPrefix: async (prefix, limit = 5000) =>
+      Array.from(kvStore.entries())
+        .filter(([k]) => k.startsWith(prefix))
+        .slice(0, limit)
+        .map(([key, value]) => ({ key, value })),
+  };
+
+  const env = {
+    AUTH_SECRET: "traffic-admin-test",
+    ADMIN_EMAILS: "admin@mytalkcv.com",
+    ADMIN_ALLOW_DEV_AUTH: "1",
+    PROFILES_KV,
+    ASSETS: { fetch: async () => new Response("404", { status: 404 }) },
+  };
+
+  await recordSiteTraffic(humanMobileReq, "/", env);
+  await recordSiteTraffic(humanMobileReq2, "/create", env);
+  await recordSiteTraffic(humanDesktopReq, "/u/simon-test", env);
+
+  const summary = await readTrafficSummary(env, 14);
+  assert.equal(summary.todayPv, 3);
+  assert.equal(summary.todayUv, 2);
+  assert.equal(summary.devices.mobile, 2);
+  assert.equal(summary.devices.desktop, 1);
+  assert.equal(summary.daily.length, 14);
+  assert.ok(summary.pages.some((p) => p.path === "/" && p.pv === 1));
+  assert.ok(summary.pages.some((p) => p.path === "/create" && p.pv === 1));
+  assert.ok(summary.pages.some((p) => p.path === "/u/*" && p.pv === 1));
+  assert.ok(summary.referrers.some((r) => r.source === "xiaohongshu.com" && r.pv === 1));
+  assert.ok(summary.referrers.some((r) => r.source === "v2ex.com" && r.pv === 1));
+
+  // Verify /api/admin/overview includes traffic payload for authenticated admin
+  const authEnv = { AUTH_SECRET: "traffic-admin-test", ASSETS: env.ASSETS };
+  const sendRes = await worker.fetch(
+    new Request("http://localhost/api/auth/send-code", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@mytalkcv.com" }),
+    }),
+    authEnv,
+  );
+  assert.equal(sendRes.status, 200);
+  const sendJson = await sendRes.json();
+  const { instantCode, challenge } = sendJson;
+  assert.ok(instantCode && challenge, "expected instantCode and challenge");
+  const verifyRes = await worker.fetch(
+    new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@mytalkcv.com", code: instantCode, challenge }),
+    }),
+    authEnv,
+  );
+  assert.equal(verifyRes.status, 200);
+  const cookie = verifyRes.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie, "expected session cookie");
+  const overviewRes = await worker.fetch(
+    new Request("http://localhost/api/admin/overview", { headers: { cookie } }),
+    env,
+  );
+  assert.equal(overviewRes.status, 200);
+  const overview = await overviewRes.json();
+  assert.equal(overview.traffic?.todayPv, 3);
+  assert.equal(overview.traffic?.todayUv, 2);
+});

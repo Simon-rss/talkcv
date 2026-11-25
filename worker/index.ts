@@ -31,6 +31,7 @@ import { handleGenerateCustomPageRequest } from "./custom-page";
 import { handleAiEditRequest } from "./edit";
 import { handleOgImageRequest } from "./og";
 import { handleParseResumeImageRequest } from "./parse-image";
+import { recordSiteTraffic, shouldTrackTraffic } from "./traffic";
 import { handleGenerateRequest } from "./generate";
 import { handleDeleteProfileRequest, handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
 import {
@@ -160,9 +161,19 @@ const worker = {
         await recordVisit(slug, record, env);
       }
       if (hidden) headers.set("x-robots-tag", "noindex, nofollow");
-      return new Response(rendered.body, { status: !record ? 404 : expired ? 410 : rendered.status, headers });
+      const finalRes = new Response(rendered.body, { status: !record ? 404 : expired ? 410 : rendered.status, headers });
+      if (shouldTrackTraffic(request, url.pathname, finalRes)) {
+        const task = recordSiteTraffic(request, url.pathname, env).catch(() => {});
+        if (ctx?.waitUntil) ctx.waitUntil(task);
+      }
+      return finalRes;
     }
-    return handler.fetch(request);
+    const response = await handler.fetch(request);
+    if (shouldTrackTraffic(request, url.pathname, response)) {
+      const task = recordSiteTraffic(request, url.pathname, env).catch(() => {});
+      if (ctx?.waitUntil) ctx.waitUntil(task);
+    }
+    return response;
   },
 };
 

@@ -137,7 +137,37 @@ const BYOK_PRESETS = [
 ] as const;
 
 const STUDIO_DRAFT_KEY = "talkcv-studio-draft";
-const DEFAULT_HANDLE = "alex-chen";
+const DEFAULT_HANDLE = "your-name";
+const SAMPLE_TRIAL_RESUME_ZH = `林致远 | 高级全栈 & AI 应用工程师 | 上海 | 邮箱：demo@example.com
+教育背景：上海交通大学 · 软件工程 本科（2017–2021）
+核心技能：TypeScript, React, Next.js, Python, FastAPI, PostgreSQL, Redis, AI Agent, RAG
+
+工作经历：
+1. 云帆协作科技（2023.03 – 至今）· 高级全栈工程师
+- 负责企业级 AI 知识库与工作流产品研发，服务 40+ 企业团队，日均处理 12 万次问答请求。
+2. 星海互娱（2021.07 – 2023.02）· 前端开发工程师
+- 主导低代码活动搭建平台重构，首屏加载耗时从 2.8s 降至 0.9s（-68%），支撑大促零故障。
+
+代表项目：
+1. 智能客服与 RAG 知识引擎（技术负责人）
+- 设计混合检索（BM25 + 向量）与引用溯源机制，回答准确率提升 34%，人工转接率下降 41%。
+2. 实时协同表单工作台（核心开发）
+- 基于增量补丁同步与乐观锁解决多人编辑冲突，单次保存体积减少 52%，覆盖 15,000+ 日活用户。`;
+const SAMPLE_TRIAL_RESUME_EN = `Liam Lin | Senior Full-Stack & AI Engineer | San Francisco | Email: demo@example.com
+Education: B.S. in Computer Science (2017–2021)
+Skills: TypeScript, React, Next.js, Python, FastAPI, PostgreSQL, Redis, AI Agents, RAG
+
+Experience:
+1. CloudSail AI (2023.03 – Present) · Senior Full-Stack Engineer
+- Built enterprise RAG & workflow platform serving 40+ teams and 120k daily AI queries.
+2. StarWave Tech (2021.07 – 2023.02) · Frontend Engineer
+- Re-architected campaign builder, cutting initial load time from 2.8s to 0.9s (-68%).
+
+Featured Projects:
+1. Grounded Enterprise RAG Engine (Tech Lead)
+- Built hybrid BM25 + vector retrieval with inline citations; raised answer accuracy +34% and reduced escalations -41%.
+2. Real-Time Collaborative Form Studio (Core Engineer)
+- Implemented incremental patch sync and optimistic locking, cutting save payload by 52% for 15,000+ DAU.`;
 const BRIEF_LABELS = {
   expectedSalary: ["期望薪资", "Expected salary"], availability: ["最快到岗时间", "Earliest start date"],
   workMode: ["城市 / 远程偏好", "Location / remote preference"], notes: ["补充说明", "Additional notes"],
@@ -827,9 +857,10 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     }
   };
 
-  const generateProfile = async (account: AuthUser, keepDraftSettings = false) => {
+  const generateProfile = async (account: AuthUser | null, keepDraftSettings = false) => {
     setError(null);
     setLoading(true);
+    const useGuestTrial = !account && genMode === "hosted";
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -841,6 +872,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
           siteUrl,
           providerMode: genMode,
           hostedModelId: genModelId,
+          ...(useGuestTrial ? { guestTrial: true } : {}),
           ...(genMode === "byok"
             ? {
                 apiKey: genApiKey.trim() || undefined,
@@ -853,11 +885,27 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       const data = (await res.json()) as {
         profile?: PortfolioProfile;
         credits?: CreditBalance;
+        guestTrialUsed?: boolean;
+        guestTrialExhausted?: boolean;
         error?: string;
       };
-      updateCredits(account.email, data.credits);
+      if (account) updateCredits(account.email, data.credits);
+      if (res.status === 401 && useGuestTrial) {
+        try { window.localStorage.setItem("talkcv-guest-trial-used", "1"); } catch {}
+        setAuthIntent("generate");
+        setAuthModalOpen(true);
+        return;
+      }
       if (!res.ok || !data.profile) {
         throw new Error(data.error || "Generation failed.");
+      }
+      if (data.guestTrialUsed) {
+        try { window.localStorage.setItem("talkcv-guest-trial-used", "1"); } catch {}
+        setBillingBanner(
+          lang === "zh"
+            ? "🎉 已免登录为你生成预览草稿！可自由点击修改文字或切换皮肤，点击「发布 / 更新专属链接」验证邮箱即可永久绑定并上线。"
+            : "🎉 Preview draft generated! Click any text to edit or switch skins, then click Publish to verify your email and go live.",
+        );
       }
       setGenerated(data.profile);
       setHasGenerated(true);
@@ -995,6 +1043,18 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
 
   function startDraftAction(action: "generate" | "publish") {
     if (!user) {
+      if (action === "generate" && genMode === "hosted") {
+        let alreadyUsed = false;
+        try { alreadyUsed = window.localStorage.getItem("talkcv-guest-trial-used") === "1"; } catch {}
+        if (!alreadyUsed) {
+          void generateProfile(null);
+          return;
+        }
+      }
+      if (action === "generate" && genMode === "byok" && genApiKey.trim()) {
+        void generateProfile(null);
+        return;
+      }
       setAuthIntent(action);
       setAuthModalOpen(true);
     } else if (action === "generate") void generateProfile(user);
@@ -1350,6 +1410,37 @@ ${jd.slice(0, 3000)}`;
                 />
               </label>
             </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              <button
+                type="button"
+                className="af-icon-pill"
+                onClick={() => {
+                  setResumeText(lang === "zh" ? SAMPLE_TRIAL_RESUME_ZH : SAMPLE_TRIAL_RESUME_EN);
+                  setUploadNote(lang === "zh" ? "已填入示例简历，直接点下方按钮即可体验生成！" : "Sample résumé filled — click Generate below to try!");
+                }}
+              >
+                <Sparkles size={12} />
+                <span>{lang === "zh" ? "填入示例简历试玩" : "Try sample résumé"}</span>
+              </button>
+              <button
+                type="button"
+                className="af-icon-pill"
+                onClick={() => {
+                  const scrubbed = resumeText
+                    .replace(/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)/g, lang === "zh" ? "[已隐藏手机号]" : "[REDACTED-PHONE]")
+                    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "contact@example.com");
+                  setResumeText(scrubbed);
+                  setUploadNote(
+                    lang === "zh"
+                      ? "已在浏览器本地抹除手机号与私人邮箱，不会发送给服务器。"
+                      : "Phone numbers & personal emails scrubbed locally in your browser.",
+                  );
+                }}
+              >
+                <Lock size={12} />
+                <span>{lang === "zh" ? "本地抹除手机号/私人邮箱" : "Scrub phone/email locally"}</span>
+              </button>
+            </div>
             {uploadNote && (
               <div className="af-quota-note" style={{ marginBottom: 6 }}>
                 ✓ {uploadNote}
@@ -1379,6 +1470,11 @@ ${jd.slice(0, 3000)}`;
               }
               required
             />
+            <div className="af-quota-note" style={{ marginTop: 6 }}>
+              {lang === "zh"
+                ? "🔒 隐私可控：支持禁止搜索引擎收录与访问口令 · 随时一键彻底删除 · 核心渲染引擎 GitHub 开源可审计"
+                : "🔒 Privacy first: Search-engine opt-out & passcode lock · Instant deletion anytime · Open-source rendering engine on GitHub"}
+            </div>
           </div>
 
           <div className="af-field-label">
@@ -1825,6 +1921,15 @@ ${jd.slice(0, 3000)}`;
                   <span>{copiedUrl ? (lang === "zh" ? "已复制" : "Copied") : lang === "zh" ? "复制链接" : "Copy Link"}</span>
                 </button>
                 {publishedProfile && <SharePoster profile={publishedProfile} slug={new URL(publishedUrl).pathname.split("/").pop()!} lang={lang} />}
+                <button
+                  type="button"
+                  className="af-icon-pill af-login-pill"
+                  title={lang === "zh" ? "投递 BOSS 直聘 / 邮件时直接发带二维码的 A4 PDF，HR 零戒心" : "Export a QR-coded A4 PDF résumé for job portals & email"}
+                  onClick={openFullscreenPreview}
+                >
+                  <Download size={12} />
+                  <span>{lang === "zh" ? "导出带码 A4 PDF" : "Export QR A4 PDF"}</span>
+                </button>
               </div>
             )}
           </div>

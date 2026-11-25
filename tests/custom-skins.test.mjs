@@ -161,3 +161,134 @@ test("/api/parse-resume-image enforces auth and validates image payload", async 
   );
   assert.equal(unauth.status, 401);
 });
+
+test("/api/og renders brand card, public site card, and redacts locked sites", async () => {
+  const brandRes = await worker.fetch(
+    new Request("http://localhost/api/og"),
+    { ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
+  );
+  assert.equal(brandRes.status, 200);
+  assert.match(brandRes.headers.get("content-type") ?? "", /image\/svg\+xml/i);
+  const brandSvg = await brandRes.text();
+  assert.match(brandSvg, /TalkCV/);
+
+  const store = new Map();
+  const kv = {
+    get: async (k) => store.get(k) ?? null,
+    put: async (k, v) => { store.set(k, v); },
+    delete: async (k) => { store.delete(k); },
+  };
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  store.set(
+    "profile:public-og",
+    JSON.stringify({
+      slug: "public-og",
+      expiresAt: future,
+      profile: {
+        basics: { name: { en: "Zhang Wei", zh: "张伟" }, role: { en: "PM", zh: "高级产品经理" }, headline: { en: "Builder", zh: "增长负责人" } },
+        skills: ["SQL", "PLG"],
+        projects: [{ facts: [{ value: "+42%", label: { en: "Lift", zh: "激活提升" } }] }],
+      },
+    }),
+  );
+  store.set(
+    "profile:locked-og",
+    JSON.stringify({
+      slug: "locked-og",
+      expiresAt: future,
+      passcode: { salt: "s", hash: "h" },
+      profile: {
+        basics: { name: { en: "Secret Person", zh: "保密人物" }, role: { en: "CEO", zh: "CEO" }, headline: { en: "Top Secret", zh: "绝密" } },
+        skills: [],
+        projects: [],
+      },
+    }),
+  );
+
+  const pubOg = await worker.fetch(
+    new Request("http://localhost/api/og?slug=public-og"),
+    { PROFILES_KV: kv, ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
+  );
+  assert.equal(pubOg.status, 200);
+  const pubSvg = await pubOg.text();
+  assert.match(pubSvg, /张伟/);
+  assert.match(pubSvg, /\+42%/);
+
+  const lockedOg = await worker.fetch(
+    new Request("http://localhost/api/og?slug=locked-og"),
+    { PROFILES_KV: kv, ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
+  );
+  assert.equal(lockedOg.status, 200);
+  const lockedSvg = await lockedOg.text();
+  assert.doesNotMatch(lockedSvg, /保密人物|Secret Person|绝密/);
+});
+
+test("/api/generate keeps 401 for bare unauthenticated calls and enforces 1x/day guestTrial per IP", async (t) => {
+  const resumeText = "Zhang Wei, Senior Product Manager with 6 years of SaaS onboarding, PLG, and AI copilot experience.";
+  const env = {
+    AUTH_SECRET: "guest-trial-test",
+    OPENAI_API_KEY: "test-openai-key",
+    ASSETS: { fetch: async () => new Response("404", { status: 404 }) },
+  };
+
+  // Bare unauthenticated request MUST remain 401
+  const bareRes = await worker.fetch(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.55" },
+      body: JSON.stringify({ resumeText }),
+    }),
+    env,
+  );
+  assert.equal(bareRes.status, 401);
+
+  // Mock upstream LLM response for guestTrial
+  const origFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = origFetch; });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                basics: { name: { en: "Zhang Wei", zh: "张伟" }, role: { en: "PM", zh: "产品经理" } },
+                skills: ["PLG"],
+                projects: [],
+                experiences: [],
+                capabilities: [],
+              }),
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  // First guestTrial from same IP -> 200 + guestTrialUsed: true
+  const firstTrial = await worker.fetch(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.55" },
+      body: JSON.stringify({ resumeText, guestTrial: true }),
+    }),
+    env,
+  );
+  assert.equal(firstTrial.status, 200);
+  const firstJson = await firstTrial.json();
+  assert.equal(firstJson.guestTrialUsed, true);
+  assert.equal(firstJson.profile?.basics?.name?.zh, "张伟");
+
+  // Second guestTrial from same IP on same day -> 401 guestTrialExhausted
+  const secondTrial = await worker.fetch(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.55" },
+      body: JSON.stringify({ resumeText, guestTrial: true }),
+    }),
+    env,
+  );
+  assert.equal(secondTrial.status, 401);
+  const secondJson = await secondTrial.json();
+  assert.equal(secondJson.guestTrialExhausted, true);
+});

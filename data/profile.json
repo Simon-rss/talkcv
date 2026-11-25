@@ -3,36 +3,36 @@
   "siteUrl": "https://mytalkcv.com",
   "basics": {
     "name": {
-      "en": "Alex Chen",
-      "zh": "陈明远"
+      "en": "Simon · 任思硕",
+      "zh": "Simon · 任思硕"
     },
-    "initials": "AC",
+    "initials": "SR",
     "role": {
-      "en": "Staff AI Systems Engineer · San Francisco",
-      "zh": "资深 AI 系统工程师 · 旧金山"
+      "en": "AI Platform Engineer · Creator of TalkCV",
+      "zh": "AI 平台开发工程师 · TalkCV 独立开发者"
     },
     "location": {
-      "en": "San Francisco, CA",
-      "zh": "旧金山"
+      "en": "Guangzhou, China",
+      "zh": "广州"
     },
-    "timezone": "America/Los_Angeles",
-    "email": "alex.chen@example.dev",
-    "github": "https://github.com/Simon-rss/talkcv",
+    "timezone": "Asia/Shanghai",
+    "email": "hi@mytalkcv.com",
+    "github": "https://github.com/Simon-rss",
     "headline": {
-      "en": "I build production AI workflows that survive real traffic.",
-      "zh": "构建扛得住真实生产流量的 AI 工作流与智能体系统。"
+      "en": "Building production AI Agent platforms, reliable workflow engines, and developer tools.",
+      "zh": "构建可落地的企业级 AI Agent 平台、高可靠工作流引擎与开发者工具。"
     },
     "intro": {
-      "en": "Fictional demo profile showcasing TalkCV's interactive résumé format. All roles, project metrics, and contact details shown for Alex Chen are illustrative sample placeholders, not verified customer results.",
-      "zh": "虚构示例简历，仅用于演示 TalkCV 交互式个人简历效果。页面中陈明远（Alex Chen）的经历、项目指标与联系邮箱均为示例占位数据，并非真实客户成果。"
+      "en": "4+ years of full-stack & AI platform engineering focused on Agent orchestration, streaming workflow runtimes (ARQ / Redis Stream / SSE), and 0-to-1 human-AI collaborative apps. This live page runs on TalkCV — highlight any text to ask, or paste a Job Description in the AI widget to test match scoring.",
+      "zh": "4 年+ 全栈与 AI 平台研发经验，专注于 Agent 编排、异步流式调度链路（ARQ / Redis Stream / SSE）与人机协同应用从 0 到 1 交付。本页面即由我开发的 TalkCV 驱动——欢迎划选正文追问，或在右下角粘贴岗位 JD 实测匹配度。"
     },
     "education": {
-      "en": "B.S. in Computer Science · University of Washington (2016 – 2020)",
-      "zh": "计算机科学学士 · 华盛顿大学（2016 – 2020）"
+      "en": "B.Eng. in Computer Science & Technology (2018 – 2022)",
+      "zh": "计算机科学与技术 · 工学学士（2018 – 2022）"
     },
     "footerNote": {
-      "en": "Powered by TalkCV · Edit data/profile.json or run npm run generate",
-      "zh": "由 TalkCV 驱动 · 编辑 data/profile.json 或运行 npm run generate"
+      "en": "Powered by TalkCV · Turn your résumé into an interactive AI site in 30s",
+      "zh": "由 TalkCV 驱动 · 30 秒把你的简历也变成会对话的个人网站"
     }
   },
   "skills": [
@@ -40,337 +40,506 @@
     "TypeScript",
     "FastAPI",
     "React",
-    "PostgreSQL",
-    "Redis",
+    "Redis Stream & SSE",
+    "MySQL & PostgreSQL",
+    "AI Agent & MCP",
+    "LangGraph & RAG",
     "Cloudflare Workers",
-    "LLM Tool Calling",
-    "RAG & Evaluations",
-    "Docker & Kubernetes"
+    "Electron"
   ],
   "capabilities": [
     {
       "title": {
-        "en": "Agent Orchestration & Tooling",
-        "zh": "Agent 编排与工具调用"
+        "en": "Agent Orchestration & Human-AI Collaboration",
+        "zh": "Agent 编排与人机协同应用"
       },
       "summary": {
-        "en": "Deterministic state machines, structured JSON outputs, execution guards, and human-in-the-loop approval flows.",
-        "zh": "确定性状态机、结构化输出、并发执行保护以及人工审批闭环。"
+        "en": "Designing structured tool contracts, concurrency locks, and auditable execution flows so AI agents safely co-edit real business artifacts alongside humans.",
+        "zh": "设计结构化工具协议、人机并发锁与可审计执行链路，让 AI Agent 与业务人员在同一工作台安全协同。"
       }
     },
     {
       "title": {
-        "en": "Low-Latency Streaming & Gateways",
-        "zh": "低延迟流式链路与模型网关"
+        "en": "High-Reliability Streaming Workflow Runtimes",
+        "zh": "高可靠异步流式工作流引擎"
       },
       "summary": {
-        "en": "Multi-provider routing, automatic failover, SSE streaming, token accounting, and edge caching.",
-        "zh": "多模型供应商路由、自动容灾切换、SSE 流式传输、用量计量与边缘缓存。"
+        "en": "Building end-to-end async pipelines (API → ARQ → Worker → Redis Stream → SSE) with multimodal support, multi-instance DB migration locks, and production regression harnesses.",
+        "zh": "打通 API → ARQ → Worker → Redis Stream → SSE 全链路异步流式架构，覆盖多模态输入、多实例数据库迁移锁与生产级回归验证。"
       }
     },
     {
       "title": {
-        "en": "Production Reliability & Evals",
-        "zh": "生产级可靠性与评测体系"
+        "en": "0-to-1 Full-Stack & Developer Tools",
+        "zh": "0→1 全栈产品与开发者工具"
       },
       "summary": {
-        "en": "Offline regression suites, live trace observability, idempotent workers, and zero-downtime schema migrations.",
-        "zh": "离线回归评测集、实时链路追踪、幂等任务队列与零停机数据库迁移。"
+        "en": "Shipping complete SaaS products, edge-first web apps, cross-platform Electron/desktop patches, and idempotent automation kits from prototype to live revenue.",
+        "zh": "从架构到上线独立交付完整 SaaS、边缘 Web 应用、跨平台桌面补丁与幂等自动化工具链。"
+      }
+    },
+    {
+      "title": {
+        "en": "Enterprise AI Enablement & Testing Craft",
+        "zh": "企业级 AI 研发赋能与质量工程"
+      },
+      "summary": {
+        "en": "Bringing DeepAgent workflows into banking and hardware engineering teams for multi-dimensional code analysis, SQL impact review, and automated test generation.",
+        "zh": "将 DeepAgent 编排落地到大型金融与硬件研发测试场景，覆盖代码分析、SQL 影响评估与自动化测试生成。"
       }
     }
   ],
   "experiences": [
     {
-      "period": "2024 – Present",
+      "period": "2026.07 – Present",
       "company": {
-        "en": "Northstar Cloud AI",
-        "zh": "Northstar Cloud AI"
+        "en": "Enterprise AI Collaboration Platform",
+        "zh": "企业级 AI 协作平台（SaaS & 私有化）"
       },
       "role": {
-        "en": "Staff AI Systems Engineer",
-        "zh": "资深 AI 系统工程师"
+        "en": "AI Platform Engineer",
+        "zh": "AI 平台研发工程师"
       },
       "summary": {
-        "en": "Architected the company-wide Agent Runtime and multi-provider LLM Gateway serving 40M+ monthly requests with 99.95% availability.",
-        "zh": "主导公司级 Agent 运行时与多模型网关架构，稳定支撑月均 4000 万+ 请求，可用性达 99.95%。"
+        "en": "Leading full-stack and desktop engineering across Workflow orchestration, Super Agent, and collaborative productivity apps, shipping every major capability to both SaaS and on-prem deployments.",
+        "zh": "负责 Workflow 编排引擎、Super Agent 与协同办公方向前后端及桌面端研发，主导功能均完成私有化与 SaaS 双版本交付。"
       }
     },
     {
-      "period": "2022 – 2024",
+      "period": "2025.11 – 2026.07",
       "company": {
-        "en": "PulseGrid Analytics",
-        "zh": "PulseGrid 数据平台"
+        "en": "Tier-1 Banking AI Engineering Initiative",
+        "zh": "头部国有商业银行 AI 研发赋能项目"
       },
       "role": {
-        "en": "Senior Full-Stack Engineer",
-        "zh": "高级全栈工程师"
+        "en": "AI Agent Engineer / Tech Lead",
+        "zh": "AI Agent 开发工程师 / 应用技术负责人"
       },
       "summary": {
-        "en": "Led real-time SQL copilot and collaborative notebook features in TypeScript, React, and Python; reduced query authoring time by 52%.",
-        "zh": "主导实时 SQL 副驾驶与协作式 Notebook 研发，帮助分析师平均缩短 52% 的查询编写时间。"
+        "en": "Delivered multi-dimensional code analysis, SQL impact evaluation, test case generation, and SubAgent batch orchestration for large-scale financial R&D teams, plus internal DeepAgent architecture training.",
+        "zh": "面向大型金融研发测试场景落地代码多维分析、SQL 影响评估、测试案例生成与 SubAgent 批处理编排，开展 DeepAgent 架构培训。"
       }
     },
     {
-      "period": "2020 – 2022",
+      "period": "2024.12 – 2025.11",
       "company": {
-        "en": "HarborPay Systems",
-        "zh": "HarborPay 支付系统"
+        "en": "Smart Hardware & Telematics Tech",
+        "zh": "智能硬件与车联网科技企业"
       },
       "role": {
-        "en": "Backend Software Engineer",
-        "zh": "后端研发工程师"
+        "en": "AI Platform Engineer / Automation Lead",
+        "zh": "AI 平台开发工程师 / 自动化平台负责人"
       },
       "summary": {
-        "en": "Built idempotent settlement pipelines, automated regression harnesses, and anomaly detection alerts across high-throughput payment services.",
-        "zh": "负责高吞吐支付清算幂等流水线、自动化回归测试框架与异常告警系统建设。"
+        "en": "Extended Dify into an internal multi-model load-balanced AI gateway and dynamic knowledge base; led web-based remote device control and conversational log analysis platforms.",
+        "zh": "基于 Dify 二次开发内部多模型负载均衡与动态知识库平台，主导 Web 在线远控与对话式日志分析平台。"
+      }
+    },
+    {
+      "period": "2022.07 – 2024.12",
+      "company": {
+        "en": "Computing & Embedded Systems",
+        "zh": "计算与嵌入式系统企业"
+      },
+      "role": {
+        "en": "Software Engineer in Test",
+        "zh": "测试开发工程师"
+      },
+      "summary": {
+        "en": "Designed a dynamic-reference cross-platform automation testing framework and built log parsing, trace collection, and multi-module verification toolchains.",
+        "zh": "设计动态引用跨平台自动化测试框架，开发日志解析、Trace 采集与多模块自动化测试工具链。"
       }
     }
   ],
   "projects": [
     {
-      "slug": "pulse-agent-runtime",
+      "slug": "talkcv-interactive-resume",
       "accent": "mint",
-      "group": "platform",
+      "group": "product",
       "category": {
-        "en": "AGENT INFRASTRUCTURE",
-        "zh": "智能体基础设施"
+        "en": "AI SaaS · Open Source",
+        "zh": "AI SaaS · 开源产品"
       },
       "title": {
-        "en": "Pulse Agent Runtime & Lock Engine",
-        "zh": "Pulse 智能体运行时与并发锁引擎"
+        "en": "TalkCV — AI-Native Interactive Résumé & Portfolio Engine",
+        "zh": "TalkCV — AI 原生交互式简历与作品集引擎"
       },
       "role": {
-        "en": "Lead Architect · Python / FastAPI / Redis / React",
-        "zh": "首席架构师 · Python / FastAPI / Redis / React"
+        "en": "Solo Founder & Full-Stack Engineer",
+        "zh": "独立开发者 · 全栈架构"
       },
       "summary": {
-        "en": "A resumable multi-step Agent execution engine with tool sandboxing, optimistic state locks, and live SSE trace streaming.",
-        "zh": "支持断点续跑的多步 Agent 执行引擎，内置工具沙箱、乐观状态锁与实时 SSE 追踪流。"
+        "en": "Turns any PDF/DOCX/image résumé into a bilingual interactive website with dual rendering modes (structured deep skins + custom AI web mode), cited visitor AI Q&A, JD match scoring, private AI brief boundaries, QR A4 PDF export, and passcode privacy.",
+        "zh": "支持 PDF/DOCX/截图一键解析，提供结构化深度皮肤与自由创意网页双渲染模式，内置带引用的访客 AI 问答、JD 匹配报告、私密 AI 回答边界、带二维码 A4 打印简历与口令保护。"
       },
       "outcome": {
-        "en": "Cut failed multi-turn tool runs by 64% while enabling safe human-agent co-editing.",
-        "zh": "将多轮工具调用失败率降低 64%，并实现了安全的人机协同编辑。"
+        "en": "Shipped end-to-end with dual render engines, 6+ visual presets, and edge-lightweight architecture.",
+        "zh": "独立完成从解析、双渲染引擎、6+ 视觉皮肤到支付与边缘部署的完整闭环。"
       },
-      "tags": ["Agent", "FastAPI", "Redis", "SSE", "TypeScript"],
+      "tags": [
+        "TypeScript",
+        "React",
+        "Cloudflare Workers",
+        "AI Agent"
+      ],
       "facts": [
         {
-          "value": "-64%",
-          "label": { "en": "tool-run failure rate (sample)", "zh": "工具调用失败率（示例）" }
+          "value": "2",
+          "label": {
+            "en": "Dual Render Engines",
+            "zh": "双渲染引擎"
+          }
         },
         {
-          "value": "24",
-          "label": { "en": "typed agent tools (sample)", "zh": "强类型工具数（示例）" }
+          "value": "6+",
+          "label": {
+            "en": "Built-in Visual Skins",
+            "zh": "内置视觉皮肤"
+          }
         },
         {
-          "value": "180ms",
-          "label": { "en": "median TTFT (sample)", "zh": "中位首字延迟（示例）" }
+          "value": "0-DB",
+          "label": {
+            "en": "Edge-Light Architecture",
+            "zh": "边缘轻量架构"
+          }
         }
       ],
       "links": [
         {
-          "label": { "en": "Demo Repository", "zh": "示例仓库" },
+          "label": {
+            "en": "GitHub Repository",
+            "zh": "GitHub 源码仓库"
+          },
           "href": "https://github.com/Simon-rss/talkcv"
         }
       ],
       "sections": [
         {
-          "eyebrow": { "en": "THE PROBLEM", "zh": "核心问题" },
+          "eyebrow": {
+            "en": "ARCHITECTURE",
+            "zh": "核心架构"
+          },
           "title": {
-            "en": "Long-running agents silently corrupted shared workspaces",
-            "zh": "长耗时 Agent 静默破坏共享工作区状态"
+            "en": "Grounded AI Q&A with Verifiable Inline Citations",
+            "zh": "严格基于事实的内联引用 AI 问答"
           },
           "body": {
-            "en": "When users edited documents while an agent executed multi-step tool calls, race conditions caused lost updates and broken references.",
-            "zh": "当用户在 Agent 执行多步工具调用期间同时编辑文档时，竞态条件会导致更新丢失与引用损坏。"
-          },
-          "items": [
-            {
-              "en": "Introduced scoped execution locks with automatic lease expiry and clean rollback.",
-              "zh": "引入带自动租约过期与回滚机制的作用域执行锁。"
-            },
-            {
-              "en": "Streamed every tool input, output, and latency span to the UI via Redis Streams + SSE.",
-              "zh": "通过 Redis Streams + SSE 将每次工具输入、输出与耗时实时推送到前端。"
-            }
-          ]
-        },
-        {
-          "eyebrow": { "en": "VERIFICATION", "zh": "验证结果" },
-          "title": {
-            "en": "Deterministic replay and automated load testing",
-            "zh": "确定性回放与自动化压测验证"
-          },
-          "body": {
-            "en": "Every tool schema is validated at boundaries and replayed against a 90-case regression suite before release.",
-            "zh": "所有工具 Schema 在边界严格校验，并在每次发布前跑通 90 个场景的确定性回归集。"
+            "en": "Every visitor answer is grounded in the structured résumé schema plus owner-only private AI brief boundaries, emitting clickable citation markers that scroll directly to the matching project or experience card.",
+            "zh": "访客对话严格绑定结构化简历与仅作者可见的私有 AI 回答边界，回复自动附带可点击引用标记，点击直接定位到对应项目或经历。"
           }
         }
       ],
       "workflow": [
         {
           "number": "01",
-          "title": { "en": "Plan & Lock", "zh": "规划与加锁" },
+          "title": {
+            "en": "Parse & Structure",
+            "zh": "解析与结构化"
+          },
           "text": {
-            "en": "Acquire workspace lease and validate tool arguments against strict JSON schemas.",
-            "zh": "获取工作区租约锁，并按严格 JSON Schema 校验工具参数。"
+            "en": "Extracts text from PDF, DOCX, or résumé screenshots with strict numerical fidelity.",
+            "zh": "从 PDF、Word 或简历截图无损提取事实与量化指标，拒绝模型幻觉。"
           }
         },
         {
           "number": "02",
-          "title": { "en": "Execute & Stream", "zh": "执行与流式回报" },
+          "title": {
+            "en": "Dual-Mode Render & Publish",
+            "zh": "双模式渲染与发布"
+          },
           "text": {
-            "en": "Run sandboxed tools with retry policies and push live trace events over SSE.",
-            "zh": "在沙箱中带重试策略执行工具，并通过 SSE 实时推送轨迹。"
-          }
-        },
-        {
-          "number": "03",
-          "title": { "en": "Commit & Release", "zh": "提交与释放" },
-          "text": {
-            "en": "Persist incremental state diffs atomically and release the execution lock.",
-            "zh": "原子化落盘增量状态变更，并安全释放执行锁。"
+            "en": "Switches seamlessly between editable deep-skin layouts and sandboxed custom AI web pages.",
+            "zh": "支持在可编辑深度皮肤与沙箱自由创意网页间自由切换，并一键导出带码 A4 PDF。"
           }
         }
       ]
     },
     {
-      "slug": "mesh-llm-gateway",
+      "slug": "agent-collab-spreadsheet",
       "accent": "blue",
       "group": "enterprise",
       "category": {
-        "en": "AI GATEWAY",
-        "zh": "模型网关"
+        "en": "Enterprise Agent App",
+        "zh": "企业级 Agent 协同应用"
       },
       "title": {
-        "en": "Mesh Multi-Provider LLM Gateway",
-        "zh": "Mesh 多供应商大模型网关"
+        "en": "Enterprise Agent-Collaborative Spreadsheet System",
+        "zh": "企业级 Agent 协同电子表格系统"
       },
       "role": {
-        "en": "System Owner · Cloudflare Workers / TypeScript / Go",
-        "zh": "系统负责人 · Cloudflare Workers / TypeScript / Go"
+        "en": "0→1 Technical Owner",
+        "zh": "0→1 技术负责人"
       },
       "summary": {
-        "en": "Unified OpenAI-compatible routing layer with circuit breakers, automatic region failover, and per-tenant budget caps.",
-        "zh": "统一的 OpenAI 兼容路由层，提供熔断器、跨区域自动容灾与多租户预算配额管控。"
+        "en": "Architected a unified spreadsheet DSL with sharded on-demand loading, 7 incremental patch save operations, and human-AI concurrency execution locks, fully preserving cross-sheet formulas and XLSX import/export.",
+        "zh": "设计统一表格 DSL 与分片按需加载机制，实现 7 类增量补丁保存与人机并发运行锁，完整兼容跨 Sheet 公式与 XLSX 双向导入导出。"
       },
       "outcome": {
-        "en": "99.95% uptime across 4 model providers with 31% lower blended token cost.",
-        "zh": "横跨 4 家模型供应商实现 99.95% 可用性，综合 Token 成本降低 31%。"
+        "en": "Cut initial save upload payload by 46%, passed 107 targeted unit tests, and completed SaaS migration in 16 days.",
+        "zh": "首次保存上传体积降低 46%，通过 107 项定向单测，16 天完成 SaaS 迁移交付。"
       },
-      "tags": ["Gateway", "Cloudflare Workers", "TypeScript", "Observability"],
+      "tags": [
+        "TypeScript",
+        "Python",
+        "AI Agent",
+        "FastAPI"
+      ],
       "facts": [
         {
-          "value": "99.95%",
-          "label": { "en": "monthly availability (sample)", "zh": "月度可用性（示例）" }
+          "value": "18",
+          "label": {
+            "en": "Agent Sheet Tools",
+            "zh": "Agent 表格工具"
+          }
         },
         {
-          "value": "-31%",
-          "label": { "en": "blended token spend (sample)", "zh": "综合模型成本（示例）" }
+          "value": "-46%",
+          "label": {
+            "en": "First-Save Payload",
+            "zh": "首次保存上传体积"
+          }
         },
         {
-          "value": "4",
-          "label": { "en": "upstream providers (sample)", "zh": "接入上游厂商（示例）" }
+          "value": "107",
+          "label": {
+            "en": "Targeted Tests Passed",
+            "zh": "定向单测通过"
+          }
+        },
+        {
+          "value": "16 天",
+          "label": {
+            "en": "SaaS Migration",
+            "zh": "完成 SaaS 迁移"
+          }
         }
       ],
       "sections": [
         {
-          "eyebrow": { "en": "ARCHITECTURE", "zh": "架构设计" },
+          "eyebrow": {
+            "en": "ENGINEERING",
+            "zh": "关键突破"
+          },
           "title": {
-            "en": "Zero single-provider outage impact",
-            "zh": "消除单一模型厂商故障带来的业务中断"
+            "en": "Sharded Incremental Patches & Human-AI Concurrency Locks",
+            "zh": "分片增量补丁与人机并发保护"
           },
           "body": {
-            "en": "Built health-scored routing tables that shift traffic within 200ms whenever an upstream provider returns 429 or 5xx errors.",
-            "zh": "构建基于健康分的动态路由表，当上游返回 429 或 5xx 时在 200ms 内完成无感切流。"
+            "en": "Replaced full-workbook overwrites with 7 deterministic patch types and optimistic concurrency guards so users and 18 specialized Agent tools can operate safely on large workbooks.",
+            "zh": "用 7 类确定性增量补丁替代整表覆盖保存，配合人机并发锁与 18 个专属 Agent 工具，确保多人与 Agent 协同不丢数据。"
           }
         }
       ],
       "workflow": [
         {
           "number": "01",
-          "title": { "en": "Authenticate", "zh": "鉴权与限流" },
+          "title": {
+            "en": "Unified DSL & Sharding",
+            "zh": "统一 DSL 与分片加载"
+          },
           "text": {
-            "en": "Verify tenant key and enforce per-minute token and spend budgets at the edge.",
-            "zh": "在边缘节点校验租户密钥并执行分钟级 Token 与费用限额。"
+            "en": "Splits large workbooks by sheet/region for fast initial render and 46% smaller save payloads.",
+            "zh": "按 Sheet 与区域分片加载，显著降低首屏与首次保存传输体积（-46%）。"
           }
         },
         {
           "number": "02",
-          "title": { "en": "Route & Failover", "zh": "智能路由与容灾" },
+          "title": {
+            "en": "18-Tool Agent Execution",
+            "zh": "18 工具安全执行"
+          },
           "text": {
-            "en": "Select the healthiest provider by latency and automatically fall back on transient errors.",
-            "zh": "按延迟选择最优供应商，遇到瞬时故障自动切至备用通道。"
+            "en": "Locks active mutations during Agent runs while keeping cross-sheet formulas and XLSX fidelity intact.",
+            "zh": "在 Agent 执行期间加锁保护，完整保留跨表公式与 XLSX 兼容性。"
           }
         }
       ]
     },
     {
-      "slug": "evalbench-studio",
+      "slug": "multimodal-workflow-runtime",
       "accent": "coral",
-      "group": "product",
+      "group": "platform",
       "category": {
-        "en": "DEVELOPER PRODUCT",
-        "zh": "开发者产品"
+        "en": "AI Workflow Engine",
+        "zh": "多模态 AI 工作流引擎"
       },
       "title": {
-        "en": "EvalBench Prompt & Regression Studio",
-        "zh": "EvalBench 提示词与回归评测台"
+        "en": "High-Reliability Multimodal AI Workflow Runtime",
+        "zh": "高可靠多模态 AI Workflow 调度引擎"
       },
       "role": {
-        "en": "Creator · React / Next.js / Python",
-        "zh": "独立作者 · React / Next.js / Python"
+        "en": "Core Platform Engineer",
+        "zh": "核心平台研发"
       },
       "summary": {
-        "en": "Side-by-side LLM diff workbench that turns production chat logs into repeatable CI assertions.",
-        "zh": "支持并排对比的大模型评测工作台，把线上真实对话一键转化为可复用的 CI 断言。"
+        "en": "Built the end-to-end async streaming pipeline (API → ARQ enqueue → Worker event dispatch → Redis Stream → SSE), extended mixed image/video/document multimodal inputs, and serialized multi-instance DB migrations with MySQL named locks.",
+        "zh": "打通 API → ARQ 入队 → Worker 事件调度 → Redis Stream → SSE 全链路异步流式执行，扩展图片/视频/文档混合多模态输入，并基于 MySQL 命名锁实现多实例数据库迁移并发保护。"
       },
       "outcome": {
-        "en": "Adopted by 12 internal product teams, catching 100% of schema regressions before deploy.",
-        "zh": "被 12 个内部产品团队采用，上线前拦截 100% 的结构化输出回归问题。"
+        "en": "Supports up to 10 multimodal attachments per run, passed 30/30 production large-data regressions and 10 real concurrent migration tests.",
+        "zh": "支持单次最多 10 个多模态附件，通过 30/30 生产大数据回归测试与 10 路真实并发迁移验证。"
       },
-      "tags": ["Evals", "React", "CI/CD", "Python", "Agent"],
+      "tags": [
+        "Python",
+        "FastAPI",
+        "Redis Stream",
+        "MySQL"
+      ],
       "facts": [
         {
-          "value": "12",
-          "label": { "en": "teams onboarded (sample)", "zh": "接入研发团队（示例）" }
+          "value": "10",
+          "label": {
+            "en": "Attachments / Run",
+            "zh": "单次多模态附件上限"
+          }
         },
         {
-          "value": "450+",
-          "label": { "en": "golden eval cases (sample)", "zh": "黄金评测用例（示例）" }
+          "value": "30/30",
+          "label": {
+            "en": "Prod Data Regressions",
+            "zh": "生产大数据回归通过"
+          }
         },
         {
-          "value": "3x",
-          "label": { "en": "faster prompt iteration (sample)", "zh": "提示词迭代提速（示例）" }
+          "value": "10",
+          "label": {
+            "en": "Concurrent DB Locks",
+            "zh": "真实并发迁移测试"
+          }
         }
       ],
       "sections": [
         {
-          "eyebrow": { "en": "PRODUCT DESIGN", "zh": "产品设计" },
+          "eyebrow": {
+            "en": "RELIABILITY",
+            "zh": "高可靠保障"
+          },
           "title": {
-            "en": "Make prompt changes as reviewable as code PRs",
-            "zh": "让 Prompt 改动像代码 PR 一样可审查"
+            "en": "Decoupled Streaming & Multi-Instance Migration Safety",
+            "zh": "解耦流式调度与多实例迁移锁"
           },
           "body": {
-            "en": "Engineers inspect exact rubric scores, latency deltas, and cost changes in one clean diff view before merging.",
-            "zh": "工程师在合并前即可在同一视图查看精确评分、延迟变化与成本差异。"
+            "en": "Decoupled long-running multimodal nodes from HTTP workers via ARQ and Redis Streams with ordered SSE delivery, and eliminated startup race conditions across horizontal replicas with MySQL GET_LOCK.",
+            "zh": "通过 ARQ 与 Redis Stream 将耗时多模态节点与 HTTP 进程彻底解耦，并利用 MySQL 命名锁消除多副本启动迁移竞态。"
           }
         }
       ],
       "workflow": [
         {
           "number": "01",
-          "title": { "en": "Capture Traces", "zh": "采集真实样本" },
+          "title": {
+            "en": "Async Enqueue & Multimodal Parse",
+            "zh": "异步入队与多模态输入"
+          },
           "text": {
-            "en": "Promote edge-case production chats into anonymized golden datasets.",
-            "zh": "将线上边界案例一键脱敏并沉淀为黄金评测集。"
+            "en": "Accepts up to 10 mixed image/video/document attachments and dispatches to ARQ workers.",
+            "zh": "支持单次最多 10 个图片/视频/文档混合附件并交由 ARQ Worker 异步执行。"
           }
         },
         {
           "number": "02",
-          "title": { "en": "Gate Merges", "zh": "CI 门禁拦截" },
+          "title": {
+            "en": "Redis Stream → SSE Replay",
+            "zh": "Redis Stream → SSE 流式推送"
+          },
           "text": {
-            "en": "Run deterministic JSON and rubric checks on every pull request.",
-            "zh": "每次提交 PR 自动执行结构化校验与质量评分门禁。"
+            "en": "Streams node events reliably to clients with reconnect safety and verified production regressions.",
+            "zh": "通过 Redis Stream 向客户端稳定推送节点事件，通过 30/30 生产级大数据回归验证。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ai-devtools-and-factory",
+      "accent": "amber",
+      "group": "product",
+      "category": {
+        "en": "Open Source · DevTools",
+        "zh": "开源开发者工具与自动化"
+      },
+      "title": {
+        "en": "Cross-Platform AI DevTools & Content Distribution Kit",
+        "zh": "跨平台 AI 开发者工具与多平台内容分发套件"
+      },
+      "role": {
+        "en": "Open-Source Author",
+        "zh": "开源作者"
+      },
+      "summary": {
+        "en": "Open-source tooling spanning a macOS/Windows Chinese localization patch for Claude Desktop (3 Chinese locale variants) and an idempotent Postiz + multimodal video social distribution pipeline with mandatory human approval gates.",
+        "zh": "涵盖 macOS/Windows 双端 Claude Desktop 本地化补丁（覆盖 3 种中文区域变体），以及带 100% 人工审批闸门的 Postiz + 多模态视频海外社媒幂等排期流水线。"
+      },
+      "outcome": {
+        "en": "Covers 2 desktop OS platforms, 3 Chinese locale variants, and 100% human-in-the-loop publishing safeguards.",
+        "zh": "覆盖 2 大桌面操作系统与 3 种中文变体，实现 100% 人工审批防误发闸门。"
+      },
+      "tags": [
+        "Electron",
+        "TypeScript",
+        "Python",
+        "Automation"
+      ],
+      "facts": [
+        {
+          "value": "3",
+          "label": {
+            "en": "Chinese Locale Variants",
+            "zh": "中文区域变体支持"
+          }
+        },
+        {
+          "value": "2",
+          "label": {
+            "en": "Desktop OS Covered",
+            "zh": "桌面操作系统覆盖"
+          }
+        },
+        {
+          "value": "100%",
+          "label": {
+            "en": "Human Approval Gate",
+            "zh": "人工审批防误发闸门"
+          }
+        }
+      ],
+      "sections": [
+        {
+          "eyebrow": {
+            "en": "CRAFT",
+            "zh": "工程细节"
+          },
+          "title": {
+            "en": "Idempotent Pipelines with Mandatory Approval Gates",
+            "zh": "幂等流水线与人工审批闸门"
+          },
+          "body": {
+            "en": "Designed repeatable asset generation and social scheduling workflows where every external post passes an explicit human sign-off checkpoint to guarantee zero accidental publishes.",
+            "zh": "将多模态素材生产与海外社媒排期做成可重试的幂等流水线，每条对外内容必须经过显式人工确认闸门，杜绝误发。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": {
+            "en": "Cross-Platform Packaging",
+            "zh": "双端桌面补丁"
+          },
+          "text": {
+            "en": "Supports macOS and Windows Electron bundles across Simplified & Traditional Chinese locales.",
+            "zh": "兼容 macOS 与 Windows 双端桌面应用，覆盖 3 种中文区域变体。"
+          }
+        },
+        {
+          "number": "02",
+          "title": {
+            "en": "Approval-Gated Distribution",
+            "zh": "人工审批分发"
+          },
+          "text": {
+            "en": "Generates drafts and schedules to Postiz only after 100% explicit human approval.",
+            "zh": "生成素材与排期草稿，经 100% 显式人工审批后自动同步至发布队列。"
           }
         }
       ]
@@ -379,27 +548,24 @@
   "ai": {
     "enabled": true,
     "assistantName": {
-      "en": "Alex's AI Agent",
-      "zh": "Alex 的 AI 助手"
+      "en": "Simon's AI Assistant",
+      "zh": "Simon 的 AI 分身"
     },
     "welcome": {
-      "en": "Hi! Are you hiring, evaluating technical depth, or exploring a collaboration? Ask me anything about Alex's projects — or paste a Job Description for an honest match report.",
-      "zh": "你好！你是来招聘、做技术评估还是交流合作？可以问我任何关于 Alex 项目与架构的问题，也可以直接贴一段 JD 测匹配度。"
+      "en": "Hi! I'm Simon's AI assistant on TalkCV. Ask about his AI Agent platform architecture, streaming workflow runtime, or paste a Job Description to get a grounded fit analysis.",
+      "zh": "你好！我是 Simon（任思硕）的 AI 分身。你可以问我关于 Agent 协同表格、多模态工作流引擎或 TalkCV 的架构细节，也可以直接粘贴岗位 JD 实测匹配度。"
     },
     "suggestedPrompts": {
       "en": [
-        "Walk me through your strongest AI system",
-        "Switch theme to Terminal mode",
-        "Draft an interview invite email"
+        "Summarize Simon's strongest engineering projects in 30s",
+        "How did he achieve -46% payload on the Agent spreadsheet?",
+        "Check Simon's fit against my Job Description"
       ],
       "zh": [
-        "介绍一下你最硬核的 AI 系统",
-        "切换成暗黑极客主题看看",
-        "帮我起草一封面试邀约邮件"
+        "30 秒总结 Simon 最硬核的 2 个项目",
+        "Agent 协同表格是如何做到上传体积 -46% 的？",
+        "粘贴岗位 JD，实测与他的匹配度"
       ]
-    },
-    "guardrails": [
-      "Keep responses crisp, grounded, and honest about trade-offs."
-    ]
+    }
   }
 }

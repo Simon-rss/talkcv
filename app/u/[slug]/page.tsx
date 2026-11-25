@@ -10,12 +10,29 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const label = `${slug} · TalkCV`;
-  const desc = `Interactive AI resume & portfolio for @${slug}, hosted on TalkCV.`;
+  const hdrs = await headers();
+  const safeDecode = (val: string | null) => {
+    if (!val) return "";
+    try {
+      return decodeURIComponent(val);
+    } catch {
+      return "";
+    }
+  };
+  const ogName = safeDecode(hdrs.get("x-talkcv-og-name"));
+  const ogRole = safeDecode(hdrs.get("x-talkcv-og-role"));
+  const ogHeadline = safeDecode(hdrs.get("x-talkcv-og-headline"));
+  const label = ogName
+    ? ogRole
+      ? `${ogName} · ${ogRole} | TalkCV`
+      : `${ogName} · 个人交互简历 | TalkCV`
+    : `${slug} · TalkCV`;
+  const desc = ogHeadline || `Interactive AI resume & portfolio for @${slug}, hosted on TalkCV.`;
+  const ogImg = `/api/og?slug=${encodeURIComponent(slug)}`;
   return {
     title: { absolute: label },
     description: desc,
-    ...((await headers()).get("x-talkcv-robots") === "noindex" && { robots: { index: false, follow: false } }),
+    ...(hdrs.get("x-talkcv-robots") === "noindex" && { robots: { index: false, follow: false } }),
     alternates: {
       canonical: `/u/${slug}`,
     },
@@ -23,10 +40,13 @@ export async function generateMetadata({
       type: "profile",
       title: label,
       description: desc,
+      images: [ogImg],
     },
     twitter: {
+      card: "summary_large_image",
       title: label,
       description: desc,
+      images: [ogImg],
     },
   };
 }

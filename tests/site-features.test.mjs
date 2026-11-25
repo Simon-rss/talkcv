@@ -170,7 +170,7 @@ test("locked sites protect HTML, profile and chat, isolate unlocks and revoke th
   const html = await page.text();
   assert.match(html, /<meta name="robots" content="noindex, nofollow"/);
   assert.match(html, /此简历需要访问口令/);
-  assert.doesNotMatch(html, /B4test|Alex Chen/);
+  assert.doesNotMatch(html, /B4test|Simon · 任思硕/);
   assert.doesNotMatch(await (await call("/sitemap.xml")).text(), /private-test/);
   const locked = await call(path);
   assert.equal(locked.status, 401);

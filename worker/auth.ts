@@ -183,7 +183,7 @@ export async function sendEmail(env: AuthEnv, email: string, subject: string, te
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY?.trim()}`, "content-type": "application/json" },
     body: JSON.stringify({
-      from: env.AUTH_EMAIL_FROM?.trim() || "TalkCV <onboarding@resend.dev>",
+      from: env.AUTH_EMAIL_FROM?.trim() || "TalkCV <noreply@mytalkcv.com>",
       to: [email], subject, text,
     }),
   }).catch(() => null);

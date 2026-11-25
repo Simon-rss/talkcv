@@ -254,6 +254,8 @@ export function resolveStudioModel(body: ModelSettings, mode: string, plan: Plan
     baseUrl: deepseek ? "https://api.deepseek.com/v1" : (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "") };
 }
 
+const memGuestTrials = new Set<string>();
+
 export async function handleGenerateRequest(request: Request, env: ChatEnv): Promise<Response> {
   if (request.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed." });
@@ -275,6 +277,7 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
     stylePrompt?: unknown;
     hostedModelId?: unknown;
     providerMode?: unknown;
+    guestTrial?: unknown;
     apiKey?: unknown;
     baseUrl?: unknown;
     model?: unknown;
@@ -303,9 +306,34 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
         : "hosted";
 
   const user = await getSessionUser(request, env);
-  if (mode !== "byok" && !user) return jsonResponse(401, { error: "Please sign in with your email to use hosted credits." });
+  const isGuestTrial = mode !== "byok" && !user && body.guestTrial === true;
+  if (mode !== "byok" && !user && !isGuestTrial) {
+    return jsonResponse(401, { error: "Please sign in with your email to use hosted credits." });
+  }
+
+  let guestTrialKey = "";
+  if (isGuestTrial) {
+    const today = new Date().toISOString().slice(0, 10);
+    guestTrialKey = `guest_gen:${ip}:${today}`;
+    const used = env.PROFILES_KV
+      ? Boolean(await env.PROFILES_KV.get(guestTrialKey))
+      : memGuestTrials.has(guestTrialKey);
+    if (used) {
+      return jsonResponse(401, {
+        error: "Daily guest trial used. Please sign in with your email for 30 free lifetime credits.",
+        guestTrialExhausted: true,
+      });
+    }
+  }
+
   const plan = mode !== "byok" && user ? (await getUserPlan(user.email, env)).plan : "free";
-  const provider = resolveStudioModel(body, mode, plan, env);
+  const effectiveBody = isGuestTrial
+    ? {
+        ...body,
+        hostedModelId: env.DEEPSEEK_API_KEY?.trim() ? "deepseek-chat" : "gpt-4o-mini",
+      }
+    : body;
+  const provider = resolveStudioModel(effectiveBody, mode, plan, env);
   if (provider instanceof Response) return provider;
   const { apiKey, baseUrl, model } = provider;
 
@@ -346,7 +374,7 @@ Rules:
 Reference schema example:
 ${JSON.stringify(sanitizedSample)}`;
 
-  return withCreationCredits(user?.email, mode === "byok" ? 0 : CREDIT_COST.generate, env, request, async (signal) => {
+  return withCreationCredits(user?.email, mode === "byok" || isGuestTrial ? 0 : CREDIT_COST.generate, env, request, async (signal) => {
     const callGenerate = (targetModel: string) => fetch(`${baseUrl}/chat/completions`, {
       method: "POST", signal,
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
@@ -369,6 +397,13 @@ ${JSON.stringify(sanitizedSample)}`;
     const content = payload.choices?.[0]?.message?.content?.trim() ?? "";
     const parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     if (!parsed?.basics?.name) return jsonResponse(502, { error: "Model response is missing a résumé." });
-    return { profile: normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt, resumeText) };
+    if (isGuestTrial && guestTrialKey) {
+      if (env.PROFILES_KV) await env.PROFILES_KV.put(guestTrialKey, "1");
+      else memGuestTrials.add(guestTrialKey);
+    }
+    return {
+      profile: normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt, resumeText),
+      ...(isGuestTrial ? { guestTrialUsed: true } : {}),
+    };
   });
 }

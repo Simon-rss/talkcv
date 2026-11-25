@@ -29,6 +29,7 @@ import {
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleGenerateCustomPageRequest } from "./custom-page";
 import { handleAiEditRequest } from "./edit";
+import { handleOgImageRequest } from "./og";
 import { handleParseResumeImageRequest } from "./parse-image";
 import { handleGenerateRequest } from "./generate";
 import { handleDeleteProfileRequest, handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
@@ -97,6 +98,9 @@ const worker = {
     if (url.pathname === "/api/parse-resume-image") {
       return handleParseResumeImageRequest(request, env);
     }
+    if (url.pathname === "/api/og") {
+      return handleOgImageRequest(request, env);
+    }
     if (url.pathname === "/api/edit") {
       return handleAiEditRequest(request, env);
     }
@@ -139,6 +143,14 @@ const worker = {
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set("x-talkcv-robots", hidden ? "noindex" : "index");
       requestHeaders.set("x-talkcv-site-state", !record ? "not_found" : expired ? "expired" : locked ? "locked" : "loading");
+      if (record && !expired && !locked && !record.passcode) {
+        const ogName = record.profile.basics.name.zh || record.profile.basics.name.en || slug;
+        const ogRole = record.profile.basics.role.zh || record.profile.basics.role.en || "";
+        const ogHeadline = record.profile.basics.headline.zh || record.profile.basics.headline.en || "";
+        requestHeaders.set("x-talkcv-og-name", encodeURIComponent(ogName.slice(0, 80)));
+        requestHeaders.set("x-talkcv-og-role", encodeURIComponent(ogRole.slice(0, 120)));
+        requestHeaders.set("x-talkcv-og-headline", encodeURIComponent(ogHeadline.slice(0, 200)));
+      }
       const rendered = await handler.fetch(new Request(request, { headers: requestHeaders }));
       const headers = new Headers(rendered.headers);
       headers.set("cache-control", "private, no-store");

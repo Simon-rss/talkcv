@@ -47,7 +47,9 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const preset = params.get("coupon") || params.get("discount");
-    if (preset) setDiscountCode(preset.trim().toUpperCase());
+    if (!preset) return;
+    const raf = window.requestAnimationFrame(() => setDiscountCode(preset.trim().toUpperCase()));
+    return () => window.cancelAnimationFrame(raf);
   }, []);
 
   const [available, setAvailable] = useState<Record<"pro" | "max", Record<"month" | "year", boolean>> | null>(null);

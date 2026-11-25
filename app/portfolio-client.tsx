@@ -29,6 +29,7 @@ import {
   useState,
 } from "react";
 import { getSiteUrl, profile as defaultProfile } from "../lib/profile";
+import { DESIGNER_SAMPLE_PROFILE, PM_SAMPLE_PROFILE } from "../lib/sample-profiles";
 import {
   DEFAULT_SECTION_ORDER,
   isValidTheme,
@@ -88,7 +89,13 @@ function AppProvider({
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       const savedLang = window.localStorage.getItem("talkcv-lang");
-      if (!initialLang && (savedLang === "en" || savedLang === "zh")) setLangState(savedLang);
+      if (!initialLang) {
+        if (savedLang === "en" || savedLang === "zh") {
+          setLangState(savedLang);
+        } else if (typeof navigator !== "undefined" && navigator.language?.toLowerCase().startsWith("zh")) {
+          setLangState("zh");
+        }
+      }
       if (!profileSlug) {
         const savedTheme = window.localStorage.getItem("talkcv-theme");
         if (isValidTheme(savedTheme)) setThemeState(savedTheme);
@@ -421,10 +428,18 @@ function SiteFooter() {
 }
 
 function HomeContent({ exportSlug }: { exportSlug?: string }) {
-  const { profile, profileSlug, lang, theme } = useApp();
+  const { profile: baseProfile, profileSlug, lang, theme } = useApp();
   const { setChatOpen, askPrompt, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
   const [filter, setFilter] = useState<"all" | "platform" | "enterprise" | "product">("all");
+  const [sampleRole, setSampleRole] = useState<"founder" | "pm" | "designer">("founder");
   const isPersonalHosted = Boolean(profileSlug);
+  const profile = !isPersonalHosted
+    ? sampleRole === "pm"
+      ? PM_SAMPLE_PROFILE
+      : sampleRole === "designer"
+        ? DESIGNER_SAMPLE_PROFILE
+        : baseProfile
+    : baseProfile;
   const modalProject = modalProjectSlug
     ? profile.projects.find((p) => p.slug === modalProjectSlug) ?? null
     : null;
@@ -460,10 +475,10 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
   const visibleProjects =
     filter === "all" ? profile.projects : profile.projects.filter((p) => p.group === filter);
 
-  const heroStyle = isPersonalHosted ? (profile.layoutPlan?.heroStyle ?? "editorial-split") : "editorial-split";
-  const projectLayout = isPersonalHosted ? (profile.layoutPlan?.projectLayout ?? "card-grid") : "card-grid";
-  const fontPair = isPersonalHosted ? (profile.layoutPlan?.fontPair ?? "sans-modern") : "sans-modern";
-  const sectionOrder: ReadonlyArray<SectionId> = isPersonalHosted
+  const heroStyle = isPersonalHosted || sampleRole !== "founder" ? (profile.layoutPlan?.heroStyle ?? "editorial-split") : "editorial-split";
+  const projectLayout = isPersonalHosted || sampleRole !== "founder" ? (profile.layoutPlan?.projectLayout ?? "card-grid") : "card-grid";
+  const fontPair = isPersonalHosted || sampleRole !== "founder" ? (profile.layoutPlan?.fontPair ?? "sans-modern") : "sans-modern";
+  const sectionOrder: ReadonlyArray<SectionId> = isPersonalHosted || sampleRole !== "founder"
     ? (profile.layoutPlan?.sectionOrder ?? DEFAULT_SECTION_ORDER)
     : DEFAULT_SECTION_ORDER;
 
@@ -764,38 +779,58 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
                 <p className="af-eyebrow">TALKCV · AI INTERACTIVE RÉSUMÉ BUILDER</p>
                 <h2>
                   {lang === "zh"
-                    ? "把你的 PDF / Word 简历变成自带 AI 助手的个人网站"
-                    : "Turn your résumé into a hosted interactive portfolio with an AI assistant"}
+                    ? "30 秒把你的 PDF / Word 简历变成会跟 HR 对话的 AI 个人网站"
+                    : "Turn your PDF/Word résumé into an AI portfolio that talks back to recruiters"}
                 </h2>
                 <p className="af-storefront-desc">
                   {lang === "zh"
-                    ? `上传 PDF / Word 或粘贴简历，几秒生成专属 /u/你的名字 个人站，支持访客 AI 对话、JD 匹配、扫码 A4 PDF 导出、访客洞察和口令保护。Free 免费领取终身 ${PLAN_CREDITS.free} 点。Pro $20/月（$190/年），每月 ${PLAN_CREDITS.pro} 点。Max $49/月（$469/年），每月 ${PLAN_CREDITS.max.toLocaleString("en-US")} 点。`
-                    : `Upload PDF/DOCX or paste your résumé to publish a personal /u/handle portfolio with visitor AI chat, JD matching, QR-enabled A4 PDF export, visitor insights and passcode privacy. Free includes ${PLAN_CREDITS.free} lifetime credits. Pro is $20/mo ($190/yr) with ${PLAN_CREDITS.pro} monthly credits. Max is $49/mo ($469/yr) with ${PLAN_CREDITS.max.toLocaleString("en-US")} monthly credits.`}
+                    ? `上传 PDF / Word / 简历截图，免登录即可试玩生成专属 /u/你的名字 个人站，支持可验证引用 AI 对话、JD 匹配、扫码 A4 PDF 导出与口令隐私。Free 免费领取终身 ${PLAN_CREDITS.free} 点，Pro $20/30天，Max $49/30天。`
+                    : `Upload PDF/DOCX or a résumé screenshot to try generating your /u/handle site with cited AI Q&A, JD matching, QR-enabled A4 PDF export, and passcode privacy. Free includes ${PLAN_CREDITS.free} lifetime credits; Pro $20/mo, Max $49/mo.`}
                   {" "}{creationPricing(lang)}
                 </p>
               </div>
               <div className="af-storefront-actions">
                 <Link className="af-btn af-btn-primary" href={`/create?lang=${lang}`}>
                   <Sparkles size={15} />
-                  <span>{lang === "zh" ? "免费开始建站" : "Open TalkCV Studio"}</span>
+                  <span>{lang === "zh" ? "免费生成我的 AI 简历" : "Build my AI résumé free"}</span>
                 </Link>
+                <button
+                  type="button"
+                  className="af-btn af-btn-secondary"
+                  onClick={() => setChatOpen(true)}
+                >
+                  <span>{lang === "zh" ? "拿 JD 考考下方作者 AI ↓" : "Test author's AI with a JD ↓"}</span>
+                </button>
                 <Link className="af-btn af-btn-secondary" href={lang === "en" ? "/pricing?lang=en" : "/pricing"}>
-                  <span>{lang === "zh" ? "查看会员价格 ($0 / $20 / $49)" : "View Pricing ($0 / $20 / $49)"}</span>
+                  <span>{lang === "zh" ? "查看定价" : "Pricing"}</span>
                 </Link>
               </div>
             </div>
-            {profile.basics.email === "alex.chen@example.dev" && (
-              <div className="af-demo-notice" role="note">
-                <strong>
-                  {lang === "zh" ? "虚构示例演示（Alex Chen）" : "LIVE DEMO · FICTIONAL SAMPLE PROFILE (ALEX CHEN)"}
-                </strong>
-                <span>
-                  {lang === "zh"
-                    ? "下方展示的是用 TalkCV 生成的虚构人物示例站。所有经历、项目指标（如「12 个团队」「450+ 评测用例」）及示例邮箱 alex.chen@example.dev 均为演示占位数据，并非真实客户成绩。TalkCV 官方客服与条款见页面底部。"
-                    : "The portfolio below is an interactive fictional demo of what TalkCV creates. All metrics (including '12 teams onboarded' and '450+ golden eval cases'), roles, and alex.chen@example.dev are illustrative sample placeholders, not verified customer results. Official TalkCV support & policies are linked in the footer."}
-                </span>
+            <div className="af-demo-notice" role="note" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <span>
+                {lang === "zh"
+                  ? "👋 真实样板演示：下方默认展示 TalkCV 开发者 Simon · 任思硕本人的真实技术主页，也可切换不同职业样板："
+                  : "👋 Live showcase: Below is TalkCV creator Simon's real portfolio, or preview other role styles:"}
+              </span>
+              <div style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                {(
+                  [
+                    ["founder", lang === "zh" ? "👨‍💻 开发者本人（AI 工程）" : "👨‍💻 Founder (AI Eng)"],
+                    ["pm", lang === "zh" ? "📱 产品经理样板" : "📱 Product Manager"],
+                    ["designer", lang === "zh" ? "🎨 独立设计师样板" : "🎨 Indie Designer"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`af-icon-pill ${sampleRole === key ? "af-login-pill" : ""}`}
+                    onClick={() => setSampleRole(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </section>
       )}

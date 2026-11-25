@@ -77,4 +77,4 @@ npm test
 **TalkCV Noncommercial Source-Available License** — see [LICENSE](./LICENSE).
 
 - **Personal & noncommercial use**: Free to self-host and customize for your own personal résumé/portfolio.
-- **Commercial use / hosted SaaS**: Strictly prohibited without prior written authorization. Contact `rss1549596771@163.com` for commercial licensing.
+- **Commercial use / hosted SaaS**: Strictly prohibited without prior written authorization. Contact `hi@mytalkcv.com` for commercial licensing.

@@ -3,7 +3,7 @@ import type { Lang } from "../lib/schema";
 import { AccountMenu } from "./account-menu";
 import { PromoTopBanner } from "./promo-announcement";
 
-export const SUPPORT_EMAIL = "rss1549596771@163.com";
+export const SUPPORT_EMAIL = "hi@mytalkcv.com";
 
 export type PublicPageProps = { searchParams: Promise<{ lang?: string }> };
 

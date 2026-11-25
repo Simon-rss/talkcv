@@ -7,13 +7,13 @@ const siteUrl = getSiteUrl();
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "TalkCV — A resume website that talks back",
+    default: "TalkCV — 把 PDF 简历变成会对话的 AI 个人网站 | Interactive AI Résumé Builder",
     template: "%s | TalkCV",
   },
   icons: {
     icon: "/favicon.svg",
   },
-  description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
+  description: "上传 PDF / Word 或简历截图，30 秒生成带 AI 问答助手、JD 匹配与扫码 A4 PDF 导出的个人交互式简历网站。",
   alternates: {
     canonical: "/",
     types: {
@@ -23,13 +23,15 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "TalkCV",
-    title: "TalkCV — Interactive AI Resume",
-    description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
+    title: "TalkCV — 把 PDF 简历变成会对话的 AI 个人网站",
+    description: "上传 PDF / Word 或简历截图，30 秒生成带 AI 问答助手、JD 匹配与扫码 A4 PDF 导出的个人交互式简历网站。",
+    images: ["/api/og"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "TalkCV — Interactive AI Resume",
-    description: "Turn any resume into a bilingual, Agent-native interactive portfolio website.",
+    title: "TalkCV — 把 PDF 简历变成会对话的 AI 个人网站",
+    description: "Turn any PDF/Word/image résumé into an interactive AI portfolio website with JD matching and QR A4 PDF export.",
+    images: ["/api/og"],
   },
 };
 

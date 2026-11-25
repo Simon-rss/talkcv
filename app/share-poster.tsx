@@ -77,22 +77,46 @@ async function makePoster(profile: PortfolioProfile, slug: string, lang: Lang) {
   ctx.fillStyle = "#d7e8dc"; ctx.font = `500 33px ${sans}`;
   drawText(ctx, localize(basics.role, lang), 70, 438, 816, 43, 1);
 
-  ctx.fillStyle = "#152f29"; ctx.font = `600 48px ${sans}`;
-  drawText(ctx, localize(basics.headline, lang), 68, 596, 824, 64, 3);
-  ctx.font = `500 26px ${sans}`;
-  let x = 68, y = 785;
-  for (const skill of profile.skills.slice(0, 6)) {
-    const width = Math.min(ctx.measureText(skill).width + 46, 824);
-    if (x + width > 892) { x = 68; y += 62; }
-    if (y > 850) break;
-    ctx.beginPath(); ctx.roundRect(x, y, width, 48, 24); ctx.fillStyle = "#e1e9db"; ctx.fill();
-    ctx.fillStyle = "#193c32"; ctx.fillText(skill, x + 23, y + 33, width - 46);
+  ctx.fillStyle = "#152f29"; ctx.font = `600 44px ${sans}`;
+  drawText(ctx, localize(basics.headline, lang), 68, 578, 824, 58, 2);
+  ctx.font = `500 25px ${sans}`;
+  let x = 68, y = 710;
+  for (const skill of profile.skills.slice(0, 5)) {
+    const width = Math.min(ctx.measureText(skill).width + 44, 824);
+    if (x + width > 892) { x = 68; y += 56; }
+    if (y > 768) break;
+    ctx.beginPath(); ctx.roundRect(x, y, width, 44, 22); ctx.fillStyle = "#e1e9db"; ctx.fill();
+    ctx.fillStyle = "#193c32"; ctx.fillText(skill, x + 22, y + 30, width - 44);
     x += width + 12;
   }
 
-  ctx.fillStyle = "#c7d1c4"; ctx.fillRect(68, 937, 824, 2);
-  ctx.fillStyle = "#173e33"; ctx.font = `650 36px ${sans}`;
-  drawText(ctx, lang === "zh" ? "扫码与我的 AI 助手对话" : "Scan to chat with my AI assistant", 68, 1050, 523, 48, 2);
+  const topFacts = (profile.projects?.[0]?.facts ?? []).slice(0, 3);
+  if (topFacts.length > 0) {
+    const colW = Math.floor((824 - (topFacts.length - 1) * 16) / topFacts.length);
+    topFacts.forEach((fact, idx) => {
+      const fx = 68 + idx * (colW + 16);
+      ctx.beginPath(); ctx.roundRect(fx, 816, colW, 96, 16); ctx.fillStyle = "#ffffff"; ctx.fill();
+      ctx.strokeStyle = "#d4ddd0"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = "#103f36"; ctx.font = `800 34px ${sans}`;
+      ctx.fillText(fact.value.slice(0, 12), fx + 20, 860, colW - 40);
+      ctx.fillStyle = "#455e52"; ctx.font = `500 20px ${sans}`;
+      ctx.fillText(localize(fact.label, lang).slice(0, 16), fx + 20, 894, colW - 40);
+    });
+  }
+
+  ctx.fillStyle = "#c7d1c4"; ctx.fillRect(68, 944, 824, 2);
+  ctx.fillStyle = "#173e33"; ctx.font = `650 32px ${sans}`;
+  drawText(
+    ctx,
+    lang === "zh"
+      ? "扫码粘贴贵司 JD · 10 秒测匹配度 / 向我的 AI 分身提问"
+      : "Scan to test JD match or chat with my AI assistant",
+    68,
+    1040,
+    540,
+    46,
+    2,
+  );
   ctx.fillStyle = "#455e52"; ctx.font = `400 23px ${sans}`;
   drawText(ctx, `mytalkcv.com/u/${slug}`, 68, 1181, 535, 30, 2);
   ctx.imageSmoothingEnabled = false;

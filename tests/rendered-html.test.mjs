@@ -25,22 +25,28 @@ test("profile.json passes schema validation and contains zero private author dat
   const parsed = JSON.parse(raw);
   const errors = validateProfile(parsed);
   assert.deepEqual(errors, []);
-  assert.doesNotMatch(raw, /Ren Sishuo|rss1549596771|evose|tiwork|PRD-50|PRD-56/i);
+  assert.doesNotMatch(
+    raw,
+    /17762253924|rss1549596771|evose|tiwork|工商银行|ICBC|维客|锦图|陕西服装|PRD-50|PRD-56|\.xlsd|37\s*类告警|12\s*项缺陷/i,
+  );
+  assert.equal(parsed.basics?.email, "hi@mytalkcv.com");
 });
 
 test("SSR renders home page, case studies, and custom 404", async () => {
   const homeRes = await render("/");
   assert.equal(homeRes.status, 200);
   const homeHtml = await homeRes.text();
-  assert.match(homeHtml, /Alex Chen/);
+  assert.match(homeHtml, /Simon · 任思硕/);
+  assert.match(homeHtml, /TalkCV — 把 PDF 简历变成会对话的 AI 个人网站/);
+  assert.match(homeHtml, /\/api\/og/);
   assert.match(homeHtml, /data-theme="editorial"/);
-  assert.match(homeHtml, /Pulse Agent Runtime/);
+  assert.match(homeHtml, /TalkCV — AI-Native Interactive/);
   assert.match(homeHtml, /application\/ld\+json/);
 
-  const caseRes = await render("/projects/pulse-agent-runtime");
+  const caseRes = await render("/projects/talkcv-interactive-resume");
   assert.equal(caseRes.status, 200);
   const caseHtml = await caseRes.text();
-  assert.match(caseHtml, /Pulse Agent Runtime/);
+  assert.match(caseHtml, /TalkCV/);
   assert.match(caseHtml, /min read/);
 
   const notFoundRes = await render("/projects/does-not-exist");
@@ -54,9 +60,9 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   assert.equal(sitemapRes.status, 200);
   assert.match(sitemapRes.headers.get("content-type") ?? "", /application\/xml/i);
   const sitemapXml = await sitemapRes.text();
-  assert.match(sitemapXml, /\/projects\/pulse-agent-runtime/);
-  assert.match(sitemapXml, /\/projects\/mesh-llm-gateway/);
-  assert.match(sitemapXml, /\/projects\/evalbench-studio/);
+  assert.match(sitemapXml, /\/projects\/talkcv-interactive-resume/);
+  assert.match(sitemapXml, /\/projects\/agent-collab-spreadsheet/);
+  assert.match(sitemapXml, /\/projects\/multimodal-workflow-runtime/);
 
   const robotsRes = await render("/robots.txt");
   assert.equal(robotsRes.status, 200);
@@ -65,14 +71,14 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   const llmsRes = await render("/llms.txt");
   assert.equal(llmsRes.status, 200);
   const llmsTxt = await llmsRes.text();
-  assert.match(llmsTxt, /# Alex Chen/);
+  assert.match(llmsTxt, /# Simon · 任思硕/);
   assert.match(llmsTxt, /## Case studies/);
 
   const resumeRes = await render("/resume.json");
   assert.equal(resumeRes.status, 200);
   const resumeJson = await resumeRes.json();
-  assert.equal(resumeJson.basics?.name, "Alex Chen");
-  assert.equal(resumeJson.projects?.length, 3);
+  assert.equal(resumeJson.basics?.name, "Simon · 任思硕");
+  assert.equal(resumeJson.projects?.length, 4);
 
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-chat`);
@@ -136,12 +142,12 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   );
   assert.equal(getRes.status, 200);
   const getJson = await getRes.json();
-  assert.equal(getJson.profile?.basics?.name?.en, "Alex Chen");
+  assert.equal(getJson.profile?.basics?.name?.en, "Simon · 任思硕");
 
   const uPageRes = await render("/u/demo-user");
   assert.equal(uPageRes.status, 404); // fresh worker instance has empty memory store -> must return 404!
   const uHtml = await uPageRes.text();
-  assert.doesNotMatch(uHtml, /Alex Chen/);
+  assert.doesNotMatch(uHtml, /Simon · 任思硕/);
 
   // Pro hosted model is blocked on free tier; BYOK key is encrypted & masked
   const proBlockRes = await worker.fetch(

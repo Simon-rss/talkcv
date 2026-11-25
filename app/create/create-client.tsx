@@ -1130,7 +1130,7 @@ ${jd.slice(0, 3000)}`;
   };
 
   return (
-    <main className="af-create-page" data-theme={theme}>
+    <main className="af-create-page">
       <PromoTopBanner lang={lang} />
       <header className="af-header">
         <Link className="af-brand" href="/">
@@ -1574,7 +1574,7 @@ ${jd.slice(0, 3000)}`;
           </button>
         </form>
 
-        <section className="af-preview-panel" data-theme={theme} style={previewStyleVars}>
+        <section className="af-preview-panel">
           <div className="af-preview-bar">
             <span>
               {hasGenerated
@@ -1602,9 +1602,57 @@ ${jd.slice(0, 3000)}`;
           </div>
 
           <div className="af-publish-box">
+            <div className="af-publish-row" data-tour="publish">
+              <div className="af-handle-input">
+                <span>/u/</span>
+                <input
+                  type="text"
+                  value={handle}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setHandle(next);
+                    // A stored public setting belongs to its original handle.
+                    // Omitted settings preserve the target site's privacy on the server.
+                    if (noindex === false) setNoindex(undefined);
+                    if (protectedSite === false) setProtectedSite(undefined);
+                  }}
+                  placeholder="your-name"
+                  aria-label="Custom handle"
+                />
+              </div>
+              <button
+                type="button"
+                className="af-btn af-btn-primary af-publish-btn"
+                disabled={publishing}
+                onClick={() => startDraftAction("publish")}
+              >
+                <Globe size={15} />
+                <span>
+                  {publishing
+                    ? lang === "zh"
+                      ? "发布中…"
+                      : "Publishing…"
+                    : lang === "zh"
+                      ? "发布 / 更新专属链接"
+                      : "Publish / Update Link"}
+                </span>
+              </button>
+            </div>
+
+            <details className="af-advanced-drawer" style={{ margin: "10px 0 6px" }}>
+              <summary>
+                <span>
+                  <Lock size={12} style={{ verticalAlign: "-1px", marginRight: 5 }} />
+                  {lang === "zh" ? "发布与访客 AI 设置（模型 · 口令隐私 · AI 回答边界 · 白标）" : "Publish & Visitor AI settings (Model · Privacy · Brief · White-label)"}
+                </span>
+                <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>
+                  {chatMode === "byok" ? "BYOK" : chatHostedModelId}
+                </span>
+              </summary>
+              <div className="af-advanced-drawer-body">
             <div className="af-field-label">
               <span>
-                <Lock size={13} /> {lang === "zh" ? "STEP 2 · 配置发布后的访客 AI 对话模型" : "STEP 2 · Visitor AI Chat Model (for your live site)"}
+                <Lock size={13} /> {lang === "zh" ? "配置发布后的访客 AI 对话模型" : "Visitor AI Chat Model (for your live site)"}
               </span>
             </div>
             <div className="af-preset-row">
@@ -1728,42 +1776,6 @@ ${jd.slice(0, 3000)}`;
                   })}
               </details>
             </div>
-            <div className="af-publish-row" data-tour="publish">
-              <div className="af-handle-input">
-                <span>/u/</span>
-                <input
-                  type="text"
-                  value={handle}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setHandle(next);
-                    // A stored public setting belongs to its original handle.
-                    // Omitted settings preserve the target site's privacy on the server.
-                    if (noindex === false) setNoindex(undefined);
-                    if (protectedSite === false) setProtectedSite(undefined);
-                  }}
-                  placeholder="your-name"
-                  aria-label="Custom handle"
-                />
-              </div>
-              <button
-                type="button"
-                className="af-btn af-btn-primary af-publish-btn"
-                disabled={publishing}
-                onClick={() => startDraftAction("publish")}
-              >
-                <Globe size={15} />
-                <span>
-                  {publishing
-                    ? lang === "zh"
-                      ? "发布中…"
-                      : "Publishing…"
-                    : lang === "zh"
-                      ? "发布 / 更新专属链接"
-                      : "Publish / Update Link"}
-                </span>
-              </button>
-            </div>
             <label className="af-whitelabel-row">
               <input
                 type="checkbox"
@@ -1784,6 +1796,8 @@ ${jd.slice(0, 3000)}`;
               </span>
               {!user?.isMax && <Lock size={11} />}
             </label>
+              </div>
+            </details>
             {publishError && <div className="af-ai-error">{publishError}</div>}
             {publishedUrl && (
               <div className="af-published-banner">
@@ -2125,6 +2139,8 @@ ${jd.slice(0, 3000)}`;
 
           <div
             className="af-preview-canvas"
+            data-theme={theme}
+            style={previewStyleVars}
             data-font={generated.layoutPlan?.fontPair ?? "sans-modern"}
             data-bg-pattern={generated.designTokens?.bgPattern ?? "none"}
             data-card-style={generated.designTokens?.cardStyle ?? "elevated"}

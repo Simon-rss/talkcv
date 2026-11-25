@@ -422,7 +422,7 @@ function SiteFooter() {
 
 function HomeContent({ exportSlug }: { exportSlug?: string }) {
   const { profile, profileSlug, lang, theme } = useApp();
-  const { setChatOpen, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
+  const { setChatOpen, askPrompt, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
   const [filter, setFilter] = useState<"all" | "platform" | "enterprise" | "product">("all");
   const isPersonalHosted = Boolean(profileSlug);
   const modalProject = modalProjectSlug
@@ -562,6 +562,29 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
           )}
           {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
         </div>
+        {isPersonalHosted && profile.ai.enabled && (
+          <div className="af-quick-ask-row" aria-label={lang === "zh" ? "6 秒速览快捷提问" : "6-second quick ask"}>
+            <span className="af-quick-ask-label">
+              {lang === "zh" ? "⚡ 6 秒速览：" : "⚡ 6-sec scan:"}
+            </span>
+            {(profile.ai.suggestedPrompts?.[lang]?.length
+              ? profile.ai.suggestedPrompts[lang].slice(0, 3)
+              : lang === "zh"
+                ? ["30 秒总结他的核心亮点", "最硬核的项目成果是什么？", "对比我司岗位测匹配度"]
+                : ["Summarize top strengths in 30s", "What is their strongest project?", "Check fit against my JD"]
+            ).map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="af-quick-ask-pill"
+                onClick={() => askPrompt(q)}
+              >
+                <Sparkles size={11} />
+                <span>{q}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="af-skill-strip" aria-label="Skills">
           {profile.skills.map((skill) => (
             <span key={skill}>{skill}</span>

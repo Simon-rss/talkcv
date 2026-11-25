@@ -149,3 +149,15 @@ test("/api/generate-custom enforces auth, hydrates cover placeholders, and strip
   assert.ok(data.html.includes(`src="${cover}"`));
   assert.ok(!data.html.includes("<script"));
 });
+
+test("/api/parse-resume-image enforces auth and validates image payload", async () => {
+  const unauth = await worker.fetch(
+    new Request("http://localhost/api/parse-resume-image", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageDataUrl: "data:image/jpeg;base64,AAAA" }),
+    }),
+    { AUTH_SECRET: "ocr-test", OPENAI_API_KEY: "test-key", ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
+  );
+  assert.equal(unauth.status, 401);
+});

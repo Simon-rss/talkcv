@@ -170,8 +170,8 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
             flexWrap: "wrap",
             padding: "8px 14px",
             borderRadius: 12,
-            background: "rgba(15, 118, 110, 0.06)",
-            border: "1.5px solid rgba(15, 118, 110, 0.25)",
+            background: "rgba(0, 113, 227, 0.06)",
+            border: "1.5px solid rgba(0, 113, 227, 0.24)",
           }}
         >
           <span
@@ -181,7 +181,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
               gap: 6,
               fontSize: 13,
               fontWeight: 600,
-              color: "#0f766e",
+              color: "#0071e3",
             }}
           >
             <Tag size={14} />

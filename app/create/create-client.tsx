@@ -14,8 +14,10 @@ import {
   LogIn,
   LogOut,
   Palette,
+  Plus,
   RotateCcw,
   Sparkles,
+  Target,
   Trash2,
   User,
   Wand2,
@@ -99,6 +101,24 @@ async function resizeImageToProjectCoverDataUrl(file: File): Promise<string> {
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
   return canvas.toDataURL("image/webp", 0.82);
+}
+
+async function resizeResumeImageForOcr(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const maxDim = 1600;
+  const scale = Math.max(bitmap.width, bitmap.height) > maxDim ? maxDim / Math.max(bitmap.width, bitmap.height) : 1;
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.86);
 }
 
 interface ChatMeta {
@@ -264,6 +284,12 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [customGenLoading, setCustomGenLoading] = useState(false);
   const [customGenError, setCustomGenError] = useState<string | null>(null);
   const [customRefineInput, setCustomRefineInput] = useState("");
+  const [jdTailorOpen, setJdTailorOpen] = useState(false);
+  const [jdTailorText, setJdTailorText] = useState("");
+  const [jdTailorSuffix, setJdTailorSuffix] = useState("");
+  const [jdTailorLoading, setJdTailorLoading] = useState(false);
+  const [jdTailorError, setJdTailorError] = useState<string | null>(null);
+  const [jdTailorNote, setJdTailorNote] = useState<string | null>(null);
   const [editingSkills, setEditingSkills] = useState(false);
   const [skillsDraft, setSkillsDraft] = useState("");
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -693,11 +719,44 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       return;
     }
 
+    const isImage = ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp";
+    if (isImage) {
+      if (!user) {
+        setError(lang === "zh" ? "请先邮箱登录后再上传简历图片自动识别。" : "Please sign in first to extract text from résumé images.");
+        setAuthModalOpen(true);
+        return;
+      }
+      setUploadingFile(true);
+      try {
+        const imageDataUrl = await resizeResumeImageForOcr(file);
+        const res = await fetch("/api/parse-resume-image", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ imageDataUrl, fileName: name }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { text?: string; chars?: number; error?: string };
+        if (!res.ok || !data.text) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        setResumeText(data.text.slice(0, 14000));
+        setUploadNote(
+          lang === "zh"
+            ? `已从简历图片识别 ${data.chars ?? data.text.length} 字（${name}）`
+            : `Extracted ${data.chars ?? data.text.length} chars from ${name}`,
+        );
+      } catch (err) {
+        setError(localizeApiError(err instanceof Error ? err.message : "Image OCR failed.", lang));
+      } finally {
+        setUploadingFile(false);
+      }
+      return;
+    }
+
     if (ext !== "pdf" && ext !== "docx") {
       setError(
         lang === "zh"
-          ? "不支持该文件格式，请上传 .pdf、.docx、.md、.txt 或 .json 简历。"
-          : "Unsupported format. Please upload .pdf, .docx, .md, .txt, or .json.",
+          ? "不支持该文件格式，请上传 .pdf、.docx、简历截图（.png/.jpg/.webp）、.md、.txt 或 .json。"
+          : "Unsupported format. Please upload .pdf, .docx, image (.png/.jpg/.webp), .md, .txt, or .json.",
       );
       return;
     }
@@ -946,6 +1005,73 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     ?? user?.sites.find((slug) => slug === normalizeSlug(handle)) ?? user?.sites[0];
   const remaining = user?.credits.remaining ?? PLAN_CREDITS.free;
   const balanceLabel = lang === "zh" ? `剩余 ${remaining} 点` : `${remaining} credits left`;
+  const tailorSiteForJd = async () => {
+    const jd = jdTailorText.trim();
+    if (!jd) return;
+    if (!user && genMode !== "byok") {
+      setAuthModalOpen(true);
+      return;
+    }
+    const canAiEdit = Boolean(user?.isPro) || (genMode === "byok" && Boolean(genApiKey.trim()));
+    if (!canAiEdit) {
+      setPricingOpen(true);
+      return;
+    }
+    setJdTailorLoading(true);
+    setJdTailorError(null);
+    setJdTailorNote(null);
+    try {
+      const instruction = `Tailor this portfolio specifically for the target JD below:
+1) Reorder projects[] so the most relevant project for this JD is first.
+2) Move matching skills to the front of skills[].
+3) Sharpen basics.headline, basics.intro, and project summaries to emphasize genuine alignment with the JD.
+4) STRICT FACTUAL FIDELITY: NEVER invent any skills, employers, projects, or metrics not already present in the profile. Keep both en and zh synced.
+
+Target JD:
+${jd.slice(0, 3000)}`;
+      const res = await fetch("/api/edit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profile: generated,
+          theme,
+          instruction,
+          providerMode: genMode,
+          hostedModelId: genModelId,
+          ...(genMode === "byok" ? { apiKey: genApiKey, baseUrl: genBaseUrl, model: genModel } : {}),
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        profile?: PortfolioProfile;
+        summary?: string;
+        credits?: CreditBalance;
+        error?: string;
+      };
+      if (!res.ok || !json.profile) {
+        if (res.status === 402 || res.status === 403) setPricingOpen(true);
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      if (json.credits) updateCredits(user?.email, json.credits);
+      setGenerated(json.profile);
+      setHasGenerated(true);
+      const cleanSuffix = normalizeSlug(jdTailorSuffix);
+      if (cleanSuffix) {
+        const base = normalizeSlug(handle || generated.basics.name.en || "cv").replace(new RegExp(`-${cleanSuffix}$`), "");
+        setHandle(normalizeSlug(`${base}-${cleanSuffix}`));
+      }
+      setJdTailorNote(
+        json.summary ||
+          (lang === "zh"
+            ? "已按目标 JD 完成亮点重排与定制，点击上方「发布」即可生成专属定制链接！"
+            : "Portfolio tailored to the target JD. Click Publish to launch your targeted link!"),
+      );
+    } catch (err) {
+      setJdTailorError(localizeApiError(err instanceof Error ? err.message : "JD tailoring failed.", lang));
+    } finally {
+      setJdTailorLoading(false);
+    }
+  };
+
   const generateCustomWebPage = async (isRefine = false) => {
     if (!user && genMode !== "byok") {
       setAuthModalOpen(true);
@@ -1212,12 +1338,12 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                       ? "解析文件中…"
                       : "Parsing…"
                     : lang === "zh"
-                      ? "上传 PDF / Word / MD"
-                      : "Upload PDF / DOCX / MD"}
+                      ? "上传 PDF / Word / 截图图片 / MD"
+                      : "Upload PDF / DOCX / Image / MD"}
                 </span>
                 <input
                   type="file"
-                  accept=".pdf,.docx,.doc,.md,.txt,.json"
+                  accept=".pdf,.docx,.doc,.md,.txt,.json,.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
                   onChange={onFileUpload}
                   disabled={uploadingFile}
                   hidden
@@ -1257,25 +1383,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
 
           <div className="af-field-label">
             <span>
-              <Palette size={13} /> {lang === "zh" ? "2. 选择布局主题" : "2. Choose layout theme"}
-            </span>
-          </div>
-          <div className="af-preset-row">
-            {THEMES.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={theme === t.id ? "active" : ""}
-                onClick={() => setTheme(t.id)}
-              >
-                {localize(t.label, lang)}
-              </button>
-            ))}
-          </div>
-
-          <div className="af-field-label">
-            <span>
-              <Wand2 size={13} /> {lang === "zh" ? "3. 自定义风格与人设提示词（可选）" : "3. Style & AI Persona Prompt (optional)"}
+              <Wand2 size={13} /> {lang === "zh" ? "2. 选择视觉风格（点一下右侧实时换肤）" : "2. Pick a style preset (instant preview)"}
             </span>
           </div>
           <div className="af-preset-row">
@@ -1308,16 +1416,44 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             maxLength={400}
             placeholder={
               lang === "zh"
-                ? "例：重点突出高并发和 AI 量化指标，主色用深海蓝，AI 回复风格简洁犀利…"
-                : "e.g. Emphasize distributed systems metrics, deep blue accent, concise staff-engineer voice…"
+                ? "可选：补充一句自定义风格或人设要求（如：重点突出高并发指标、黑金画册感…）"
+                : "Optional: add custom style or tone direction…"
             }
           />
 
-          <div className="af-field-label">
-            <span>
-              <KeyRound size={13} /> {lang === "zh" ? "4. 选择简历生成模型" : "4. Resume generation model"}
-            </span>
-          </div>
+          <details className="af-advanced-drawer">
+            <summary>
+              <span>
+                ⚙️ {lang === "zh" ? "高级设置（模型 / 基础主题 / 自带 Key）" : "Advanced settings (Model / Theme / BYOK)"}
+              </span>
+              <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>
+                {genMode === "byok" ? `BYOK · ${genModel}` : genModelId}
+              </span>
+            </summary>
+            <div className="af-advanced-drawer-body">
+              <div className="af-field-label">
+                <span>
+                  <Palette size={13} /> {lang === "zh" ? "基础布局主题" : "Base theme"}
+                </span>
+              </div>
+              <div className="af-preset-row">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={theme === t.id ? "active" : ""}
+                    onClick={() => setTheme(t.id)}
+                  >
+                    {localize(t.label, lang)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="af-field-label">
+                <span>
+                  <KeyRound size={13} /> {lang === "zh" ? "简历生成模型" : "Resume generation model"}
+                </span>
+              </div>
           <div className="af-preset-row">
             <button
               type="button"
@@ -1419,6 +1555,8 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
               </div>
             </>
           )}
+            </div>
+          </details>
 
           {error && <div className="af-ai-error">{error}</div>}
 
@@ -1681,24 +1819,87 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             <span className="af-inline-edit-hint">
               ✏️ {lang === "zh" ? "所见即所得：点击下方任意文字或指标即可直接编辑" : "WYSIWYG: Click any text or metric below to edit inline"}
             </span>
-            <button
-              type="button"
-              className={`af-icon-pill ${refineOpen ? "af-login-pill" : ""}`}
-              onClick={() => {
-                const canAiEdit = Boolean(user?.isPro) || (genMode === "byok" && Boolean(genApiKey.trim()));
-                if (!canAiEdit) {
-                  setPricingOpen(true);
-                  return;
-                }
-                setRefineOpen((prev) => !prev);
-              }}
-            >
-              <Sparkles size={13} />
-              <span>
-                {lang === "zh" ? "AI 实时精修" : "AI Live Refine"} · {creditCostLabel(CREDIT_COST.edit, lang, genMode === "byok")}
-              </span>
-            </button>
+            <div style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={`af-icon-pill ${jdTailorOpen ? "af-login-pill" : ""}`}
+                onClick={() => {
+                  const canAiEdit = Boolean(user?.isPro) || (genMode === "byok" && Boolean(genApiKey.trim()));
+                  if (!canAiEdit) {
+                    setPricingOpen(true);
+                    return;
+                  }
+                  setJdTailorOpen((prev) => !prev);
+                }}
+              >
+                <Target size={13} />
+                <span>
+                  {lang === "zh" ? "按 JD 定制站点" : "Tailor to JD"} · {creditCostLabel(CREDIT_COST.edit, lang, genMode === "byok")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={`af-icon-pill ${refineOpen ? "af-login-pill" : ""}`}
+                onClick={() => {
+                  const canAiEdit = Boolean(user?.isPro) || (genMode === "byok" && Boolean(genApiKey.trim()));
+                  if (!canAiEdit) {
+                    setPricingOpen(true);
+                    return;
+                  }
+                  setRefineOpen((prev) => !prev);
+                }}
+              >
+                <Sparkles size={13} />
+                <span>
+                  {lang === "zh" ? "AI 实时精修" : "AI Live Refine"} · {creditCostLabel(CREDIT_COST.edit, lang, genMode === "byok")}
+                </span>
+              </button>
+            </div>
           </div>
+
+          {jdTailorOpen && (
+            <div className="af-jd-tailor-panel">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <strong style={{ fontSize: 13 }}>
+                  🎯 {lang === "zh" ? "按目标岗位 JD 一键派生定制简历站（严格不编造数据）" : "Tailor this résumé site to a target JD (strictly grounded)"}
+                </strong>
+                <button type="button" className="af-item-delete-btn" onClick={() => setJdTailorOpen(false)} aria-label="Close">
+                  <X size={12} />
+                </button>
+              </div>
+              <textarea
+                rows={3}
+                className="af-textarea"
+                value={jdTailorText}
+                onChange={(e) => setJdTailorText(e.target.value)}
+                placeholder={lang === "zh" ? "粘贴目标岗位 JD（职位描述 / 任职要求）…" : "Paste target job description here…"}
+              />
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+                  <span>{lang === "zh" ? "专属短链后缀（可选）" : "Custom link suffix (optional)"}</span>
+                  <input
+                    type="text"
+                    className="af-single-input"
+                    style={{ width: 150, margin: 0, padding: "5px 10px" }}
+                    value={jdTailorSuffix}
+                    onChange={(e) => setJdTailorSuffix(e.target.value)}
+                    placeholder={lang === "zh" ? "如 bytedance" : "e.g. stripe"}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="af-btn af-btn-primary"
+                  disabled={jdTailorLoading || !jdTailorText.trim()}
+                  onClick={() => void tailorSiteForJd()}
+                >
+                  <Target size={13} />
+                  <span>{jdTailorLoading ? (lang === "zh" ? "正在按 JD 定制…" : "Tailoring…") : (lang === "zh" ? "一键定制当前站 →" : "Tailor site now →")}</span>
+                </button>
+              </div>
+              {jdTailorNote && <div className="af-quota-note">✓ {jdTailorNote}</div>}
+              {jdTailorError && <div className="af-ai-error">{jdTailorError}</div>}
+            </div>
+          )}
 
           <OutreachPanel key={`${user?.email ?? ""}:${lang}`} lang={lang} signedIn={Boolean(user)}
             profile={hasGenerated ? generated : undefined} onCredits={(credits) => updateCredits(user?.email, credits)} onSignIn={() => setAuthModalOpen(true)}
@@ -2135,56 +2336,73 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
             )}
 
             <div className="af-preview-projects">
-              {generated.projects.slice(0, 3).map((proj, pIdx) => (
-                <article key={proj.slug} className="af-card">
-                  <div className="af-project-cover-upload">
-                    {proj.coverImage && (
-                      <img src={proj.coverImage} alt="" className="af-project-cover-thumb" />
-                    )}
-                    <label className="af-icon-pill" style={{ cursor: "pointer" }}>
-                      <ImagePlus size={12} />
-                      <span>{proj.coverImage ? (lang === "zh" ? "更换项目截图" : "Replace cover") : (lang === "zh" ? "上传项目截图" : "Add screenshot")}</span>
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        hidden
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          e.target.value = "";
-                          if (!file) return;
-                          try {
-                            const dataUrl = await resizeImageToProjectCoverDataUrl(file);
+              {generated.projects.map((proj, pIdx) => (
+                <article key={`${proj.slug}-${pIdx}`} className="af-card">
+                  <div className="af-card-head-actions">
+                    <div className="af-project-cover-upload" style={{ margin: 0 }}>
+                      {proj.coverImage && (
+                        <img src={proj.coverImage} alt="" className="af-project-cover-thumb" />
+                      )}
+                      <label className="af-icon-pill" style={{ cursor: "pointer" }}>
+                        <ImagePlus size={12} />
+                        <span>{proj.coverImage ? (lang === "zh" ? "更换项目截图" : "Replace cover") : (lang === "zh" ? "上传项目截图" : "Add screenshot")}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          hidden
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (!file) return;
+                            try {
+                              const dataUrl = await resizeImageToProjectCoverDataUrl(file);
+                              setGenerated((prev) => ({
+                                ...prev,
+                                projects: prev.projects.map((item, idx) =>
+                                  idx === pIdx ? { ...item, coverImage: dataUrl } : item,
+                                ),
+                              }));
+                              setHasGenerated(true);
+                            } catch {
+                              // ignore invalid image
+                            }
+                          }}
+                        />
+                      </label>
+                      {proj.coverImage && (
+                        <button
+                          type="button"
+                          className="af-icon-pill"
+                          onClick={() => {
                             setGenerated((prev) => ({
                               ...prev,
                               projects: prev.projects.map((item, idx) =>
-                                idx === pIdx ? { ...item, coverImage: dataUrl } : item,
+                                idx === pIdx ? { ...item, coverImage: undefined } : item,
                               ),
                             }));
                             setHasGenerated(true);
-                          } catch {
-                            // ignore invalid image
-                          }
-                        }}
-                      />
-                    </label>
-                    {proj.coverImage && (
-                      <button
-                        type="button"
-                        className="af-icon-pill"
-                        onClick={() => {
-                          setGenerated((prev) => ({
-                            ...prev,
-                            projects: prev.projects.map((item, idx) =>
-                              idx === pIdx ? { ...item, coverImage: undefined } : item,
-                            ),
-                          }));
-                          setHasGenerated(true);
-                        }}
-                      >
-                        <X size={11} />
-                        <span>{lang === "zh" ? "移除" : "Remove"}</span>
-                      </button>
-                    )}
+                          }}
+                        >
+                          <X size={11} />
+                          <span>{lang === "zh" ? "移除" : "Remove"}</span>
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="af-item-delete-btn"
+                      title={lang === "zh" ? "删除此项目" : "Delete project"}
+                      aria-label={lang === "zh" ? "删除此项目" : "Delete project"}
+                      onClick={() => {
+                        setGenerated((prev) => ({
+                          ...prev,
+                          projects: prev.projects.filter((_, idx) => idx !== pIdx),
+                        }));
+                        setHasGenerated(true);
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
                   <span
                     className="af-card-cat af-editable"
@@ -2298,6 +2516,177 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
                   </div>
                 </article>
               ))}
+              <button
+                type="button"
+                className="af-add-item-btn"
+                onClick={() => {
+                  const idx = generated.projects.length + 1;
+                  setGenerated((prev) => ({
+                    ...prev,
+                    projects: [
+                      ...prev.projects,
+                      {
+                        slug: `project-${idx}-${Date.now().toString(36).slice(-4)}`,
+                        accent: "blue",
+                        group: "product",
+                        category: { en: "Project", zh: "项目" },
+                        title: { en: `New Project ${idx}`, zh: `新项目 ${idx}` },
+                        role: { en: "Owner", zh: "项目负责人" },
+                        summary: { en: "Click to describe your impact and technical highlights.", zh: "点击此处编辑项目简介与核心成果。" },
+                        outcome: { en: "Delivered measurable results.", zh: "实现可量化业务成果。" },
+                        tags: ["Highlight"],
+                        facts: [{ value: "100%", label: { en: "Impact", zh: "核心指标" } }],
+                        sections: [],
+                        workflow: [],
+                      },
+                    ],
+                  }));
+                  setHasGenerated(true);
+                }}
+              >
+                <Plus size={14} />
+                <span>{lang === "zh" ? "添加一个新项目" : "Add a new project"}</span>
+              </button>
+            </div>
+
+            <div className="af-studio-exp-section">
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", letterSpacing: "0.04em" }}>
+                {lang === "zh" ? "教育背景与经历（点击文字可直接改）" : "EDUCATION & EXPERIENCE (CLICK TO EDIT)"}
+              </div>
+              <div className="af-exp-editor-card">
+                <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>
+                  🎓 {lang === "zh" ? "教育背景" : "Education"}
+                </span>
+                <p
+                  className="af-editable"
+                  style={{ margin: 0, fontSize: 13 }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => {
+                    const val = e.currentTarget.textContent?.trim() ?? "";
+                    setGenerated((prev) => ({
+                      ...prev,
+                      basics: { ...prev.basics, education: { ...prev.basics.education, [lang]: val } },
+                    }));
+                    setHasGenerated(true);
+                  }}
+                >
+                  {localize(generated.basics.education, lang) || (lang === "zh" ? "点击填写院校、专业与 GPA" : "Click to add school, degree & GPA")}
+                </p>
+              </div>
+              {generated.experiences.map((exp, eIdx) => (
+                <div key={`${exp.period}-${eIdx}`} className="af-exp-editor-card">
+                  <div className="af-card-head-actions" style={{ marginBottom: 2 }}>
+                    <span
+                      className="af-editable"
+                      style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const val = e.currentTarget.textContent?.trim() ?? "";
+                        setGenerated((prev) => ({
+                          ...prev,
+                          experiences: prev.experiences.map((it, i) => (i === eIdx ? { ...it, period: val } : it)),
+                        }));
+                        setHasGenerated(true);
+                      }}
+                    >
+                      {exp.period}
+                    </span>
+                    <button
+                      type="button"
+                      className="af-item-delete-btn"
+                      title={lang === "zh" ? "删除此段经历" : "Delete experience"}
+                      aria-label={lang === "zh" ? "删除此段经历" : "Delete experience"}
+                      onClick={() => {
+                        setGenerated((prev) => ({
+                          ...prev,
+                          experiences: prev.experiences.filter((_, i) => i !== eIdx),
+                        }));
+                        setHasGenerated(true);
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <strong
+                    className="af-editable"
+                    style={{ fontSize: 14 }}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const val = e.currentTarget.textContent?.trim() ?? "";
+                      setGenerated((prev) => ({
+                        ...prev,
+                        experiences: prev.experiences.map((it, i) =>
+                          i === eIdx ? { ...it, company: { ...it.company, [lang]: val } } : it,
+                        ),
+                      }));
+                      setHasGenerated(true);
+                    }}
+                  >
+                    {localize(exp.company, lang)}
+                  </strong>
+                  <span
+                    className="af-editable"
+                    style={{ fontSize: 12.5, color: "var(--muted)" }}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const val = e.currentTarget.textContent?.trim() ?? "";
+                      setGenerated((prev) => ({
+                        ...prev,
+                        experiences: prev.experiences.map((it, i) =>
+                          i === eIdx ? { ...it, role: { ...it.role, [lang]: val } } : it,
+                        ),
+                      }));
+                      setHasGenerated(true);
+                    }}
+                  >
+                    {localize(exp.role, lang)}
+                  </span>
+                  <p
+                    className="af-editable"
+                    style={{ margin: "4px 0 0", fontSize: 13 }}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      const val = e.currentTarget.textContent?.trim() ?? "";
+                      setGenerated((prev) => ({
+                        ...prev,
+                        experiences: prev.experiences.map((it, i) =>
+                          i === eIdx ? { ...it, summary: { ...it.summary, [lang]: val } } : it,
+                        ),
+                      }));
+                      setHasGenerated(true);
+                    }}
+                  >
+                    {localize(exp.summary, lang)}
+                  </p>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="af-add-item-btn"
+                onClick={() => {
+                  setGenerated((prev) => ({
+                    ...prev,
+                    experiences: [
+                      ...prev.experiences,
+                      {
+                        period: "2025 - Present",
+                        company: { en: "Company / Organization", zh: "公司 / 组织名称" },
+                        role: { en: "Role Title", zh: "担任职位" },
+                        summary: { en: "Click to describe key responsibilities and achievements.", zh: "点击此处编辑职责与核心成果。" },
+                      },
+                    ],
+                  }));
+                  setHasGenerated(true);
+                }}
+              >
+                <Plus size={14} />
+                <span>{lang === "zh" ? "添加一段经历" : "Add an experience"}</span>
+              </button>
             </div>
           </div>
           </>

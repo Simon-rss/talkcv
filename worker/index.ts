@@ -29,6 +29,7 @@ import {
 import { handleChatRequest, type ChatEnv } from "./chat";
 import { handleGenerateCustomPageRequest } from "./custom-page";
 import { handleAiEditRequest } from "./edit";
+import { handleParseResumeImageRequest } from "./parse-image";
 import { handleGenerateRequest } from "./generate";
 import { handleDeleteProfileRequest, handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
 import {
@@ -92,6 +93,9 @@ const worker = {
     }
     if (url.pathname === "/api/generate-custom") {
       return handleGenerateCustomPageRequest(request, env);
+    }
+    if (url.pathname === "/api/parse-resume-image") {
+      return handleParseResumeImageRequest(request, env);
     }
     if (url.pathname === "/api/edit") {
       return handleAiEditRequest(request, env);

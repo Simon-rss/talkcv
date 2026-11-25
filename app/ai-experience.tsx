@@ -74,6 +74,7 @@ interface PortfolioAIContextValue {
   persona: VisitorPersona;
   setPersona: (p: VisitorPersona) => void;
   prefillPrompt: string | null;
+  askPrompt: (prompt: string) => void;
   clearPrefillPrompt: () => void;
   pendingJd: string | null;
   clearPendingJd: () => void;
@@ -269,6 +270,10 @@ export function PortfolioAIProvider({
       persona,
       setPersona,
       prefillPrompt,
+      askPrompt: (prompt: string) => {
+        setPrefillPrompt(prompt.slice(0, 300));
+        setChatOpen(true);
+      },
       clearPrefillPrompt: () => setPrefillPrompt(null),
       pendingJd,
       clearPendingJd: () => setPendingJd(null),

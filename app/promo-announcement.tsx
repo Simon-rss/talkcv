@@ -17,8 +17,8 @@ export function PromoTopBanner({ lang, showCta = false }: { lang: Lang; showCta?
     <div
       role="status"
       style={{
-        background: "linear-gradient(90deg, #0f766e 0%, #0d9488 55%, #0f766e 100%)",
-        color: "#ffffff",
+        background: "linear-gradient(90deg, #1d1d1f 0%, #2c2c2e 55%, #1d1d1f 100%)",
+        color: "#f5f5f7",
         padding: "9px 16px",
         fontSize: 13,
         lineHeight: 1.45,
@@ -36,9 +36,9 @@ export function PromoTopBanner({ lang, showCta = false }: { lang: Lang; showCta?
           display: "inline-flex",
           alignItems: "center",
           gap: 4,
-          background: "rgba(255, 255, 255, 0.18)",
-          border: "1px solid rgba(255, 255, 255, 0.28)",
-          padding: "2px 8px",
+          background: "linear-gradient(90deg, #0071e3, #5e5ce6)",
+          color: "#ffffff",
+          padding: "2px 9px",
           borderRadius: 999,
           fontSize: 11,
           fontWeight: 700,
@@ -58,11 +58,11 @@ export function PromoTopBanner({ lang, showCta = false }: { lang: Lang; showCta?
           href={`/create?lang=${lang}`}
           style={{
             background: "#ffffff",
-            color: "#0f766e",
-            padding: "3px 10px",
+            color: "#1d1d1f",
+            padding: "3px 11px",
             borderRadius: 999,
             fontSize: 12,
-            fontWeight: 700,
+            fontWeight: 600,
             textDecoration: "none",
             whiteSpace: "nowrap",
           }}
@@ -111,10 +111,12 @@ export function PromoAnnouncementCard({
       aria-label={isZh ? "活动公告" : "Event Announcement"}
       style={{
         margin: "12px auto 14px",
-        padding: "14px 18px",
-        borderRadius: 14,
-        background: "linear-gradient(135deg, rgba(15, 118, 110, 0.08) 0%, rgba(20, 184, 166, 0.04) 100%)",
-        border: "1.5px solid rgba(15, 118, 110, 0.24)",
+        padding: "16px 20px",
+        borderRadius: 20,
+        background: "rgba(255, 255, 255, 0.85)",
+        backdropFilter: "blur(20px)",
+        border: "1px solid rgba(0, 113, 227, 0.2)",
+        boxShadow: "0 10px 30px -18px rgba(0, 113, 227, 0.18)",
         display: "flex",
         flexDirection: "column",
         gap: 10,
@@ -130,22 +132,22 @@ export function PromoAnnouncementCard({
               width: 26,
               height: 26,
               borderRadius: 8,
-              background: "#0f766e",
+              background: "#0071e3",
               color: "#ffffff",
             }}
           >
             <Megaphone size={14} />
           </span>
-          <strong style={{ fontSize: 14, color: "#0f172a" }}>
+          <strong style={{ fontSize: 14, color: "#1d1d1f" }}>
             {isZh ? "活动公告 · OpenAI 全系模型限时免费解锁" : "Announcement · All OpenAI Models Temporarily Unlocked"}
           </strong>
           <span
             style={{
               fontSize: 11,
               fontWeight: 700,
-              color: "#0f766e",
-              background: "rgba(15, 118, 110, 0.12)",
-              padding: "2px 8px",
+              color: "#0071e3",
+              background: "rgba(0, 113, 227, 0.1)",
+              padding: "2px 9px",
               borderRadius: 999,
             }}
           >
@@ -162,13 +164,13 @@ export function PromoAnnouncementCard({
               display: "inline-flex",
               alignItems: "center",
               gap: 5,
-              padding: "6px 12px",
+              padding: "6px 13px",
               borderRadius: 999,
               border: "none",
-              background: alreadyAstra ? "rgba(15, 118, 110, 0.14)" : "#0f766e",
-              color: alreadyAstra ? "#0f766e" : "#ffffff",
+              background: alreadyAstra ? "rgba(0, 113, 227, 0.12)" : "#0071e3",
+              color: alreadyAstra ? "#0071e3" : "#ffffff",
               fontSize: 12,
-              fontWeight: 700,
+              fontWeight: 600,
               cursor: alreadyAstra ? "default" : "pointer",
               whiteSpace: "nowrap",
             }}
@@ -200,9 +202,9 @@ export function PromoAnnouncementCard({
               fontWeight: 600,
               padding: "3px 9px",
               borderRadius: 999,
-              background: name === "GPT-6.2 Astra" ? "#0f766e" : "#ffffff",
-              color: name === "GPT-6.2 Astra" ? "#ffffff" : "#0f766e",
-              border: "1px solid rgba(15, 118, 110, 0.25)",
+              background: name === "GPT-6.2 Astra" ? "#0071e3" : "#f5f5f7",
+              color: name === "GPT-6.2 Astra" ? "#ffffff" : "#1d1d1f",
+              border: "1px solid rgba(0, 113, 227, 0.18)",
             }}
           >
             {name === "GPT-6.2 Astra" ? `★ ${name}` : name}

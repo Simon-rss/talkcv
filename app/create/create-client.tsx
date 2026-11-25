@@ -949,6 +949,10 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   };
 
   const openFullscreenPreview = () => {
+    if (externalMountOrigin && handle.trim()) {
+      window.open(`/u/${encodeURIComponent(normalizeSlug(handle))}`, "_blank", "noopener,noreferrer");
+      return;
+    }
     window.localStorage.setItem(
       "talkcv-draft-profile",
       JSON.stringify({ ...generated, theme }),

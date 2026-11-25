@@ -8,8 +8,8 @@
     },
     "initials": "SR",
     "role": {
-      "en": "AI Platform Engineer · Creator of TalkCV",
-      "zh": "AI 平台开发工程师 · TalkCV 独立开发者"
+      "en": "AI Solutions Engineer · Creator of TalkCV",
+      "zh": "AI 解决方案工程师 · TalkCV 独立开发者"
     },
     "location": {
       "en": "Guangzhou, China",
@@ -19,12 +19,12 @@
     "email": "hi@mytalkcv.com",
     "github": "https://github.com/Simon-rss",
     "headline": {
-      "en": "Building production AI Agent platforms, reliable workflow engines, and developer tools.",
-      "zh": "构建可落地的企业级 AI Agent 平台、高可靠工作流引擎与开发者工具。"
+      "en": "Turning ambiguous AI ideas into shippable production systems.",
+      "zh": "把模糊的 AI 想法，做成可交付的系统。"
     },
     "intro": {
-      "en": "4+ years of full-stack & AI platform engineering focused on Agent orchestration, streaming workflow runtimes (ARQ / Redis Stream / SSE), and 0-to-1 human-AI collaborative apps. This live page runs on TalkCV — highlight any text to ask, or paste a Job Description in the AI widget to test match scoring.",
-      "zh": "4 年+ 全栈与 AI 平台研发经验，专注于 Agent 编排、异步流式调度链路（ARQ / Redis Stream / SSE）与人机协同应用从 0 到 1 交付。本页面即由我开发的 TalkCV 驱动——欢迎划选正文追问，或在右下角粘贴岗位 JD 实测匹配度。"
+      "en": "Building Agent workflows, knowledge systems and intelligent automation around real business constraints — from discovery and architecture to delivery, evaluation and team enablement. This live page runs on TalkCV.",
+      "zh": "围绕真实业务约束建设 Agent 工作流、知识系统和智能自动化能力，从需求诊断、架构设计到开发交付、效果评估与团队赋能。本页面由 TalkCV 驱动，支持划选追问与 JD 匹配。"
     },
     "education": {
       "en": "B.Eng. in Computer Science & Technology (2018 – 2022)",
@@ -36,16 +36,20 @@
     }
   },
   "skills": [
-    "Python",
+    "Univer",
+    "React",
     "TypeScript",
     "FastAPI",
-    "React",
-    "Redis Stream & SSE",
-    "MySQL & PostgreSQL",
-    "AI Agent & MCP",
-    "LangGraph & RAG",
+    "JSON DSL",
+    "OOXML",
+    "Redis / ARQ",
+    "MySQL",
+    "SSE",
+    "Langfuse",
+    "Next.js",
+    "PostgreSQL",
     "Cloudflare Workers",
-    "Electron"
+    "AI Agent"
   ],
   "capabilities": [
     {
@@ -153,63 +157,394 @@
   ],
   "projects": [
     {
-      "slug": "talkcv-interactive-resume",
+      "slug": "agent-spreadsheet-workbench",
       "accent": "mint",
-      "group": "product",
+      "group": "enterprise",
       "category": {
-        "en": "AI SaaS · Open Source",
-        "zh": "AI SaaS · 开源产品"
+        "en": "Flagship delivery · Anonymized enterprise platform",
+        "zh": "旗舰交付 · 企业 AI 平台（已匿名化）"
       },
       "title": {
-        "en": "TalkCV — AI-Native Interactive Résumé & Portfolio Engine",
-        "zh": "TalkCV — AI 原生交互式简历与作品集引擎"
+        "en": "Agent-Native Collaborative Spreadsheet",
+        "zh": "Agent 协同电子表格工作台"
       },
       "role": {
-        "en": "Solo Founder & Full-Stack Engineer",
-        "zh": "独立开发者 · 全栈架构"
+        "en": "0→1 technical owner · Architecture, FastAPI backend & React/Univer frontend",
+        "zh": "0→1 技术负责人 · 调研、方案与前后端交付"
       },
       "summary": {
-        "en": "Turns any PDF/DOCX/image résumé into a bilingual interactive website with dual rendering modes (structured deep skins + custom AI web mode), cited visitor AI Q&A, JD match scoring, private AI brief boundaries, QR A4 PDF export, and passcode privacy.",
-        "zh": "支持 PDF/DOCX/截图一键解析，提供结构化深度皮肤与自由创意网页双渲染模式，内置带引用的访客 AI 问答、JD 匹配报告、私密 AI 回答边界、带二维码 A4 打印简历与口令保护。"
+        "en": "An interactive spreadsheet workbench where humans and AI agents co-edit real workbooks through a unified JSON DSL, a directory-structured storage bundle and concurrency locks.",
+        "zh": "面向企业 AI 协作平台的交互式电子表格工作台，通过统一 JSON DSL、目录化工作簿结构与运行锁，实现人与 Agent 安全协同编辑同一份表格。"
       },
       "outcome": {
-        "en": "Shipped end-to-end with dual render engines, 6+ visual presets, and edge-lightweight architecture.",
-        "zh": "独立完成从解析、双渲染引擎、6+ 视觉皮肤到支付与边缘部署的完整闭环。"
+        "en": "Shipped 18 structured Agent tools, cut first-save upload payload by ~46%, passed 107 targeted unit tests and delivered parity across both On-Premises and Cloud SaaS.",
+        "zh": "交付 18 个结构化 Agent 表格工具，首次保存上传量降低约 46%，通过 107 项定向单测，并完成私有化与 SaaS 双版本上线。"
       },
       "tags": [
-        "TypeScript",
+        "Univer",
         "React",
-        "Cloudflare Workers",
-        "AI Agent"
+        "TypeScript",
+        "FastAPI",
+        "JSON DSL",
+        "OOXML"
       ],
       "facts": [
         {
-          "value": "2",
+          "value": "18",
           "label": {
-            "en": "Dual Render Engines",
-            "zh": "双渲染引擎"
+            "en": "Agent spreadsheet tools",
+            "zh": "个 Agent 表格工具"
           }
         },
         {
-          "value": "6+",
+          "value": "-46%",
           "label": {
-            "en": "Built-in Visual Skins",
-            "zh": "内置视觉皮肤"
+            "en": "first-save upload payload",
+            "zh": "首次保存上传量降幅"
           }
         },
         {
-          "value": "0-DB",
+          "value": "107",
           "label": {
-            "en": "Edge-Light Architecture",
-            "zh": "边缘轻量架构"
+            "en": "targeted unit tests",
+            "zh": "项定向单元测试"
+          }
+        }
+      ],
+      "links": [],
+      "sections": [
+        {
+          "eyebrow": {
+            "en": "ENGINEERING PROBLEM",
+            "zh": "工程问题"
+          },
+          "title": {
+            "en": "Humans and Agents cannot safely co-edit a raw XLSX zip file",
+            "zh": "人与 Agent 无法直接安全地共编原始 XLSX 文件"
+          },
+          "body": {
+            "en": "Mutating monolithic XLSX archives directly makes partial reads expensive, breaks formula recalculation and invites silent overwrites when a user edits in the browser while an Agent runs tools in the background. On-premises licensing and Excel/WPS round-trip fidelity further narrowed the viable choices.",
+            "zh": "直接把 XLSX 当作编辑格式会导致大工作簿局部读写成本高、增量保存困难，且用户在线编辑与 Agent 后台工具写入极易互相覆盖；同时还需要兼顾私有化部署许可证边界与 Excel / WPS 双向保真。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Owned the full 0→1 path from research to SaaS parity",
+            "zh": "独立负责从调研、方案到双版本上线的 0→1 闭环"
+          },
+          "body": {
+            "en": "I led technical evaluation, authored the system specification, built the backend DSL/tool/import-export pipeline and delivered the React/Univer workbench — taking the module from initial analysis to first production merge in ~4 weeks and completing Cloud SaaS migration in 16 days.",
+            "zh": "我主导业内选型与技术方案设计，完整落地后端 DSL 存储、工具与导入导出链路，并交付 React / Univer 前端工作台；从需求分析到首版合并约 4 周，16 天完成 SaaS 版本迁移。"
+          },
+          "items": [
+            {
+              "en": "Designed 18 schema-validated Agent tools covering range reads, formula writes, sheet lifecycle, charts, shapes and image insertion.",
+              "zh": "设计并实现 18 个结构化 Agent 工具，覆盖范围读写、公式写入、工作表增删、图表、形状与图片插入。"
+            },
+            {
+              "en": "Added multi-range AI editing in the UI so users can attach separate instructions to multiple selections in one turn.",
+              "zh": "实现前端多选区 AI 修改交互，支持对多个范围分别填写修改要求后统一带入会话。"
+            },
+            {
+              "en": "Shipped CSV workbench routing, XLSX conversion, import reports, thumbnail previews and right-pane Office previews in shared conversations.",
+              "zh": "补齐 CSV 工作台分流与 XLSX 转换、导入报告、产物缩略图以及分享/收藏会话的右栏预览能力。"
+            }
+          ]
+        },
+        {
+          "eyebrow": {
+            "en": "ARCHITECTURAL DECISION",
+            "zh": "架构决策"
+          },
+          "title": {
+            "en": "Data structure first, minimal load gate second",
+            "zh": "数据结构先行，最小加载闸门兜底正确性"
+          },
+          "body": {
+            "en": "After an early iteration revealed contract drift between frontend and backend, I unified both sides on a single canonical DSL and directory bundle. A read/write gate loads only touched parts when safe and escalates to full-workbook hydration whenever formula accuracy is at stake — reducing first-save upload volume by ~46%.",
+            "zh": "早期迭代暴露前后端契约漂移后，我将两端统一收敛到同一份 DSL 与目录化结构；并通过加载闸门做到能少读就少读、凡涉及值或公式计算则补齐全量，最终将样本首次保存上传量降低约 46%。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": {
+            "en": "Validate with real XLSX",
+            "zh": "真实文件 PoC 验证"
+          },
+          "text": {
+            "en": "Evaluated Univer, Glide Data Grid and OOXML fidelity mechanisms via a real cross-sheet formula PoC before locking the architecture.",
+            "zh": "调研 Univer、Glide Data Grid 及 XLSX 保真与许可证边界，用真实跨 Sheet 公式文件跑通 PoC 后再定型技术路线。"
+          }
+        },
+        {
+          "number": "02",
+          "title": {
+            "en": "Unify the data contract",
+            "zh": "数据结构先行"
+          },
+          "text": {
+            "en": "Replaced raw XLSX mutation with a unified JSON DSL and directory workbook bundle separating manifest, sheets, styles and media for on-demand loading.",
+            "zh": "以统一 JSON DSL 作为唯一事实源，设计目录化工作簿格式将清单、工作表、样式与图片拆分存储，支持按需加载与局部读写。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Gate incremental saves",
+            "zh": "增量补丁与正确性闸门"
+          },
+          "text": {
+            "en": "Persist style, freeze and localized edits as 7-category incremental patches while hydrating full dependency context whenever values or formulas change.",
+            "zh": "实现七类补丁增量保存，纯样式等修改只写变更；涉及值或公式修改时补齐全量上下文，确保跨表公式计算准确。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Lock and rebuild safely",
+            "zh": "运行锁与双端同步"
+          },
+          "text": {
+            "en": "Acquire an execution lock during Agent turns, rebuild the canonical snapshot on completion and refresh the Univer runtime without clobbering user edits.",
+            "zh": "Agent 执行期间加锁，完成后重建最新内容并刷新前端状态，避免人与 Agent 同时修改互相覆盖。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "multimodal-workflow-engine",
+      "accent": "blue",
+      "group": "enterprise",
+      "category": {
+        "en": "Platform engineering · Anonymized enterprise platform",
+        "zh": "平台工程 · 企业 AI 平台（已匿名化）"
+      },
+      "title": {
+        "en": "Multimodal Workflow Engine & Reliability",
+        "zh": "企业级多模态工作流引擎与稳定性治理"
+      },
+      "role": {
+        "en": "Full-stack platform engineer · Python, FastAPI, Redis/ARQ & MySQL",
+        "zh": "AI 平台研发工程师 · FastAPI / Redis / MySQL 全栈"
+      },
+      "summary": {
+        "en": "Platform-level upgrades to an enterprise AI workflow runtime: multi-attachment multimodal nodes, failure-safe async scheduling, multi-instance DB migration locking and 37-category production alert governance.",
+        "zh": "面向企业级 AI 工作流运行时的一系列平台工程升级：多模态多附件节点、异步调度异常兜底、多实例数据库迁移并发保护与 37 类线上告警治理。"
+      },
+      "outcome": {
+        "en": "Enabled up to 10 mixed image/video/document inputs per turn, achieved 30/30 clean termination in production load tests and eliminated multi-pod migration race conditions.",
+        "zh": "支持单次最多 10 个图/视/文档混合附件输入，生产大数据回归 30/30 正常结束，并彻底消除多实例启动迁移竞态。"
+      },
+      "tags": [
+        "FastAPI",
+        "Redis / ARQ",
+        "MySQL",
+        "SSE",
+        "Langfuse",
+        "React"
+      ],
+      "facts": [
+        {
+          "value": "10 / turn",
+          "label": {
+            "en": "mixed multimodal files",
+            "zh": "混合多模态附件上限"
+          }
+        },
+        {
+          "value": "30 / 30",
+          "label": {
+            "en": "load regression runs",
+            "zh": "生产大数据回归通过"
+          }
+        },
+        {
+          "value": "37",
+          "label": {
+            "en": "alert classes triaged",
+            "zh": "类线上告警台账治理"
+          }
+        }
+      ],
+      "links": [],
+      "sections": [
+        {
+          "eyebrow": {
+            "en": "PLATFORM PROBLEM",
+            "zh": "平台问题"
+          },
+          "title": {
+            "en": "Production AI platforms fail in the edges between nodes, pods and providers",
+            "zh": "生产级 AI 平台的风险藏在节点异常、多实例竞态与外部渠道边界"
+          },
+          "body": {
+            "en": "As enterprise adoption grew across both On-Premises and SaaS editions, subtle edge cases became customer-visible: failed loop/batch nodes left workflows spinning forever, single-file nodes blocked multimodal video/image workflows, parallel pod startups raced on Alembic migrations and raw provider errors obscured fallback failures.",
+            "zh": "随着私有化与 SaaS 双版本并发和场景增长，边缘问题开始直接影响业务：控制节点异常后工作流无法结束、单文件节点限制多模态组合输入、多副本同时启动触发数据库迁移竞态、模型主备渠道失败时告警过于笼统。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Delivered end-to-end fixes across workflow engine, DB boot and observability",
+            "zh": "贯穿工作流引擎、数据库启动与可观测性的全栈治理"
+          },
+          "body": {
+            "en": "I traced production failures down to Redis/MySQL/SSE primitives, authored technical specs and shipped minimal, well-tested fixes across both On-Premises and Cloud SaaS repositories.",
+            "zh": "我沿着日志、数据库与 Redis 现场定位根因，主导关键技术方案设计，并在私有化与 SaaS 双仓库完成最小化修复与回归验证。"
+          },
+          "items": [
+            {
+              "en": "Multimodal message files: unified single variables and Array<Image> into ordered Message.files (max 10) across LLM & Agent nodes, verified with real Qwen Omni image+video inference.",
+              "zh": "多消息文件链路：在 LLM 与 Agent 四类节点支持普通文件变量与图片数组混合展开（上限 10 个），完成真实多模态图片+视频联调。"
+            },
+            {
+              "en": "Multi-instance DB migration lock: serialized Alembic migrations and model sync with MySQL named locks (120s wait, non-zero exit on lock error), backed by 10 real MySQL concurrency tests.",
+              "zh": "多实例迁移并发保护：基于 MySQL 命名锁串行化 Alembic 迁移与模型同步（默认 120s 等待、锁异常非零退出），完成 10 项真实 MySQL 并发测试。"
+            },
+            {
+              "en": "Reliability & integrations: fixed chat-stream connection leaks, deleted-resource dangling references, KB permission filtering, OpenAI-compatible provider routing, default thinking controls and Langfuse empty-state UX.",
+              "zh": "稳定性与生态集成：修复聊天流连接泄漏、已删除资源残留引用与知识库权限过滤，完成智谱 OpenAI 协议适配、默认思考配置及 Langfuse 状态引导。"
+            }
+          ]
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING DECISION",
+            "zh": "工程决策"
+          },
+          "title": {
+            "en": "Design for failure paths and zero-downtime backward compatibility",
+            "zh": "先推演失败路径，所有升级默认向后兼容"
+          },
+          "body": {
+            "en": "Notification failures must never corrupt workflow terminal state, and schema upgrades must never break existing saved workflows. Every platform change pairs deterministic fallback semantics with dry-run/rollback tooling and real-environment load regression.",
+            "zh": "通知失败不能污染工作流终态，数据结构升级也不能破坏存量配置。每项平台改动都配套明确的失败兜底、dry-run / 回滚脚本以及真实环境负载回归。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": {
+            "en": "Trace the full async chain",
+            "zh": "打通异步执行全链路"
+          },
+          "text": {
+            "en": "Mapped execution end-to-end from FastAPI dispatch through ARQ queues, event ZSET scheduling, Redis Streams and SSE delivery.",
+            "zh": "端到端梳理 FastAPI 入队、ARQ 队列、事件 ZSET 调度、Redis Stream 与 SSE 回传全链路。"
+          }
+        },
+        {
+          "number": "02",
+          "title": {
+            "en": "Harden failure termination",
+            "zh": "加固异常终止语义"
+          },
+          "text": {
+            "en": "Propagated batch and loop control-node exceptions cleanly and added a guaranteed workflow_end fallback so UIs never hang indefinitely.",
+            "zh": "补齐批处理与循环控制节点的异常传递，增加 workflow_end 通知兜底，消除页面持续加载卡死问题。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Expand multimodal safely",
+            "zh": "向后兼容的多模态扩展"
+          },
+          "text": {
+            "en": "Upgraded four LLM/Agent node types to mixed multi-file inputs while preserving legacy graphs and shipping an atomic CAS migration script.",
+            "zh": "将四类 LLM / Agent 节点升级为混合多附件输入，兼容旧版 Graph，并编写带 dry-run、CAS 校验与原子回滚的迁移脚本。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Protect shared boot & ops",
+            "zh": "多实例启动保护与线上治理"
+          },
+          "text": {
+            "en": "Added MySQL named locks for concurrent Alembic migrations and turned 5 days of noisy logs into a 37-category triage ledger and root-cause fixes.",
+            "zh": "引入 MySQL 命名锁串行化多实例启动迁移，并汇总线上日志建立 多类告警台账，推动连接泄漏、权限过滤与模型告警等根因修复。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "talkcv",
+      "accent": "coral",
+      "group": "platform",
+      "category": {
+        "en": "Independent SaaS · AI product & managed hosting",
+        "zh": "独立商业化 SaaS · AI 产品与网站代托管"
+      },
+      "title": {
+        "en": "TalkCV",
+        "zh": "TalkCV（会说话的简历）"
+      },
+      "role": {
+        "en": "Creator & full-stack owner · AI pipeline, managed hosting, billing & growth ops",
+        "zh": "独立发起人与全栈负责人 · AI 链路、网站代托管、计费与增长运营"
+      },
+      "summary": {
+        "en": "An end-to-end AI interactive résumé SaaS and managed hosting platform — turning PDF/Word/screenshot résumés into live /u/handle sites with AI layouts & custom skins, cited recruiter Q&A, JD matching & outreach, visitor insights, recruiter leads, and Creem/Alipay credit billing.",
+        "zh": "端到端商业化 AI 交互简历与网站代托管平台：将 PDF / Word / 截图简历转化为可直接访问的 /u/handle 托管站点，打通 AI 双路线生成、带引用溯源的招聘方问答、JD 匹配与外联、访客洞察、约面线索与积分付费全闭环。"
+      },
+      "outcome": {
+        "en": "Shipped a complete commercial closed loop on Docker + PostgreSQL + Cloudflare: AI creation → managed /u/[slug] hosting (plus external-site proxy mounting powering this portfolio) → recruiter conversion → credit wallet, subscriptions & Alipay checkout, backed by 45 automated tests.",
+        "zh": "基于 Docker + PostgreSQL + Cloudflare 交付完整商业闭环：AI 解析生成 → /u/[slug] 网站代托管（含本作品集正在使用的外部站代理挂载）→ 招聘方转化 → 积分钱包、全球订阅与支付宝买断，并配套 45 项端到端自动化测试。"
+      },
+      "tags": [
+        "Next.js",
+        "TypeScript",
+        "PostgreSQL",
+        "Cloudflare Workers",
+        "AI Agent",
+        "Creem / Alipay"
+      ],
+      "facts": [
+        {
+          "value": "45",
+          "label": {
+            "en": "end-to-end automated tests",
+            "zh": "项端到端自动化测试"
+          }
+        },
+        {
+          "value": "Route A + B",
+          "label": {
+            "en": "AI layouts & custom HTML skins",
+            "zh": "AI 动态布局 + 自定义网页"
+          }
+        },
+        {
+          "value": "Full SaaS",
+          "label": {
+            "en": "hosting, credits & billing loop",
+            "zh": "代托管、积分与付费闭环"
           }
         }
       ],
       "links": [
         {
           "label": {
-            "en": "GitHub Repository",
-            "zh": "GitHub 源码仓库"
+            "en": "Open live product",
+            "zh": "打开线上产品"
+          },
+          "href": "https://mytalkcv.com/"
+        },
+        {
+          "label": {
+            "en": "View open-source repo",
+            "zh": "查看开源仓库"
           },
           "href": "https://github.com/Simon-rss/talkcv"
         }
@@ -217,117 +552,62 @@
       "sections": [
         {
           "eyebrow": {
-            "en": "ARCHITECTURE",
-            "zh": "核心架构"
+            "en": "PRODUCT CLOSED LOOP",
+            "zh": "产品逻辑闭环"
           },
           "title": {
-            "en": "Grounded AI Q&A with Verifiable Inline Citations",
-            "zh": "严格基于事实的内联引用 AI 问答"
+            "en": "From raw résumé to managed AI hosting, recruiter leads and revenue",
+            "zh": "打通从静态简历、网站代托管、招聘转化到商业付费的完整闭环"
           },
           "body": {
-            "en": "Every visitor answer is grounded in the structured résumé schema plus owner-only private AI brief boundaries, emitting clickable citation markers that scroll directly to the matching project or experience card.",
-            "zh": "访客对话严格绑定结构化简历与仅作者可见的私有 AI 回答边界，回复自动附带可点击引用标记，点击直接定位到对应项目或经历。"
-          }
-        }
-      ],
-      "workflow": [
-        {
-          "number": "01",
-          "title": {
-            "en": "Parse & Structure",
-            "zh": "解析与结构化"
-          },
-          "text": {
-            "en": "Extracts text from PDF, DOCX, or résumé screenshots with strict numerical fidelity.",
-            "zh": "从 PDF、Word 或简历截图无损提取事实与量化指标，拒绝模型幻觉。"
+            "en": "Static PDFs cannot answer follow-up questions or adapt to a recruiter's JD, while open-source portfolio templates still force candidates to handle domains, servers, keys and analytics themselves. TalkCV closes the entire loop in one product: upload or screenshot a résumé → refine with AI in Studio → publish on managed /u/handle hosting → convert recruiters via cited AI chat & lead capture → track insights and monetize sustainably through credits and plans.",
+            "zh": "静态 PDF 回答不了招聘方的追问，开源建站模板又把域名、服务器、模型 Key 和统计门槛全甩给了求职者。TalkCV 把整条链路做成一个开箱即用的闭环：上传文档或截图 → Studio 在线 AI 生成与精修 → 一键 /u/handle 网站代托管 → 招聘方带引用问答、JD 匹配与留资 → 站长看访客洞察，并通过积分钱包与订阅/买断完成商业化闭环。"
           }
         },
-        {
-          "number": "02",
-          "title": {
-            "en": "Dual-Mode Render & Publish",
-            "zh": "双模式渲染与发布"
-          },
-          "text": {
-            "en": "Switches seamlessly between editable deep-skin layouts and sandboxed custom AI web pages.",
-            "zh": "支持在可编辑深度皮肤与沙箱自由创意网页间自由切换，并一键导出带码 A4 PDF。"
-          }
-        }
-      ]
-    },
-    {
-      "slug": "agent-collab-spreadsheet",
-      "accent": "blue",
-      "group": "enterprise",
-      "category": {
-        "en": "Enterprise Agent App",
-        "zh": "企业级 Agent 协同应用"
-      },
-      "title": {
-        "en": "Enterprise Agent-Collaborative Spreadsheet System",
-        "zh": "企业级 Agent 协同电子表格系统"
-      },
-      "role": {
-        "en": "0→1 Technical Owner",
-        "zh": "0→1 技术负责人"
-      },
-      "summary": {
-        "en": "Architected a unified spreadsheet DSL with sharded on-demand loading, 7 incremental patch save operations, and human-AI concurrency execution locks, fully preserving cross-sheet formulas and XLSX import/export.",
-        "zh": "设计统一表格 DSL 与分片按需加载机制，实现 7 类增量补丁保存与人机并发运行锁，完整兼容跨 Sheet 公式与 XLSX 双向导入导出。"
-      },
-      "outcome": {
-        "en": "Cut initial save upload payload by 46%, passed 107 targeted unit tests, and completed SaaS migration in 16 days.",
-        "zh": "首次保存上传体积降低 46%，通过 107 项定向单测，16 天完成 SaaS 迁移交付。"
-      },
-      "tags": [
-        "TypeScript",
-        "Python",
-        "AI Agent",
-        "FastAPI"
-      ],
-      "facts": [
-        {
-          "value": "18",
-          "label": {
-            "en": "Agent Sheet Tools",
-            "zh": "Agent 表格工具"
-          }
-        },
-        {
-          "value": "-46%",
-          "label": {
-            "en": "First-Save Payload",
-            "zh": "首次保存上传体积"
-          }
-        },
-        {
-          "value": "107",
-          "label": {
-            "en": "Targeted Tests Passed",
-            "zh": "定向单测通过"
-          }
-        },
-        {
-          "value": "16 天",
-          "label": {
-            "en": "SaaS Migration",
-            "zh": "完成 SaaS 迁移"
-          }
-        }
-      ],
-      "sections": [
         {
           "eyebrow": {
-            "en": "ENGINEERING",
-            "zh": "关键突破"
+            "en": "HOW IT WORKS & FEATURES",
+            "zh": "核心功能与使用链路"
           },
           "title": {
-            "en": "Sharded Incremental Patches & Human-AI Concurrency Locks",
-            "zh": "分片增量补丁与人机并发保护"
+            "en": "Four connected layers: AI Creation, Managed Hosting, Recruiter Conversion & Monetization",
+            "zh": "四层串联能力：AI 生成、网站代托管、招聘转化与商业计费"
           },
           "body": {
-            "en": "Replaced full-workbook overwrites with 7 deterministic patch types and optimistic concurrency guards so users and 18 specialized Agent tools can operate safely on large workbooks.",
-            "zh": "用 7 类确定性增量补丁替代整表覆盖保存，配合人机并发锁与 18 个专属 Agent 工具，确保多人与 Agent 协同不丢数据。"
+            "en": "Every feature is designed so non-technical job seekers can ship in minutes while power users and engineers keep full control over visual style, privacy, model keys and custom hosting.",
+            "zh": "每一层都兼顾“普通求职者 30 秒开箱即用”与“工程师深度可控”：既能零配置直接托管上线，也能自定义视觉风格、自带模型 Key 或挂载独立站点。"
+          },
+          "items": [
+            {
+              "en": "AI Creation & Dual Visual Engine: PDF/Word/Markdown/image OCR ingestion, full item editor, AI text refinement, AI dynamic layout engine (heroStyle, projectLayout, fontPair, sectionOrder), 6 built-in presets (Apple Keynote, Retro Win95, Black & Gold Monograph, etc.) and Route B custom pure HTML/CSS generation with cover-image hydration & XSS sanitization.",
+              "zh": "AI 生成与双路线视觉引擎：支持 PDF / Word / Markdown / 截图 OCR 解析、全字段可视化编辑器与 AI 精修；内置 AI 动态布局引擎与 6 套视觉皮肤预设（Apple Keynote、Retro Win95、黑金专刊等），并支持 Route B 自由定制纯 HTML+CSS 网页（含封面图注入与 XSS 清洗）。"
+            },
+            {
+              "en": "Managed Hosting & External Proxy Mount: 1-click /u/[slug] hosting (30-day Free / permanent Pro & Max), dynamic /api/og cards, QR-encoded A4 PDF print & share posters, passcode protection with rotation revocation, noindex hiding, plus External Site Proxy Mount so standalone sites inherit TalkCV URLs, passcode gates and analytics (this portfolio at /u/simon-renss runs on it live).",
+              "zh": "网站代托管与外部站代理挂载：一键托管 /u/[slug]（免费 30 天 / Pro 与 Max 永久托管），自带动态 OG 卡片、带二维码 A4 PDF 打印与分享海报、支持轮换吊销的密码锁和 noindex；同时支持外部独立站代理挂载，直接复用 TalkCV 域名、访问控制与统计（本作品集 /u/simon-renss 即运行于此）。"
+            },
+            {
+              "en": "Grounded Recruiter AI & Conversion: Streaming chat with inline citations anchored to real project slugs & experience indexes, owner-only Private AI Brief for non-public boundaries (e.g. availability/context), 6-second quick-ask, highlight-to-ask, JD Match, JD Site Tailor, JD Outreach email drafts, and Recruiter Leads capture with instant email notifications.",
+              "zh": "可信招聘方 AI 与转化工具：流式问答内置项目与经历内联引用溯源、支持仅服务端可见的私有 AI 简报边界，提供 6 秒快捷追问、划词提问、JD 匹配、JD 定制站点、外联邮件起草及招聘方约面线索留资与邮件通知。"
+            },
+            {
+              "en": "Credit Wallet, Billing & Analytics: Shared hosted credit wallet (Free 30 lifetime credits, Pro/Max quotas, visitor chats free to authors) + encrypted zero-credit BYOK; Creem global subscriptions + Alipay one-time checkout for Chinese users; /admin live coupon & redeem-code minting, anti-abuse referral rewards, per-site Visitor Insights and /admin PV/UV/referrer/device traffic analytics.",
+              "zh": "积分钱包、支付与数据分析：统一托管积分钱包（免费 30 点、Pro/Max 额度、访客聊天不扣作者积分）+ 加密存储的零积分 BYOK；接入 Creem 全球订阅与中文支付宝一次性买断，配套 /admin 实时折扣券与兑换码发放、邀请裂变防刷、单站访客洞察及全站 PV/UV/来源/设备统计。"
+            }
+          ]
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING ARCHITECTURE",
+            "zh": "关键工程决策"
+          },
+          "title": {
+            "en": "Transactional concurrency safety, multi-model routing and zero-leak guardrails",
+            "zh": "事务级并发锁、多模型路由适配与失败自动退费护栏"
+          },
+          "body": {
+            "en": "Commercial AI SaaS fails quickly at concurrency and billing edges. TalkCV uses a PostgreSQL transactional KV adapter with pg_advisory_xact_lock to serialize handle claims, site-count limits, referral rewards and credit reservations across instances — automatically rolling back and refunding reserved credits if an upstream LLM call or JSON parse fails. Model routing adapts seamlessly across DeepSeek and OpenAI GPT-4/5/6/o3 parameter differences, while server-side sanitizers strip XSS and ungrounded AI-invented contact info.",
+            "zh": "商业化 AI SaaS 最容易在并发抢注与扣费边界翻车。TalkCV 基于 PostgreSQL 实现事务型 KV 适配层，通过 pg_advisory_xact_lock 串行化句柄抢注、站点配额、邀请奖励与积分预扣；一旦上游模型报错或解析失败自动回滚退费。模型路由兼容 DeepSeek 与 OpenAI GPT-4/5/6/o3 推理参数差异，并由服务端清洗器拦截 XSS 与 AI 臆造的联系方式。"
           }
         }
       ],
@@ -335,93 +615,188 @@
         {
           "number": "01",
           "title": {
-            "en": "Unified DSL & Sharding",
-            "zh": "统一 DSL 与分片加载"
+            "en": "Ingest & AI creation",
+            "zh": "多模态解析与双路线生成"
           },
           "text": {
-            "en": "Splits large workbooks by sheet/region for fast initial render and 46% smaller save payloads.",
-            "zh": "按 Sheet 与区域分片加载，显著降低首屏与首次保存传输体积（-46%）。"
+            "en": "Parse .md, .txt, .docx, .pdf or résumé screenshots (vision OCR) into a bilingual profile; customize with AI dynamic layouts & 6 presets (Route A) or bespoke XSS-sanitized HTML+CSS generation (Route B), plus full item editing and AI refinement.",
+            "zh": "解析 .md / .txt / .docx / .pdf 或简历截图（视觉 OCR）生成双语结构化数据；支持 AI 动态布局与 6 套视觉皮肤（Route A）或自由定制纯 HTML+CSS 网页（Route B），并可逐项可视化编辑与 AI 精修。"
           }
         },
         {
           "number": "02",
           "title": {
-            "en": "18-Tool Agent Execution",
-            "zh": "18 工具安全执行"
+            "en": "Managed hosting & privacy",
+            "zh": "一键网站代托管与隐私控制"
           },
           "text": {
-            "en": "Locks active mutations during Agent runs while keeping cross-sheet formulas and XLSX fidelity intact.",
-            "zh": "在 Agent 执行期间加锁保护，完整保留跨表公式与 XLSX 兼容性。"
+            "en": "Publish to a managed /u/[slug] URL with dynamic OG cards, QR-encoded A4 PDF export, share posters, passcode gates (isolated per-site unlock & rotation), noindex hiding, or mount an external standalone site with full TalkCV analytics.",
+            "zh": "一键发布至 TalkCV 代托管的 /u/[slug] 链接，自带动态 OG 卡片、带二维码的 A4 PDF 打印与分享海报、站点隔离密码锁与轮换吊销、noindex 隐藏，也支持将外部独立简历站挂载纳入统一统计。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Recruiter AI & conversion",
+            "zh": "招聘方互动、JD 匹配与转化"
+          },
+          "text": {
+            "en": "Visitors use 6-second quick-ask, highlight-to-ask, or JD Match / JD Site Tailor; answers cite exact project slugs & experiences while respecting an owner-only Private AI Brief, and convert into Outreach drafts or Recruiter Leads with email alerts.",
+            "zh": "访客可通过 6 秒快捷追问、划词提问或粘贴 JD 做匹配与定制展示；AI 回答带项目与经历内联引用并严守仅站长可见的私有 AI 简报边界，支持一键生成外联邮件与约面线索留资提醒。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Credits, billing & analytics",
+            "zh": "积分付费闭环与流量洞察"
+          },
+          "text": {
+            "en": "Unified credit wallet (Free trial, Pro/Max plans, zero-credit BYOK) protected by PostgreSQL advisory locks & failure auto-refunds, paired with Creem subscriptions, Alipay one-time checkout, live coupons, referral rewards, Site Insights and /admin traffic analytics.",
+            "zh": "统一积分钱包（免费试用、Pro/Max 档位、零积分 BYOK）配 PostgreSQL 咨询锁与失败自动退费；打通 Creem 订阅、中文支付宝一次性买断、实时折扣券、邀请裂变防刷、站长访客洞察与 /admin 全站流量分析。"
           }
         }
       ]
     },
     {
-      "slug": "multimodal-workflow-runtime",
-      "accent": "coral",
+      "slug": "zr-ai-gateway",
+      "accent": "mint",
       "group": "platform",
       "category": {
-        "en": "AI Workflow Engine",
-        "zh": "多模态 AI 工作流引擎"
+        "en": "Independent product · AI infrastructure",
+        "zh": "独立产品 · AI 基础设施"
       },
       "title": {
-        "en": "High-Reliability Multimodal AI Workflow Runtime",
-        "zh": "高可靠多模态 AI Workflow 调度引擎"
+        "en": "ZR AI Gateway",
+        "zh": "ZR AI 网关"
       },
       "role": {
-        "en": "Core Platform Engineer",
-        "zh": "核心平台研发"
+        "en": "Product engineer and secondary-development owner",
+        "zh": "产品工程与二次开发负责人"
       },
       "summary": {
-        "en": "Built the end-to-end async streaming pipeline (API → ARQ enqueue → Worker event dispatch → Redis Stream → SSE), extended mixed image/video/document multimodal inputs, and serialized multi-instance DB migrations with MySQL named locks.",
-        "zh": "打通 API → ARQ 入队 → Worker 事件调度 → Redis Stream → SSE 全链路异步流式执行，扩展图片/视频/文档混合多模态输入，并基于 MySQL 命名锁实现多实例数据库迁移并发保护。"
+        "en": "A unified AI API gateway and user-facing workspace built through focused secondary development on New API and Sub2API.",
+        "zh": "基于 New API 与 Sub2API 进行聚焦二次开发，形成统一 AI API 网关与面向用户的工作空间。"
       },
       "outcome": {
-        "en": "Supports up to 10 multimodal attachments per run, passed 30/30 production large-data regressions and 10 real concurrent migration tests.",
-        "zh": "支持单次最多 10 个多模态附件，通过 30/30 生产大数据回归测试与 10 路真实并发迁移验证。"
+        "en": "Connected model access, key lifecycle, chat, image generation and operator controls into one coherent product surface.",
+        "zh": "把模型接入、密钥生命周期、对话、生图和运营控制整合为一套连贯的产品体验。"
       },
       "tags": [
-        "Python",
-        "FastAPI",
-        "Redis Stream",
-        "MySQL"
+        "Go",
+        "React",
+        "API Gateway",
+        "New API",
+        "Sub2API"
       ],
       "facts": [
         {
-          "value": "10",
+          "value": "2",
           "label": {
-            "en": "Attachments / Run",
-            "zh": "单次多模态附件上限"
+            "en": "upstream foundations",
+            "zh": "个上游基础项目"
           }
         },
         {
-          "value": "30/30",
+          "value": "Chat + Image",
           "label": {
-            "en": "Prod Data Regressions",
-            "zh": "生产大数据回归通过"
+            "en": "product workflows",
+            "zh": "产品工作流"
           }
         },
         {
-          "value": "10",
+          "value": "No shared key",
           "label": {
-            "en": "Concurrent DB Locks",
-            "zh": "真实并发迁移测试"
+            "en": "browser security rule",
+            "zh": "浏览器安全规则"
           }
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Open live gateway",
+            "zh": "打开线上网关"
+          },
+          "href": "https://api.renss.top/"
+        },
+        {
+          "label": {
+            "en": "View sanitized showcase",
+            "zh": "查看脱敏展示仓库"
+          },
+          "href": "https://github.com/Simon-rss/zr-ai-gateway-showcase"
+        },
+        {
+          "label": {
+            "en": "New API upstream",
+            "zh": "New API 上游"
+          },
+          "href": "https://github.com/QuantumNous/new-api"
+        },
+        {
+          "label": {
+            "en": "Sub2API upstream",
+            "zh": "Sub2API 上游"
+          },
+          "href": "https://github.com/Wei-Shaw/sub2api"
         }
       ],
       "sections": [
         {
           "eyebrow": {
-            "en": "RELIABILITY",
-            "zh": "高可靠保障"
+            "en": "BUSINESS PROBLEM",
+            "zh": "业务问题"
           },
           "title": {
-            "en": "Decoupled Streaming & Multi-Instance Migration Safety",
-            "zh": "解耦流式调度与多实例迁移锁"
+            "en": "One account, many model providers",
+            "zh": "一个账号连接多种模型能力"
           },
           "body": {
-            "en": "Decoupled long-running multimodal nodes from HTTP workers via ARQ and Redis Streams with ordered SSE delivery, and eliminated startup race conditions across horizontal replicas with MySQL GET_LOCK.",
-            "zh": "通过 ARQ 与 Redis Stream 将耗时多模态节点与 HTTP 进程彻底解耦，并利用 MySQL 命名锁消除多副本启动迁移竞态。"
+            "en": "Teams should not have to understand every upstream provider, credential format or endpoint before they can use AI. The product needed one controlled entry point while keeping usage, keys and routing visible to operators.",
+            "zh": "团队不应该先理解每个上游供应商、凭据格式和接口差异，才能开始使用 AI。产品需要提供统一入口，同时让运营侧仍能看清用量、密钥和路由状态。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Turn upstream systems into one product",
+            "zh": "把上游系统整理成一个产品"
+          },
+          "body": {
+            "en": "I worked across gateway configuration, product branding, model discovery and the static ZR Chat workspace. The work focused on the gaps between an admin-oriented gateway and a usable end-user flow.",
+            "zh": "我同时处理网关配置、产品品牌、模型发现和 ZR Chat 静态工作台，重点补齐偏管理端的网关与真实用户流程之间的缺口。"
+          },
+          "items": [
+            {
+              "en": "Load chat-capable models from the current validated API key instead of a hard-coded list.",
+              "zh": "从当前已校验的 API Key 加载可对话模型，而不是使用写死列表。"
+            },
+            {
+              "en": "Add direct image upload, image generation and reference-image editing routes.",
+              "zh": "增加图片直传、生图和参考图编辑路由。"
+            },
+            {
+              "en": "Create agent modes for general chat, image work, prompt design and content analysis.",
+              "zh": "建立通用对话、生图、提示词设计和内容分析等智能体模式。"
+            }
+          ]
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING DECISION",
+            "zh": "工程决策"
+          },
+          "title": {
+            "en": "Keep credentials with the user",
+            "zh": "让凭据始终属于用户"
+          },
+          "body": {
+            "en": "The browser reuses the signed-in user's gateway token, selects a user-owned key and keeps that generated key only in memory for the current session. No shared server key is embedded in the static frontend.",
+            "zh": "浏览器复用已登录用户的网关 Token，选择用户自己的 Key，并仅在当前会话内存中保存生成的 Key；静态前端不嵌入共享服务端密钥。"
           }
         }
       ],
@@ -429,93 +804,168 @@
         {
           "number": "01",
           "title": {
-            "en": "Async Enqueue & Multimodal Parse",
-            "zh": "异步入队与多模态输入"
+            "en": "Validate identity",
+            "zh": "校验身份"
           },
           "text": {
-            "en": "Accepts up to 10 mixed image/video/document attachments and dispatches to ARQ workers.",
-            "zh": "支持单次最多 10 个图片/视频/文档混合附件并交由 ARQ Worker 异步执行。"
+            "en": "Reuse the gateway login state and validate the current user before exposing model controls.",
+            "zh": "复用网关登录状态，在展示模型控制能力前校验当前用户。"
           }
         },
         {
           "number": "02",
           "title": {
-            "en": "Redis Stream → SSE Replay",
-            "zh": "Redis Stream → SSE 流式推送"
+            "en": "Resolve access",
+            "zh": "解析访问能力"
           },
           "text": {
-            "en": "Streams node events reliably to clients with reconnect safety and verified production regressions.",
-            "zh": "通过 Redis Stream 向客户端稳定推送节点事件，通过 30/30 生产级大数据回归验证。"
+            "en": "Load or create a user-owned API key and request only the models available to that key.",
+            "zh": "加载或创建用户自己的 API Key，并只请求该 Key 可用的模型。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Route by intent",
+            "zh": "按意图路由"
+          },
+          "text": {
+            "en": "Send chat, generation and image-edit requests to their compatible OpenAI-style endpoints.",
+            "zh": "把对话、生图和图片编辑请求路由到兼容的 OpenAI 风格接口。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Keep the workspace useful",
+            "zh": "保持工作台可用"
+          },
+          "text": {
+            "en": "Separate agent modes, preserve conversation context and surface actionable gateway errors.",
+            "zh": "区分智能体模式、保留会话上下文，并把网关报错转换成可执行提示。"
           }
         }
       ]
     },
     {
-      "slug": "ai-devtools-and-factory",
-      "accent": "amber",
+      "slug": "bank-ai-data-intelligence",
+      "accent": "coral",
       "group": "product",
       "category": {
-        "en": "Open Source · DevTools",
-        "zh": "开源开发者工具与自动化"
+        "en": "Enterprise delivery · Anonymized",
+        "zh": "企业交付 · 已匿名化"
       },
       "title": {
-        "en": "Cross-Platform AI DevTools & Content Distribution Kit",
-        "zh": "跨平台 AI 开发者工具与多平台内容分发套件"
+        "en": "Banking AI & Data Intelligence",
+        "zh": "银行 AI 应用与数据智能分析"
       },
       "role": {
-        "en": "Open-Source Author",
-        "zh": "开源作者"
+        "en": "AI Agent engineer and application technical lead",
+        "zh": "AI Agent 开发工程师 / AI 应用技术负责人"
       },
       "summary": {
-        "en": "Open-source tooling spanning a macOS/Windows Chinese localization patch for Claude Desktop (3 Chinese locale variants) and an idempotent Postiz + multimodal video social distribution pipeline with mandatory human approval gates.",
-        "zh": "涵盖 macOS/Windows 双端 Claude Desktop 本地化补丁（覆盖 3 种中文区域变体），以及带 100% 人工审批闸门的 Postiz + 多模态视频海外社媒幂等排期流水线。"
+        "en": "An enterprise workflow connecting job parsing, requirement interpretation, code analysis, test design, automation assistance and data segmentation.",
+        "zh": "连接作业解析、需求理解、代码分析、测试设计、自动化辅助与数据分群的企业级工作流。"
       },
       "outcome": {
-        "en": "Covers 2 desktop OS platforms, 3 Chinese locale variants, and 100% human-in-the-loop publishing safeguards.",
-        "zh": "覆盖 2 大桌面操作系统与 3 种中文变体，实现 100% 人工审批防误发闸门。"
+        "en": "Converted fragmented testing and analysis activities into traceable, reusable agent workflows with human checkpoints.",
+        "zh": "把分散的测试与分析活动整理成可追踪、可复用并带人工确认点的智能体工作流。"
       },
       "tags": [
-        "Electron",
-        "TypeScript",
+        "Dify",
+        "DeepAgents",
         "Python",
-        "Automation"
+        "Java",
+        "K-Means",
+        "DBSCAN"
       ],
       "facts": [
         {
-          "value": "3",
+          "value": "Batch",
           "label": {
-            "en": "Chinese Locale Variants",
-            "zh": "中文区域变体支持"
+            "en": "multi-job parsing",
+            "zh": "多作业批量解析"
           }
         },
         {
           "value": "2",
           "label": {
-            "en": "Desktop OS Covered",
-            "zh": "桌面操作系统覆盖"
+            "en": "clustering approaches",
+            "zh": "类聚类方法"
           }
         },
         {
-          "value": "100%",
+          "value": "Audit",
           "label": {
-            "en": "Human Approval Gate",
-            "zh": "人工审批防误发闸门"
+            "en": "step-level evidence",
+            "zh": "步骤级证据"
           }
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Run the synthetic showcase",
+            "zh": "运行合成数据展示项目"
+          },
+          "href": "https://github.com/Simon-rss/enterprise-agent-workflows"
         }
       ],
       "sections": [
         {
           "eyebrow": {
-            "en": "CRAFT",
-            "zh": "工程细节"
+            "en": "BUSINESS PROBLEM",
+            "zh": "业务问题"
           },
           "title": {
-            "en": "Idempotent Pipelines with Mandatory Approval Gates",
-            "zh": "幂等流水线与人工审批闸门"
+            "en": "Testing knowledge was scattered across people and artifacts",
+            "zh": "测试知识分散在人和不同资产之间"
           },
           "body": {
-            "en": "Designed repeatable asset generation and social scheduling workflows where every external post passes an explicit human sign-off checkpoint to guarantee zero accidental publishes.",
-            "zh": "将多模态素材生产与海外社媒排期做成可重试的幂等流水线，每条对外内容必须经过显式人工确认闸门，杜绝误发。"
+            "en": "A single change could involve requirement text, batch jobs, Java methods, Mapper/XML, database metadata and existing domain rules. Manual analysis was difficult to repeat and even harder to audit.",
+            "zh": "一次变更可能同时涉及需求文本、批量作业、Java 方法、Mapper/XML、数据库元数据与既有领域规则。人工分析难以复用，也更难审计。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Own the path from requirement to accepted workflow",
+            "zh": "负责从需求到可验收工作流的完整路径"
+          },
+          "body": {
+            "en": "I handled requirement clarification, solution design, task decomposition, delivery coordination and evaluation while also building the agent and analysis components.",
+            "zh": "我负责需求澄清、方案设计、任务拆解、交付推进与效果评估，同时参与智能体和分析组件建设。"
+          },
+          "items": [
+            {
+              "en": "Build batch agent flows for multiple jobs, table structures and file types.",
+              "zh": "构建支持多作业、多表结构与多文件类型的批量智能体流程。"
+            },
+            {
+              "en": "Connect Dify/AIWorks workflows with code analysis and progressive domain-skill loading.",
+              "zh": "连接 Dify/AIWorks 工作流、代码分析与渐进式领域 Skill 加载。"
+            },
+            {
+              "en": "Prepare, standardize and evaluate clustering features with business-facing explanations.",
+              "zh": "完成聚类特征清洗、标准化、评估，并输出业务可理解的解释。"
+            }
+          ]
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING MODULES",
+            "zh": "工程模块"
+          },
+          "title": {
+            "en": "DeepAgents code knowledge and test design",
+            "zh": "DeepAgents 代码知识与测试设计"
+          },
+          "body": {
+            "en": "The Java code knowledge agent uses deterministic workflow control, local CodeGraph analysis, SQLite queues and skill orchestration before model analysis. The test-case designer progressively loads only the matched domain skills, validates references and emits Markdown plus audit-ready JSON.",
+            "zh": "Java 代码知识智能体先通过固定工作流控制、本地 CodeGraph、SQLite 队列和 Skill 编排，再进入模型分析；测试用例设计器只渐进加载命中的领域 Skill，校验引用并输出 Markdown 与可审计 JSON。"
           }
         }
       ],
@@ -523,23 +973,483 @@
         {
           "number": "01",
           "title": {
-            "en": "Cross-Platform Packaging",
-            "zh": "双端桌面补丁"
+            "en": "Normalize inputs",
+            "zh": "标准化输入"
           },
           "text": {
-            "en": "Supports macOS and Windows Electron bundles across Simplified & Traditional Chinese locales.",
-            "zh": "兼容 macOS 与 Windows 双端桌面应用，覆盖 3 种中文区域变体。"
+            "en": "Clean jobs, tables, files and business data into structures that tools and agents can inspect.",
+            "zh": "把作业、表结构、文件与业务数据清洗成工具和智能体可检查的结构。"
           }
         },
         {
           "number": "02",
           "title": {
-            "en": "Approval-Gated Distribution",
-            "zh": "人工审批分发"
+            "en": "Interpret the change",
+            "zh": "理解变更"
           },
           "text": {
-            "en": "Generates drafts and schedules to Postiz only after 100% explicit human approval.",
-            "zh": "生成素材与排期草稿，经 100% 显式人工审批后自动同步至发布队列。"
+            "en": "Combine requirement context, code artifacts, SQL impact and domain skills into an explainable analysis.",
+            "zh": "结合需求上下文、代码资产、SQL 影响和领域 Skill，生成可解释分析。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Design coverage",
+            "zh": "设计覆盖"
+          },
+          "text": {
+            "en": "Generate structured test cases and automation assistance, then validate format and skill references.",
+            "zh": "生成结构化测试用例和自动化辅助内容，再校验格式与 Skill 引用。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Learn from the data",
+            "zh": "从数据中发现规律"
+          },
+          "text": {
+            "en": "Use feature engineering and clustering to identify scenarios, distributions and anomalous samples.",
+            "zh": "通过特征工程与聚类识别典型场景、数据分布和异常样本。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "tilevision-studio",
+      "accent": "blue",
+      "group": "product",
+      "category": {
+        "en": "Independent product · Spatial AI",
+        "zh": "独立产品 · 空间 AI"
+      },
+      "title": {
+        "en": "TileVision Studio",
+        "zh": "TileVision Studio"
+      },
+      "role": {
+        "en": "Product designer and full-stack delivery owner",
+        "zh": "产品设计与全栈交付负责人"
+      },
+      "summary": {
+        "en": "A production-minded workflow that turns tile samples and room context into inspectable multi-angle spatial results.",
+        "zh": "将瓷砖样品和空间语境转化为可检查的多角度空间结果，并面向生产质量进行约束。"
+      },
+      "outcome": {
+        "en": "Made generation quality visible through staged inputs, angle coverage, consistency checks and reviewable outputs.",
+        "zh": "通过分阶段输入、角度覆盖、一致性检查和可复核输出，让生成质量变得可见。"
+      },
+      "tags": [
+        "Computer Vision",
+        "Image Generation",
+        "Quality Gates",
+        "FastAPI",
+        "React"
+      ],
+      "facts": [
+        {
+          "value": "Multi-angle",
+          "label": {
+            "en": "result coverage",
+            "zh": "结果覆盖"
+          }
+        },
+        {
+          "value": "Rules",
+          "label": {
+            "en": "quality gates",
+            "zh": "质量门禁"
+          }
+        },
+        {
+          "value": "Traceable",
+          "label": {
+            "en": "generation state",
+            "zh": "生成状态"
+          }
+        }
+      ],
+      "links": [],
+      "sections": [
+        {
+          "eyebrow": {
+            "en": "PRODUCT PROBLEM",
+            "zh": "产品问题"
+          },
+          "title": {
+            "en": "A beautiful image is not enough",
+            "zh": "只有一张好看图片还不够"
+          },
+          "body": {
+            "en": "For a spatial visualization workflow, the tile material, scale, laying direction and room perspective all need to remain believable. The product therefore treats generation as an inspectable task rather than a single prompt box.",
+            "zh": "空间效果工作流要求材料、比例、铺贴方向和空间透视都可信，因此产品把生成过程设计成可检查任务，而不是单一提示词输入框。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Design the workflow and the quality language",
+            "zh": "同时设计工作流与质量语言"
+          },
+          "body": {
+            "en": "I shaped the interaction model, generation stages, multi-angle result library and quality feedback, then validated the behavior through regression checks and rendered evidence.",
+            "zh": "我设计交互模型、生成阶段、多角度结果库和质量反馈，并通过回归检查与渲染证据验证行为。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING DECISION",
+            "zh": "工程决策"
+          },
+          "title": {
+            "en": "Separate generation from acceptance",
+            "zh": "把生成与验收分开"
+          },
+          "body": {
+            "en": "Generation can finish while a result still fails material, geometry or realism expectations. Explicit task states and quality gates make that distinction operational for users and testable for the team.",
+            "zh": "生成完成并不代表结果满足材料、几何或真实感要求。显式任务状态与质量门禁让用户能操作这种差异，也让团队能够测试它。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": {
+            "en": "Capture the material",
+            "zh": "获取材料"
+          },
+          "text": {
+            "en": "Accept tile samples and the intended room context.",
+            "zh": "接收瓷砖样品与目标空间语境。"
+          }
+        },
+        {
+          "number": "02",
+          "title": {
+            "en": "Define the scene",
+            "zh": "定义场景"
+          },
+          "text": {
+            "en": "Clarify room type, viewpoint, laying method and expected result set.",
+            "zh": "明确空间类型、视角、铺贴方式和结果数量。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Generate with constraints",
+            "zh": "约束生成"
+          },
+          "text": {
+            "en": "Create spatial views while preserving material and perspective consistency.",
+            "zh": "生成空间视图，同时约束材料与透视一致性。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Review before delivery",
+            "zh": "交付前复核"
+          },
+          "text": {
+            "en": "Check visible quality rules, compare angles and retain the accepted outputs.",
+            "zh": "检查可见质量规则、对比角度并保留验收结果。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "renopilot",
+      "accent": "amber",
+      "group": "product",
+      "category": {
+        "en": "Independent product · Operations AI",
+        "zh": "独立产品 · 运营 AI"
+      },
+      "title": {
+        "en": "RenoPilot",
+        "zh": "RenoPilot"
+      },
+      "role": {
+        "en": "Workflow product designer and engineering owner",
+        "zh": "工作流产品设计与工程负责人"
+      },
+      "summary": {
+        "en": "A renovation operations workbench that turns customer context into quote readiness, risk prompts and follow-up actions.",
+        "zh": "把客户背景转化为报价准备度、风险提示和后续动作的装修业务运营工作台。"
+      },
+      "outcome": {
+        "en": "Translated unstructured conversations and scattered pricing knowledge into a repeatable store workflow.",
+        "zh": "把非结构化沟通和分散的价格知识整理成门店可重复执行的工作流。"
+      },
+      "tags": [
+        "Workflow Design",
+        "Business Rules",
+        "Pricing",
+        "Risk Prompts",
+        "React"
+      ],
+      "facts": [
+        {
+          "value": "Structured",
+          "label": {
+            "en": "customer context",
+            "zh": "客户语境"
+          }
+        },
+        {
+          "value": "Visible",
+          "label": {
+            "en": "quote readiness",
+            "zh": "报价准备度"
+          }
+        },
+        {
+          "value": "Actionable",
+          "label": {
+            "en": "risk prompts",
+            "zh": "风险提示"
+          }
+        }
+      ],
+      "links": [],
+      "sections": [
+        {
+          "eyebrow": {
+            "en": "PRODUCT PROBLEM",
+            "zh": "产品问题"
+          },
+          "title": {
+            "en": "The quote is only as good as the context behind it",
+            "zh": "报价质量取决于背后的语境"
+          },
+          "body": {
+            "en": "Store teams often collect key details across chat, memory, price sheets and follow-up notes. Missing one condition can make a quote incomplete or unprofitable.",
+            "zh": "门店团队往往把关键信息分散在聊天、个人记忆、价格表和跟进记录中，遗漏一个条件就可能让报价不完整或失去利润空间。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Turn operating judgment into product behavior",
+            "zh": "把运营判断转化为产品行为"
+          },
+          "body": {
+            "en": "I mapped customer stages, pricing prerequisites, missing-information rules and follow-up actions into a workbench that can be scanned and operated repeatedly.",
+            "zh": "我把客户阶段、报价前置条件、缺失信息规则和跟进动作映射到一个可扫描、可重复操作的工作台。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING DECISION",
+            "zh": "工程决策"
+          },
+          "title": {
+            "en": "Keep deterministic pricing separate from AI assistance",
+            "zh": "让确定性价格与 AI 辅助保持边界"
+          },
+          "body": {
+            "en": "AI is used to organize context and suggest questions, while price references, required fields and risk thresholds remain explicit business rules.",
+            "zh": "AI 用于整理语境和建议追问，而价格参考、必填字段和风险阈值继续由显式业务规则控制。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": {
+            "en": "Import context",
+            "zh": "导入语境"
+          },
+          "text": {
+            "en": "Extract customer, room, budget and intent from the conversation.",
+            "zh": "从沟通中提取客户、空间、预算和意图。"
+          }
+        },
+        {
+          "number": "02",
+          "title": {
+            "en": "Check completeness",
+            "zh": "检查完整度"
+          },
+          "text": {
+            "en": "Identify missing details and the questions needed before a quote is safe.",
+            "zh": "识别缺失信息与安全报价前必须追问的问题。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Build the quote",
+            "zh": "形成报价"
+          },
+          "text": {
+            "en": "Combine items, regional references and margin-risk rules.",
+            "zh": "结合报价项、区域参考与毛利风险规则。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Drive follow-up",
+            "zh": "推动跟进"
+          },
+          "text": {
+            "en": "Convert the current state into clear store actions and reminders.",
+            "zh": "把当前状态转换为清晰的门店动作与提醒。"
+          }
+        }
+      ]
+    },
+    {
+      "slug": "yingqiao-flow",
+      "accent": "coral",
+      "group": "product",
+      "category": {
+        "en": "Independent system · Content operations",
+        "zh": "独立系统 · 内容运营"
+      },
+      "title": {
+        "en": "YingQiao Flow",
+        "zh": "YingQiao Flow"
+      },
+      "role": {
+        "en": "Agent-pipeline designer and automation owner",
+        "zh": "Agent 流水线设计与自动化负责人"
+      },
+      "summary": {
+        "en": "A source-aware content pipeline spanning topic selection, Chinese content packages, authorized assets, video generation and draft-upload checks.",
+        "zh": "覆盖选题、中文内容包、授权素材、视频生成与草稿上传检查的来源可追溯内容流水线。"
+      },
+      "outcome": {
+        "en": "Made compliance and source status explicit at every handoff instead of treating them as a final manual check.",
+        "zh": "把合规与来源状态放进每次交接，而不是留到最后再人工补查。"
+      },
+      "tags": [
+        "Agent Pipeline",
+        "Source Tracking",
+        "Compliance",
+        "Video",
+        "Automation"
+      ],
+      "facts": [
+        {
+          "value": "Source-aware",
+          "label": {
+            "en": "topic research",
+            "zh": "选题研究"
+          }
+        },
+        {
+          "value": "Gated",
+          "label": {
+            "en": "asset handoff",
+            "zh": "素材交接"
+          }
+        },
+        {
+          "value": "Auditable",
+          "label": {
+            "en": "draft checks",
+            "zh": "草稿检查"
+          }
+        }
+      ],
+      "links": [],
+      "sections": [
+        {
+          "eyebrow": {
+            "en": "PRODUCT PROBLEM",
+            "zh": "产品问题"
+          },
+          "title": {
+            "en": "Fast content production still needs evidence",
+            "zh": "快速内容生产仍然需要证据"
+          },
+          "body": {
+            "en": "A usable content pipeline must distinguish a verified source from an inaccessible one, an authorized asset from an attractive image and a validated draft from a generated file.",
+            "zh": "可用的内容流水线必须区分已验证与不可访问的来源、授权素材与仅仅好看的图片，以及已验证草稿与单纯生成文件。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "MY CONTRIBUTION",
+            "zh": "我的工作"
+          },
+          "title": {
+            "en": "Define contracts between every automation step",
+            "zh": "为每个自动化步骤定义交接合同"
+          },
+          "body": {
+            "en": "I structured the outputs, validators, status language and failure boundaries across research, content generation, asset preparation, video assembly and upload checks.",
+            "zh": "我为研究、内容生成、素材准备、视频合成和上传检查建立结构化产物、校验器、状态语言与失败边界。"
+          }
+        },
+        {
+          "eyebrow": {
+            "en": "ENGINEERING DECISION",
+            "zh": "工程决策"
+          },
+          "title": {
+            "en": "A blocked source is not an empty result",
+            "zh": "来源不可访问不等于没有内容"
+          },
+          "body": {
+            "en": "The pipeline records source-inaccessible, blocked and partial states explicitly. That prevents later steps from presenting missing evidence as a clean result.",
+            "zh": "流水线显式记录 source-inaccessible、blocked 和 partial 状态，防止后续步骤把缺失证据包装成正常结果。"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "number": "01",
+          "title": {
+            "en": "Select the topic",
+            "zh": "选择选题"
+          },
+          "text": {
+            "en": "Evaluate recency, source quality and content value before production.",
+            "zh": "在生产前评估时效、来源质量与内容价值。"
+          }
+        },
+        {
+          "number": "02",
+          "title": {
+            "en": "Build the package",
+            "zh": "形成内容包"
+          },
+          "text": {
+            "en": "Produce the script, visual brief, source notes and compliance boundaries together.",
+            "zh": "同步生成脚本、视觉说明、来源记录与合规边界。"
+          }
+        },
+        {
+          "number": "03",
+          "title": {
+            "en": "Verify the assets",
+            "zh": "校验素材"
+          },
+          "text": {
+            "en": "Accept only authorized assets that satisfy the package contract.",
+            "zh": "只接收满足素材包合同的授权素材。"
+          }
+        },
+        {
+          "number": "04",
+          "title": {
+            "en": "Generate and hand off",
+            "zh": "生成并交接"
+          },
+          "text": {
+            "en": "Create the vertical video, burn subtitles and validate the draft-upload state.",
+            "zh": "生成竖屏视频、烧录字幕并验证草稿上传状态。"
           }
         }
       ]

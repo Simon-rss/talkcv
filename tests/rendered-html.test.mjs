@@ -40,13 +40,13 @@ test("SSR renders home page, case studies, and custom 404", async () => {
   assert.match(homeHtml, /TalkCV — 把 PDF 简历变成会对话的 AI 个人网站/);
   assert.match(homeHtml, /\/api\/og/);
   assert.match(homeHtml, /data-theme="editorial"/);
-  assert.match(homeHtml, /TalkCV — AI-Native Interactive/);
+  assert.match(homeHtml, /Agent-Native Collaborative Spreadsheet/);
   assert.match(homeHtml, /application\/ld\+json/);
 
-  const caseRes = await render("/projects/talkcv-interactive-resume");
+  const caseRes = await render("/projects/agent-spreadsheet-workbench");
   assert.equal(caseRes.status, 200);
   const caseHtml = await caseRes.text();
-  assert.match(caseHtml, /TalkCV/);
+  assert.match(caseHtml, /Agent-Native Collaborative Spreadsheet/);
   assert.match(caseHtml, /min read/);
 
   const notFoundRes = await render("/projects/does-not-exist");
@@ -60,9 +60,9 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   assert.equal(sitemapRes.status, 200);
   assert.match(sitemapRes.headers.get("content-type") ?? "", /application\/xml/i);
   const sitemapXml = await sitemapRes.text();
-  assert.match(sitemapXml, /\/projects\/talkcv-interactive-resume/);
-  assert.match(sitemapXml, /\/projects\/agent-collab-spreadsheet/);
-  assert.match(sitemapXml, /\/projects\/multimodal-workflow-runtime/);
+  assert.match(sitemapXml, /\/projects\/agent-spreadsheet-workbench/);
+  assert.match(sitemapXml, /\/projects\/multimodal-workflow-engine/);
+  assert.match(sitemapXml, /\/projects\/talkcv/);
 
   const robotsRes = await render("/robots.txt");
   assert.equal(robotsRes.status, 200);
@@ -78,7 +78,7 @@ test("serves dynamic /sitemap.xml, /robots.txt, /llms.txt, /resume.json, and /ap
   assert.equal(resumeRes.status, 200);
   const resumeJson = await resumeRes.json();
   assert.equal(resumeJson.basics?.name, "Simon · 任思硕");
-  assert.equal(resumeJson.projects?.length, 4);
+  assert.equal(resumeJson.projects?.length, 8);
 
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-chat`);

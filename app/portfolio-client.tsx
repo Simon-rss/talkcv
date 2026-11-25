@@ -42,7 +42,6 @@ import {
   type SectionId,
   type ThemeId,
 } from "../lib/schema";
-import { creationPricing, PLAN_CREDITS } from "../lib/credits";
 import { AccountMenu } from "./account-menu";
 import {
   CommandPalette,
@@ -853,9 +852,8 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
                 </h2>
                 <p className="af-storefront-desc">
                   {lang === "zh"
-                    ? `上传 PDF / Word / 简历截图，免登录即可试玩生成专属 /u/你的名字 个人站，支持可验证引用 AI 对话、JD 匹配、扫码 A4 PDF 导出与口令隐私。Free 免费领取终身 ${PLAN_CREDITS.free} 点，Pro $20/30天，Max $49/30天。`
-                    : `Upload PDF/DOCX or a résumé screenshot to try generating your /u/handle site with cited AI Q&A, JD matching, QR-enabled A4 PDF export, and passcode privacy. Free includes ${PLAN_CREDITS.free} lifetime credits; Pro $20/mo, Max $49/mo.`}
-                  {" "}{creationPricing(lang)}
+                    ? "上传 PDF / Word / 简历截图，免费使用、免登录即可生成专属 /u/你的名字 交互式简历站，支持可验证引用 AI 对话、JD 匹配、原版 PDF 盖 AI 码与口令隐私保护。"
+                    : "Upload PDF, DOCX, or a résumé screenshot — free to use with no login required to try your /u/handle AI résumé site with cited Q&A, JD matching, lossless PDF QR stamp, and passcode privacy."}
                 </p>
               </div>
               <div className="af-storefront-actions">

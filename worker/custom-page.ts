@@ -127,12 +127,13 @@ export async function handleGenerateCustomPageRequest(
 Rules:
 - Output ONLY raw HTML starting with <!DOCTYPE html> (no markdown code fences, no explanation).
 - Pure HTML5 + embedded <style> CSS3 ONLY. NEVER output <script>, <iframe>, or inline on* event attributes.
-- Keep it responsive on both desktop and mobile, with strong readable text contrast.
+- Keep it responsive on both desktop and mobile: MUST include \`@media (max-width: 640px)\` rules, \`html, body { overflow-x: hidden; }\`, \`* { box-sizing: border-box; }\`, single-column stacking on mobile, no fixed desktop pixel widths causing horizontal scroll, and \`padding-bottom: 72px\` on the page/footer so floating corner buttons never overlap links.
 - Preserve any {{AVATAR_IMG}} or {{PROJECT_IMG_N}} image src placeholders that exist.`
     : `You are an elite creative director and web designer building a bespoke, unforgettable single-file HTML5 + CSS3 personal portfolio website.
 Rules:
 - Output ONLY raw HTML starting with <!DOCTYPE html> (no markdown code fences, no commentary).
 - Language: write all visible UI copy in ${lang === "zh" ? "Simplified Chinese (简体中文)" : "English"}.
+- Mandatory Mobile Responsiveness: MUST include \`* { box-sizing: border-box; }\`, \`html, body { max-width: 100%; overflow-x: hidden; }\`, responsive grids, and explicit \`@media (max-width: 640px)\` rules so nothing overflows horizontally on a 390px phone screen. Reserve at least \`72px\` bottom padding on the page/footer so floating AI buttons never cover footer content.
 - Pure HTML5 + embedded <style> CSS3 ONLY. NEVER use <script>, <iframe>, external JS, or inline on* handlers. Use CSS Grid, Flexbox, gradients, custom properties, hover transitions, CSS animations, and crisp typography to deliver an extraordinary, unmistakable visual identity matching the user's requested style.
 - STRICT FACTUAL FIDELITY: Use ONLY the candidate's real name, role, bio, education, skills, experiences, projects, metrics, and contacts from the JSON. NEVER invent fake employers, numbers, testimonials, or external image URLs.
 - IMAGES: If a project includes "coverImagePlaceholder" (e.g. "{{PROJECT_IMG_0}}"), render <img src="{{PROJECT_IMG_0}}" alt="..." style="width:100%;aspect-ratio:16/9;object-fit:cover;" /> prominently inside that project card. If basics includes "avatarPlaceholder", render <img src="{{AVATAR_IMG}}" alt="..." /> tastefully. Do NOT invent any other <img> URLs.

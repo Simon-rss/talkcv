@@ -1,5 +1,6 @@
 import { normalizeContacts } from "../lib/contacts.mjs";
 import { getSiteUrl } from "../lib/profile";
+import { getClientIp } from "../lib/request-ip";
 import { getSessionUser, hmacHex, sendEmail, type AuthEnv } from "./auth";
 import { getUserPlan } from "./billing";
 import { getEncryptionMasterKey, loadStoredRecord, withSiteWrite } from "./publish";
@@ -88,17 +89,13 @@ export async function handleLeads(request: Request, slug: string, env: AuthEnv, 
   if (request.method !== "POST") return error(405, "Method not allowed.");
   const fields = parseLead(await request.json().catch(() => null));
   const result = await withSiteWrite(slug, "", env, async (locked) => {
-    const record = await loadStoredRecord(slug, locked);
+    const record = await loadStoredRecord(slug, locked, { includeMedia: false });
     if (!record) return error(404, "Site not found.");
     if (!await siteUnlocked(request, slug, record.passcode)) return error(401, "Unlock the site first.");
-    if (Date.now() > Date.parse(record.expiresAt)) {
-      const plan = await getUserPlan(record.ownerEmail, locked);
-      if (!plan.isPro || plan.isTrial) return error(410, "Hosting period expired.");
-    }
     if (!fields) return error(400, "Enter a valid WeChat ID or email and check field lengths.");
     const inbox = await readInbox(slug, locked);
     const window = Math.floor(Date.now() / 600_000);
-    const ip = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+    const ip = getClientIp(request, locked);
     const sender = await hmacHex(getEncryptionMasterKey(locked), `lead:${slug}:${window}:${ip}`);
     const submissions = inbox.window === window ? inbox.submissions : {};
     if ((submissions[sender] ?? 0) >= 3) return error(429, "Too many submissions. Try again in 10 minutes.");

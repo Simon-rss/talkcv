@@ -1,5 +1,8 @@
 import { canUseModel, getHostedModel, isGeminiThinkingModel, isReasoningOrNextGenOpenAI } from "../lib/models";
 import { profile as defaultProfile } from "../lib/profile";
+import { BoundedRateLimiter } from "../lib/rate-limit";
+import { getClientIp } from "../lib/request-ip";
+import { DESIGNER_SAMPLE_PROFILE, PM_SAMPLE_PROFILE } from "../lib/sample-profiles";
 import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
 import { getUserPlan, PLAN_LIMITS, type BillingEnv } from "./billing";
@@ -16,6 +19,7 @@ export interface ChatEnv extends AuthEnv {
   DEEPSEEK_API_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_BASE_URL?: string;
+  GUEST_TRIAL_DAILY_CAP?: string;
 }
 
 interface IncomingMessage {
@@ -30,7 +34,7 @@ export interface ClientToolCall {
 
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 15;
-const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const chatLimiter = new BoundedRateLimiter({ windowMs: RATE_WINDOW_MS, maxRequests: RATE_LIMIT, maxEntries: 5000 });
 const VALID_SECTIONS = new Set(["work", "capabilities", "experience", "contact"]);
 const VALID_THEMES = new Set(["editorial", "terminal", "bento"]);
 
@@ -48,15 +52,7 @@ function jsonError(status: number, error: string): Response {
 }
 
 function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const bucket = rateBuckets.get(ip);
-  if (!bucket || now > bucket.resetAt) {
-    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= RATE_LIMIT) return false;
-  bucket.count += 1;
-  return true;
+  return chatLimiter.check(ip);
 }
 
 function parseLeadingToolTag(
@@ -102,16 +98,13 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
   const openaiKey = env.OPENAI_API_KEY?.trim() || "";
   const deepseekKey = env.DEEPSEEK_API_KEY?.trim() || "";
   const geminiKey = env.GEMINI_API_KEY?.trim() || "";
-  const ip =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown";
+  const ip = getClientIp(request, env);
 
   if (!checkRateLimit(ip)) {
     return jsonError(429, "Too many requests. Please wait a minute and try again.");
   }
 
-  let body: { messages?: unknown; lang?: unknown; persona?: unknown; quote?: unknown; profileSlug?: unknown };
+  let body: { messages?: unknown; lang?: unknown; persona?: unknown; quote?: unknown; profileSlug?: unknown; sampleRole?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -144,12 +137,18 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
   const isPersonalHosted = siteKey !== "__demo__";
   const allowThemeSwitch = !isPersonalHosted;
 
-  const storedRecord = isPersonalHosted ? await loadStoredRecord(siteKey, env) : null;
+  const storedRecord = isPersonalHosted ? await loadStoredRecord(siteKey, env, { includeMedia: false }) : null;
   if (isPersonalHosted && siteKey !== "__draft__" && !storedRecord) return jsonError(404, "Site not found.");
   if (storedRecord && !await siteUnlocked(request, normalizeSlug(siteKey), storedRecord.passcode)) {
     return jsonError(401, "Unlock this site before asking a question.");
   }
-  const activeProfile = storedRecord?.profile ?? defaultProfile;
+  const activeProfile =
+    storedRecord?.profile ??
+    (!isPersonalHosted && body.sampleRole === "pm"
+      ? PM_SAMPLE_PROFILE
+      : !isPersonalHosted && body.sampleRole === "designer"
+        ? DESIGNER_SAMPLE_PROFILE
+        : defaultProfile);
   const validSlugs = new Set(activeProfile.projects.map((p) => p.slug));
 
   // Check if site has an encrypted BYOK key (unlocks unlimited daily visitor chat)
@@ -170,7 +169,9 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     ? await getUserPlan(storedRecord.ownerEmail, env as BillingEnv)
     : { plan: "free" as const, isPro: false, isMax: false, isTrial: false, limits: PLAN_LIMITS.free, record: null };
   const hasPermanentHosting = ownerPlan.isPro && !ownerPlan.isTrial;
-  if (storedRecord && !hasPermanentHosting && Date.now() > Date.parse(storedRecord.expiresAt)) return jsonError(410, "Hosting period expired.");
+  if (storedRecord && !byokCreds && !hasPermanentHosting && Date.now() > Date.parse(storedRecord.expiresAt)) {
+    return jsonError(410, "Hosted AI chat period expired. You can still view the full résumé or leave an interview invite.");
+  }
   if (!byokCreds && !openaiKey && !deepseekKey && !geminiKey) {
     return jsonError(
       503,

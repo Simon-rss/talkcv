@@ -1,3 +1,4 @@
+import { getClientIp } from "../lib/request-ip";
 import type { PublishEnv } from "./publish";
 
 export interface DailyTrafficBucket {
@@ -81,14 +82,6 @@ export function shouldTrackTraffic(request: Request, pathname: string, response:
   return true;
 }
 
-function extractClientIp(request: Request): string {
-  const cfIp = request.headers.get("cf-connecting-ip")?.trim();
-  if (cfIp) return cfIp;
-  const xff = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (xff) return xff;
-  return "unknown";
-}
-
 function extractReferrerSource(request: Request, currentHost: string): string {
   const ua = request.headers.get("user-agent") || "";
   const referer = request.headers.get("referer")?.trim();
@@ -168,7 +161,7 @@ async function withDayLock<T>(day: string, fn: () => Promise<T>): Promise<T> {
 export async function recordSiteTraffic(request: Request, pathname: string, env: PublishEnv): Promise<void> {
   const day = beijingDateKey();
   const ua = request.headers.get("user-agent") || "";
-  const ip = extractClientIp(request);
+  const ip = getClientIp(request, env);
   const host = new URL(request.url).hostname;
   const pageKey = normalizeTrafficPath(pathname);
   const refKey = extractReferrerSource(request, host);

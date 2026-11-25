@@ -1,6 +1,7 @@
 import { CREDIT_COST } from "../lib/credits";
+import { getSiteUrl } from "../lib/profile";
 import { creditBalance, creditPeriod, listCreditRows, releaseExpiredCredits, type CreditLedger } from "./credits";
-import { getSessionUser, legacyUsageCount, type AuthEnv } from "./auth";
+import { getSessionUser, legacyUsageCount, sendEmail, timingSafeEqual, type AuthEnv } from "./auth";
 import { getUserPlan, handleCreateRedeemCodesRequest, type BillingEnv, type PlanRecord, type RedeemCodeRecord } from "./billing";
 import type { StoredProfileRecord } from "./publish";
 import { countLeads } from "./leads";
@@ -476,4 +477,68 @@ export async function handleAdminCreateDiscountRequest(request: Request, env: Ad
   else memDiscounts.set(key, serialized);
 
   return jsonResponse(200, { ok: true, discount: record });
+}
+
+const memExpiryReminded = new Set<string>();
+
+export async function handleAdminExpiryRemindersRequest(request: Request, env: AdminEnv): Promise<Response> {
+  if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
+
+  const secret = env.AUTH_SECRET?.trim() || "";
+  const authHeader = request.headers.get("authorization")?.trim() || "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  const authorizedByToken = Boolean(secret && bearer && timingSafeEqual(bearer, secret));
+  if (!authorizedByToken) {
+    const gate = await requireAdmin(request, env);
+    if (!gate.ok) return gate.response;
+  }
+
+  const profileRows = await listByPrefix("profile:", env, 5000);
+  const now = Date.now();
+  const windowMs = 72 * 3600_000;
+  let scanned = 0;
+  let sent = 0;
+  let skipped = 0;
+  const remindedSlugs: string[] = [];
+
+  for (const row of profileRows) {
+    const slug = row.key.slice("profile:".length);
+    const rec = safeParse<StoredProfileRecord>(row.value);
+    if (!rec?.ownerEmail || !rec.expiresAt) continue;
+    scanned += 1;
+
+    const expMs = Date.parse(rec.expiresAt);
+    if (!Number.isFinite(expMs) || expMs <= now || expMs - now > windowMs) continue;
+
+    const ownerPlan = await getUserPlan(rec.ownerEmail, env);
+    if (ownerPlan.isPro && !ownerPlan.isTrial) continue;
+    if (rec.chatConfig?.mode === "byok") continue;
+
+    const markerKey = `expiry_reminded:${slug}:${rec.expiresAt}`;
+    const already = env.PROFILES_KV ? Boolean(await env.PROFILES_KV.get(markerKey)) : memExpiryReminded.has(markerKey);
+    if (already) {
+      skipped += 1;
+      continue;
+    }
+
+    const daysLeft = Math.max(1, Math.ceil((expMs - now) / 86_400_000));
+    const siteUrl = `${getSiteUrl()}/u/${slug}`;
+    const ok = env.RESEND_API_KEY?.trim()
+      ? await sendEmail(
+          env,
+          rec.ownerEmail,
+          `TalkCV 提醒：你的简历站 /u/${slug} 的托管 AI 问答将在 ${daysLeft} 天后进入休眠`,
+          `你好！\n\n你的 TalkCV 个人简历站 ${siteUrl} 的免费 30 天托管 AI 问答将在约 ${daysLeft} 天后到期。\n\n到期后：\n- 你的简历网页、二维码与 HR 约面留资将继续永久保持在线，不会失效；\n- 仅托管 AI 问答将暂停（绑定你自己的 API Key 或升级 $4.9 冲刺卡 / Pro 即可随时恢复）。\n\n前往工作台管理：${getSiteUrl()}/create?handle=${slug}`,
+        )
+      : true;
+
+    if (ok) {
+      if (env.PROFILES_KV) await env.PROFILES_KV.put(markerKey, new Date().toISOString());
+      else memExpiryReminded.add(markerKey);
+      sent += 1;
+      remindedSlugs.push(slug);
+    }
+  }
+
+  return jsonResponse(200, { ok: true, scanned, sent, skipped, remindedSlugs });
 }

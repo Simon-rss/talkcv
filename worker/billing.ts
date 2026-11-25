@@ -1,4 +1,6 @@
 import { CREDIT_COST, PLAN_CREDITS } from "../lib/credits";
+import { BoundedRateLimiter } from "../lib/rate-limit";
+import { getClientIp } from "../lib/request-ip";
 import { getCredits } from "./credits";
 import { withSiteWrite } from "./publish";
 import type { PlanTier } from "../lib/models";
@@ -16,6 +18,8 @@ export interface BillingEnv extends AuthEnv {
   CREEM_PRO_YEARLY_ONETIME_PRODUCT_ID?: string;
   CREEM_MAX_ONETIME_PRODUCT_ID?: string;
   CREEM_MAX_YEARLY_ONETIME_PRODUCT_ID?: string;
+  CREEM_STARTER_ONETIME_PRODUCT_ID?: string;
+  CREEM_STARTER_PRODUCT_ID?: string;
   CREEM_API_BASE?: string;
 }
 
@@ -26,6 +30,7 @@ export interface PlanRecord {
   subscriptionId?: string;
   updatedAt: string;
   expiresAt?: string;
+  bonusCredits?: number;
 }
 
 export interface PlanLimits {
@@ -69,18 +74,10 @@ export interface RedeemCodeRecord {
 const memPlans = new Map<string, string>();
 const memEvents = new Set<string>();
 const memCodes = new Map<string, string>();
-const redeemRateBuckets = new Map<string, { count: number; resetAt: number }>();
+const redeemLimiter = new BoundedRateLimiter({ windowMs: 60_000, maxRequests: 10, maxEntries: 5000 });
 
 function checkRedeemRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const bucket = redeemRateBuckets.get(ip);
-  if (!bucket || now > bucket.resetAt) {
-    redeemRateBuckets.set(ip, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  if (bucket.count >= 10) return false;
-  bucket.count += 1;
-  return true;
+  return redeemLimiter.check(ip);
 }
 
 function normalizeRedeemCode(raw: unknown): string {
@@ -200,13 +197,14 @@ export async function getUserPlan(
   }
 
   const isTrial = paidPlan === "free" && trialOn;
+  const planBonusCredits = Number(record?.bonusCredits) || 0;
   return {
     plan: isTrial ? "pro" : paidPlan,
     isPro: paidPlan !== "free" || isTrial,
     isMax: paidPlan === "max",
     isTrial,
     limits: isTrial ? { ...PLAN_LIMITS.free, aiLiveEdit: true } : PLAN_LIMITS[paidPlan],
-    rewardCredits,
+    rewardCredits: rewardCredits + planBonusCredits,
     record,
   };
 }
@@ -244,7 +242,9 @@ export function billingAvailability(env: BillingEnv) {
   const sub = billingProducts(env, "subscription");
   const one = billingProducts(env, "onetime");
   const enabled = Boolean(env.CREEM_API_KEY?.trim());
+  const starterId = env.CREEM_STARTER_ONETIME_PRODUCT_ID?.trim() || env.CREEM_STARTER_PRODUCT_ID?.trim();
   return {
+    starter: enabled && Boolean(starterId),
     pro: {
       month: enabled && Boolean(sub.pro.month || one.pro.month),
       year: enabled && Boolean(sub.pro.year || one.pro.year),
@@ -257,7 +257,8 @@ export function billingAvailability(env: BillingEnv) {
 }
 
 export function isBillingConfigured(env: BillingEnv): boolean {
-  return Object.values(billingAvailability(env)).some(({ month, year }) => month || year);
+  const avail = billingAvailability(env);
+  return avail.starter || avail.pro.month || avail.pro.year || avail.max.month || avail.max.year;
 }
 
 export async function handleBillingCheckoutRequest(request: Request, env: BillingEnv): Promise<Response> {
@@ -274,16 +275,21 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
   } catch {
     // default to pro monthly
   }
-  const tier: "pro" | "max" = body.tier === "max" ? "max" : "pro";
+  const tier: "starter" | "pro" | "max" =
+    body.tier === "starter" ? "starter" : body.tier === "max" ? "max" : "pro";
   const interval: "month" | "year" = body.interval === "year" ? "year" : "month";
-  const mode: "subscription" | "onetime" = body.mode === "onetime" ? "onetime" : "subscription";
+  const mode: "subscription" | "onetime" =
+    tier === "starter" ? "onetime" : body.mode === "onetime" ? "onetime" : "subscription";
   const discountCode =
     typeof body.discountCode === "string"
       ? body.discountCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32)
       : "";
 
   const apiKey = env.CREEM_API_KEY?.trim();
-  const productId = billingProducts(env, mode)[tier][interval];
+  const productId =
+    tier === "starter"
+      ? env.CREEM_STARTER_ONETIME_PRODUCT_ID?.trim() || env.CREEM_STARTER_PRODUCT_ID?.trim()
+      : billingProducts(env, mode)[tier][interval];
 
   if (!apiKey || !productId) {
     return jsonResponse(503, { error: "Selected billing plan is not configured on this server yet." });
@@ -292,7 +298,10 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
   const origin = new URL(request.url).origin;
   const baseUrl = getCreemBaseUrl(env);
   const metadata: Record<string, unknown> = { email: user.email, plan: tier, interval, mode };
-  if (mode === "onetime") {
+  if (tier === "starter") {
+    metadata.days = 14;
+    metadata.bonusCredits = 80;
+  } else if (mode === "onetime") {
     metadata.days = interval === "year" ? 365 : 30;
   }
 
@@ -460,6 +469,7 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
     obj?.current_period_end_date ||
     (obj?.subscription && typeof obj.subscription === "object" ? obj.subscription.current_period_end_date : undefined);
 
+  const isStarter = obj?.metadata?.plan === "starter";
   const grantedTier: PlanTier = obj?.metadata?.plan === "max" ? "max" : "pro";
 
   if (GRANT_EVENTS.has(eventType)) {
@@ -467,13 +477,15 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
     const metaMode = obj?.metadata?.mode;
     const metaDays = Number(obj?.metadata?.days);
     let expiresAt = periodEnd;
-    if (!expiresAt && (metaMode === "onetime" || (Number.isFinite(metaDays) && metaDays > 0))) {
+    if (!expiresAt && (isStarter || metaMode === "onetime" || (Number.isFinite(metaDays) && metaDays > 0))) {
       const days =
         Number.isFinite(metaDays) && metaDays > 0
           ? Math.min(3650, Math.floor(metaDays))
-          : obj?.metadata?.interval === "year"
-            ? 365
-            : 30;
+          : isStarter
+            ? 14
+            : obj?.metadata?.interval === "year"
+              ? 365
+              : 30;
       const prevExpiry =
         prev.record?.plan === grantedTier && prev.record.expiresAt && Number.isFinite(Date.parse(prev.record.expiresAt))
           ? Date.parse(prev.record.expiresAt)
@@ -481,6 +493,8 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
       const baseMs = Math.max(Date.now(), prevExpiry);
       expiresAt = new Date(baseMs + days * 86_400_000).toISOString();
     }
+    const addedBonus = isStarter ? Math.max(0, Number(obj?.metadata?.bonusCredits) || 80) : 0;
+    const totalBonusCredits = (Number(prev.record?.bonusCredits) || 0) + addedBonus;
     await setUserPlan(
       email,
       {
@@ -490,6 +504,7 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
         subscriptionId: subscriptionId || prev.record?.subscriptionId,
         updatedAt: new Date().toISOString(),
         ...(expiresAt ? { expiresAt } : {}),
+        ...(totalBonusCredits > 0 ? { bonusCredits: totalBonusCredits } : {}),
       },
       env,
     );
@@ -578,10 +593,7 @@ export async function handleCreateRedeemCodesRequest(request: Request, env: Bill
 export async function handleRedeemCodeRequest(request: Request, env: BillingEnv): Promise<Response> {
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
 
-  const ip =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown";
+  const ip = getClientIp(request, env);
   if (!checkRedeemRateLimit(ip)) {
     return jsonResponse(429, { error: "Too many redeem attempts. Please wait a minute and try again." });
   }

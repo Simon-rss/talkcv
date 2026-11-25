@@ -56,7 +56,8 @@ import { OutreachPanel } from "./outreach-panel";
 import { SharePoster } from "../share-poster";
 import { ContactLinks } from "../contact-links";
 import { SiteLinks } from "../public-navigation";
-import { PricingModal, requestCheckout } from "./pricing-modal";
+import { PricingModal, requestCheckout, type CheckoutTier } from "./pricing-modal";
+import { PdfQrStamper } from "./pdf-qr-stamper";
 
 function buildPresetAvatarSvg(initials: string, c1: string, c2: string): string {
   const clean = (initials || "TC").slice(0, 2).replace(/[<>&"']/g, "");
@@ -203,7 +204,7 @@ function localizeApiError(raw: string, lang: Lang): string {
   }
   if (/Check the email address and contact links/i.test(s)) return "请检查邮箱、GitHub、LinkedIn 及博客网址后再发布。";
   if (/Invalid AI brief/i.test(s)) return "请检查求职备忘的内容和字段长度。";
-  if (/Profile payload is too large/i.test(s)) return "简历和备忘的总大小超过 260 KB，请精简后再发布。";
+  if (/Profile payload is too large/i.test(s)) return "简历和备忘的总大小超过 2 MB，请压缩图片或精简后再发布。";
   if (/Handle must be/i.test(s)) {
     return "自定义网址仅支持 3–32 位小写字母、数字和连字符。";
   }
@@ -222,7 +223,7 @@ function localizeApiError(raw: string, lang: Lang): string {
   return s;
 }
 
-type CheckoutChoice = { tier: "pro" | "max"; interval: "month" | "year" };
+type CheckoutChoice = { tier: CheckoutTier; interval: "month" | "year" };
 
 export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLang?: Lang; checkout?: CheckoutChoice }) {
   const [lang, setLang] = useState<Lang>(initialLang);
@@ -308,7 +309,9 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     expiresAt: string;
   } | null>(null);
   const [pricingOpen, setPricingOpen] = useState(false);
-  const [checkoutBusyTier, setCheckoutBusyTier] = useState<"pro" | "max" | null>(null);
+  const [checkoutBusyTier, setCheckoutBusyTier] = useState<CheckoutTier | null>(null);
+  const [cloneNotice, setCloneNotice] = useState<string | null>(null);
+  const handleInputRef = useRef<HTMLInputElement>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [refineOpen, setRefineOpen] = useState(false);
   const [customGenLoading, setCustomGenLoading] = useState(false);
@@ -412,7 +415,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     };
   }, [lang, resetDraft]);
 
-  const startPlanCheckout = async (tier: "pro" | "max", interval: "month" | "year", discountCode?: string) => {
+  const startPlanCheckout = async (tier: CheckoutTier, interval: "month" | "year", discountCode?: string) => {
     setCheckoutBusyTier(tier);
     setPricingError(null);
     try {
@@ -1356,7 +1359,47 @@ ${jd.slice(0, 3000)}`;
                 </button>
               </div>
             ))}
+            {user.sites.length > 0 && (
+              <button
+                type="button"
+                className="af-icon-pill"
+                onClick={() => {
+                  if (user.sites.length >= user.maxSites) {
+                    setSiteActionError(
+                      lang === "zh"
+                        ? `当前套餐最多支持 ${user.maxSites} 个站点，请先升级套餐或删除旧站点后再克隆新版本。`
+                        : `Your plan allows up to ${user.maxSites} sites. Upgrade or delete an old site before cloning.`,
+                    );
+                    setPricingOpen(true);
+                    return;
+                  }
+                  const orig = normalizeSlug(handle || user.sites[0] || "my-site").replace(/-v\d+$/, "");
+                  let ver = 2;
+                  let candidate = `${orig}-v${ver}`;
+                  while (user.sites.includes(candidate) && ver < 20) {
+                    ver += 1;
+                    candidate = `${orig}-v${ver}`;
+                  }
+                  setSiteActionError("");
+                  setHandle(candidate);
+                  setPublishedUrl(null);
+                  setProtectedSite(false);
+                  setSavedPasscodeSlug("");
+                  setPasscode("");
+                  setCloneNotice(
+                    lang === "zh"
+                      ? `正在创建新分身站点 /u/${candidate}，不会覆盖原链接 /u/${orig}。修改内容后点击发布即可上线。`
+                      : `Cloning as new variant /u/${candidate} without overwriting /u/${orig}. Edit and publish when ready.`,
+                  );
+                  window.requestAnimationFrame(() => handleInputRef.current?.focus());
+                }}
+              >
+                <Copy size={12} />
+                <span>{lang === "zh" ? "克隆为新岗位版本" : "Clone as new variant"}</span>
+              </button>
+            )}
           </div>
+          {cloneNotice && <p role="status" style={{ margin: "6px 0 0", fontSize: 12.5, color: "#0071e3" }}>{cloneNotice}</p>}
           {siteActionError && <p role="alert">{siteActionError}</p>}
         </section>
       )}
@@ -1702,6 +1745,7 @@ ${jd.slice(0, 3000)}`;
               <div className="af-handle-input">
                 <span>/u/</span>
                 <input
+                  ref={handleInputRef}
                   type="text"
                   value={handle}
                   onChange={(e) => {
@@ -1921,6 +1965,7 @@ ${jd.slice(0, 3000)}`;
                   <span>{copiedUrl ? (lang === "zh" ? "已复制" : "Copied") : lang === "zh" ? "复制链接" : "Copy Link"}</span>
                 </button>
                 {publishedProfile && <SharePoster profile={publishedProfile} slug={new URL(publishedUrl).pathname.split("/").pop()!} lang={lang} />}
+                <PdfQrStamper slug={new URL(publishedUrl).pathname.split("/").pop()!} lang={lang} />
                 <button
                   type="button"
                   className="af-icon-pill af-login-pill"

@@ -8,7 +8,7 @@ export interface HostedModelOption {
   apiModel?: string;
 }
 
-export const OPENAI_PROMO_ACTIVE = true;
+export const OPENAI_PROMO_ACTIVE = false;
 
 export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
   {

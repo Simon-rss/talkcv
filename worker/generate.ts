@@ -10,6 +10,8 @@ import {
   type ThemeId,
 } from "../lib/schema";
 import { CREDIT_COST } from "../lib/credits";
+import { BoundedRateLimiter } from "../lib/rate-limit";
+import { getClientIp } from "../lib/request-ip";
 import { getSessionUser } from "./auth";
 import { getUserPlan } from "./billing";
 import { withCreationCredits } from "./credits";
@@ -17,7 +19,8 @@ import type { ChatEnv } from "./chat";
 
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 6;
-const genBuckets = new Map<string, { count: number; resetAt: number }>();
+const genLimiter = new BoundedRateLimiter({ windowMs: RATE_WINDOW_MS, maxRequests: RATE_LIMIT, maxEntries: 5000 });
+const DEFAULT_GUEST_TRIAL_DAILY_CAP = 150;
 
 const VALID_ACCENTS: ProjectAccent[] = ["mint", "blue", "coral", "amber"];
 const VALID_GROUPS = ["platform", "enterprise", "product"] as const;
@@ -37,15 +40,7 @@ function jsonResponse(
 }
 
 function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const bucket = genBuckets.get(ip);
-  if (!bucket || now > bucket.resetAt) {
-    genBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= RATE_LIMIT) return false;
-  bucket.count += 1;
-  return true;
+  return genLimiter.check(ip);
 }
 
 function loc(value: unknown, fallback = ""): { en: string; zh: string } {
@@ -264,16 +259,14 @@ export function resolveStudioModel(body: ModelSettings, mode: string, plan: Plan
 }
 
 const memGuestTrials = new Set<string>();
+const memGuestGlobalCount = new Map<string, number>();
 
 export async function handleGenerateRequest(request: Request, env: ChatEnv): Promise<Response> {
   if (request.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed." });
   }
 
-  const ip =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown";
+  const ip = getClientIp(request, env);
 
   if (!checkRateLimit(ip)) {
     return jsonResponse(429, { error: "Rate limit exceeded. Please wait a minute and try again." });
@@ -321,13 +314,23 @@ export async function handleGenerateRequest(request: Request, env: ChatEnv): Pro
   }
 
   let guestTrialKey = "";
+  let guestGlobalKey = "";
+  let guestGlobalCap = DEFAULT_GUEST_TRIAL_DAILY_CAP;
   if (isGuestTrial) {
     const today = new Date().toISOString().slice(0, 10);
     guestTrialKey = `guest_gen:${ip}:${today}`;
+    guestGlobalKey = `guest_gen_global:${today}`;
+    const parsedCap = Number(env.GUEST_TRIAL_DAILY_CAP);
+    if (Number.isFinite(parsedCap) && parsedCap >= 0) guestGlobalCap = Math.floor(parsedCap);
+
     const used = env.PROFILES_KV
       ? Boolean(await env.PROFILES_KV.get(guestTrialKey))
       : memGuestTrials.has(guestTrialKey);
-    if (used) {
+    const globalUsed = env.PROFILES_KV
+      ? Number((await env.PROFILES_KV.get(guestGlobalKey)) ?? "0") || 0
+      : (memGuestGlobalCount.get(guestGlobalKey) ?? 0);
+
+    if (used || globalUsed >= guestGlobalCap) {
       return jsonResponse(401, {
         error: "Daily guest trial used. Please sign in with your email for 30 free lifetime credits.",
         guestTrialExhausted: true,
@@ -411,8 +414,14 @@ ${JSON.stringify(sanitizedSample)}`;
     const parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     if (!parsed?.basics?.name) return jsonResponse(502, { error: "Model response is missing a résumé." });
     if (isGuestTrial && guestTrialKey) {
-      if (env.PROFILES_KV) await env.PROFILES_KV.put(guestTrialKey, "1");
-      else memGuestTrials.add(guestTrialKey);
+      if (env.PROFILES_KV) {
+        await env.PROFILES_KV.put(guestTrialKey, "1");
+        const curGlobal = Number((await env.PROFILES_KV.get(guestGlobalKey)) ?? "0") || 0;
+        await env.PROFILES_KV.put(guestGlobalKey, String(curGlobal + 1));
+      } else {
+        memGuestTrials.add(guestTrialKey);
+        memGuestGlobalCount.set(guestGlobalKey, (memGuestGlobalCount.get(guestGlobalKey) ?? 0) + 1);
+      }
     }
     return {
       profile: normalizeGeneratedProfile(parsed, theme, siteUrl, stylePrompt, resumeText),

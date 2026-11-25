@@ -3048,6 +3048,135 @@ button {
   gap: 5px;
 }
 
+.af-hero h1 {
+  text-wrap: pretty;
+}
+
+.af-starter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.08), rgba(94, 92, 230, 0.06));
+  border: 1.5px solid rgba(0, 113, 227, 0.25);
+}
+
+.af-starter-banner-copy {
+  flex: 1;
+  min-width: 240px;
+}
+
+.af-starter-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #0071e3;
+  background: rgba(0, 113, 227, 0.12);
+  padding: 3px 9px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+
+.af-starter-banner-copy h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.af-starter-banner-copy p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.af-insights-compact {
+  padding: 10px 16px !important;
+}
+
+.af-insights-compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.af-lead-modal {
+  width: min(460px, calc(100vw - 32px));
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+}
+
+.af-lead-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.af-lead-modal-head h3 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.af-print-entry {
+  margin-bottom: 10px;
+  break-inside: avoid;
+}
+
+.af-print-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.af-print-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 5px 0 4px;
+  font-size: 11px;
+}
+
+.af-print-facts span {
+  padding: 2px 7px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+}
+
+.af-print-items {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .af-cmd-trigger {
+    display: none !important;
+  }
+
+  .af-footer {
+    padding-bottom: 84px !important;
+  }
+}
+
 /* Passcode unlock card polish */
 .af-passcode-body {
   padding: 22px 20px 24px;

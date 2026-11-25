@@ -1,4 +1,6 @@
 import { CREDIT_COST } from "../lib/credits";
+import { BoundedCooldownMap } from "../lib/rate-limit";
+import { getClientIp } from "../lib/request-ip";
 import { getCreditAccount } from "./credits";
 import { getUserPlan, isBillingConfigured, type BillingEnv } from "./billing";
 import type { PublishEnv } from "./publish";
@@ -21,8 +23,8 @@ export const MAX_SITES_PER_USER = 2;
 export const FREE_HOSTING_DAYS = 30;
 
 const memUserSites = new Map<string, string[]>();
-const otpCooldown = new Map<string, number>();
 const OTP_COOLDOWN_MS = 30_000;
+const otpCooldown = new BoundedCooldownMap({ ttlMs: OTP_COOLDOWN_MS, maxEntries: 5000 });
 
 function jsonResponse(status: number, body: Record<string, unknown>, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -207,16 +209,23 @@ export async function handleSendCodeRequest(request: Request, env: AuthEnv): Pro
     return jsonResponse(400, { error: "Please enter a valid email address." });
   }
 
-  const ip =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "local";
+  const ip = getClientIp(request, env);
   const cooldownKey = `${ip}:${email}`;
-  const lastSent = otpCooldown.get(cooldownKey) ?? 0;
-  if (Date.now() - lastSent < OTP_COOLDOWN_MS) {
+  const now = Date.now();
+  const memLastSent = otpCooldown.get(cooldownKey, now) ?? 0;
+  let lastSent = memLastSent;
+  if (env.PROFILES_KV && now - lastSent >= OTP_COOLDOWN_MS) {
+    const kvRaw = await env.PROFILES_KV.get(`otp_cd:${cooldownKey}`);
+    const kvTs = Number(kvRaw ?? "0");
+    if (Number.isFinite(kvTs) && kvTs > lastSent) lastSent = kvTs;
+  }
+  if (now - lastSent < OTP_COOLDOWN_MS) {
     return jsonResponse(429, { error: "Please wait 30 seconds before requesting another code." });
   }
-  otpCooldown.set(cooldownKey, Date.now());
+  otpCooldown.set(cooldownKey, now);
+  if (env.PROFILES_KV) {
+    await env.PROFILES_KV.put(`otp_cd:${cooldownKey}`, String(now));
+  }
 
   const code = randomCode();
   const expiresAt = Date.now() + 10 * 60 * 1000;

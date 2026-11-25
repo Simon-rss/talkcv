@@ -63,10 +63,15 @@ interface ChatMessage {
 interface PortfolioAIContextValue {
   activeProfile: PortfolioProfile;
   profileSlug?: string;
+  sampleRole?: "founder" | "pm" | "designer";
+  aiDormant?: boolean;
   modalProjectSlug: string | null;
   setModalProjectSlug: (slug: string | null) => void;
   chatOpen: boolean;
   setChatOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  requestedPanel: "chat" | "jd" | "leads" | null;
+  openChatPanel: (panel: "chat" | "jd" | "leads") => void;
+  clearRequestedPanel: () => void;
   cmdOpen: boolean;
   setCmdOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   quote: string;
@@ -105,6 +110,8 @@ function buildMailtoHref(email: string, subject: string, body: string): string {
 export function PortfolioAIProvider({
   activeProfile = defaultProfile,
   profileSlug,
+  sampleRole,
+  aiDormant = false,
   lang,
   setLang,
   theme,
@@ -113,6 +120,8 @@ export function PortfolioAIProvider({
 }: {
   activeProfile?: PortfolioProfile;
   profileSlug?: string;
+  sampleRole?: "founder" | "pm" | "designer";
+  aiDormant?: boolean;
   lang: Lang;
   setLang: (l: Lang) => void;
   theme: ThemeId;
@@ -123,6 +132,7 @@ export function PortfolioAIProvider({
   const router = useRouter();
   const [modalProjectSlug, setModalProjectSlug] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [requestedPanel, setRequestedPanel] = useState<"chat" | "jd" | "leads" | null>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quote, setQuote] = useState("");
   const [persona, setPersona] = useState<VisitorPersona>("default");
@@ -130,6 +140,12 @@ export function PortfolioAIProvider({
   const [pendingJd, setPendingJd] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+
+  const openChatPanel = useCallback((p: "chat" | "jd" | "leads") => {
+    setRequestedPanel(p);
+    setChatOpen(true);
+  }, []);
+  const clearRequestedPanel = useCallback(() => setRequestedPanel(null), []);
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -259,10 +275,15 @@ export function PortfolioAIProvider({
     () => ({
       activeProfile: profile,
       profileSlug,
+      sampleRole,
+      aiDormant,
       modalProjectSlug,
       setModalProjectSlug,
       chatOpen,
       setChatOpen,
+      requestedPanel,
+      openChatPanel,
+      clearRequestedPanel,
       cmdOpen,
       setCmdOpen,
       quote,
@@ -280,7 +301,7 @@ export function PortfolioAIProvider({
       executeTool,
       showToast,
     }),
-    [profile, profileSlug, modalProjectSlug, chatOpen, cmdOpen, quote, persona, prefillPrompt, pendingJd, executeTool, showToast],
+    [profile, profileSlug, sampleRole, aiDormant, modalProjectSlug, chatOpen, requestedPanel, openChatPanel, clearRequestedPanel, cmdOpen, quote, persona, prefillPrompt, pendingJd, executeTool, showToast],
   );
 
   return (
@@ -639,7 +660,7 @@ function EditableEmailCard({
 }
 
 /* ---------------- AI Chat Drawer ---------------- */
-function RecruiterLeadForm({ slug, lang }: { slug: string; lang: Lang }) {
+export function RecruiterLeadForm({ slug, lang }: { slug: string; lang: Lang }) {
   const zh = lang === "zh";
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(0);
@@ -678,8 +699,12 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
   const {
     activeProfile: profile,
     profileSlug,
+    sampleRole,
+    aiDormant,
     chatOpen,
     setChatOpen,
+    requestedPanel,
+    clearRequestedPanel,
     quote,
     setQuote,
     persona,
@@ -691,7 +716,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
     executeTool,
   } = usePortfolioAI();
 
-  const storageKey = `talkcv-chat:${profileSlug || "demo"}`;
+  const storageKey = `talkcv-chat:${profileSlug || `demo:${sampleRole || "founder"}`}`;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydratedChat, setHydratedChat] = useState(false);
   const [input, setInput] = useState("");
@@ -708,15 +733,27 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) setMessages(parsed as ChatMessage[]);
+          else setMessages([]);
+        } else {
+          setMessages([]);
         }
       } catch {
-        // ignore storage errors
+        setMessages([]);
       } finally {
         setHydratedChat(true);
       }
     });
     return () => window.cancelAnimationFrame(raf);
   }, [storageKey]);
+
+  useEffect(() => {
+    if (!requestedPanel) return;
+    const raf = window.requestAnimationFrame(() => {
+      setPanel(requestedPanel);
+      clearRequestedPanel();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [requestedPanel, clearRequestedPanel]);
 
   useEffect(() => {
     if (!hydratedChat) return;
@@ -784,7 +821,7 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
           lang,
           persona,
           quote: currentQuote,
-          ...(profileSlug ? { profileSlug } : {}),
+          ...(profileSlug ? { profileSlug } : sampleRole && sampleRole !== "founder" ? { sampleRole } : {}),
         }),
       });
 
@@ -941,7 +978,26 @@ export function PortfolioChatWidget({ lang }: { lang: Lang }) {
             </button>}
           </div>
 
-          {panel === "leads" && profileSlug ? <RecruiterLeadForm key={profileSlug} slug={profileSlug} lang={lang} /> : panel === "jd" ? (
+          {panel === "leads" && profileSlug ? <RecruiterLeadForm key={profileSlug} slug={profileSlug} lang={lang} /> : aiDormant ? (
+            <div className="af-ai-messages" ref={listRef}>
+              <div className="af-bubble af-bubble-bot">
+                {lang === "zh"
+                  ? "作者的免费 AI 实时问答托管期已满，但完整个人简历依然永久在线。你可以直接浏览下方作品集，或点击下方按钮一键留资约面联系作者。"
+                  : "The owner's free hosted AI Q&A period has ended, while their full interactive résumé stays online. Browse the portfolio or leave an interview invite below."}
+              </div>
+              {profileSlug && profileSlug !== "__draft__" && (
+                <button
+                  type="button"
+                  className="af-jd-submit"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setPanel("leads")}
+                >
+                  <Mail size={14} />
+                  <span>{lang === "zh" ? "一键留资约面" : "Leave interview invite"}</span>
+                </button>
+              )}
+            </div>
+          ) : panel === "jd" ? (
             <div className="af-jd-panel">
               <textarea
                 value={jdText}

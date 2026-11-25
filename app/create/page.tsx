@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 export default async function CreatePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { lang, plan, interval } = await searchParams;
   return <CreateStudioClient initialLang={lang === "en" ? "en" : "zh"} checkout={
-    (plan === "pro" || plan === "max") && (interval === "month" || interval === "year") ? { tier: plan, interval } : undefined
+    (plan === "starter" || plan === "pro" || plan === "max") && (interval === "month" || interval === "year") ? { tier: plan, interval } : undefined
   } />;
 }

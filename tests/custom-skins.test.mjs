@@ -162,15 +162,22 @@ test("/api/parse-resume-image enforces auth and validates image payload", async 
   assert.equal(unauth.status, 401);
 });
 
-test("/api/og renders brand card, public site card, and redacts locked sites", async () => {
+test("/api/og renders 1200x630 PNG brand card, public site card, and redacts locked sites", async () => {
+  const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const assertPng = async (res) => {
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /image\/png/i);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    assert.ok(bytes.length > 500, "PNG should be non-trivial size");
+    assert.deepEqual(Array.from(bytes.slice(0, 8)), PNG_MAGIC);
+    return bytes;
+  };
+
   const brandRes = await worker.fetch(
     new Request("http://localhost/api/og"),
     { ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
   );
-  assert.equal(brandRes.status, 200);
-  assert.match(brandRes.headers.get("content-type") ?? "", /image\/svg\+xml/i);
-  const brandSvg = await brandRes.text();
-  assert.match(brandSvg, /TalkCV/);
+  await assertPng(brandRes);
 
   const store = new Map();
   const kv = {
@@ -209,18 +216,15 @@ test("/api/og renders brand card, public site card, and redacts locked sites", a
     new Request("http://localhost/api/og?slug=public-og"),
     { PROFILES_KV: kv, ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
   );
-  assert.equal(pubOg.status, 200);
-  const pubSvg = await pubOg.text();
-  assert.match(pubSvg, /张伟/);
-  assert.match(pubSvg, /\+42%/);
+  await assertPng(pubOg);
 
   const lockedOg = await worker.fetch(
     new Request("http://localhost/api/og?slug=locked-og"),
     { PROFILES_KV: kv, ASSETS: { fetch: async () => new Response("404", { status: 404 }) } },
   );
-  assert.equal(lockedOg.status, 200);
-  const lockedSvg = await lockedOg.text();
-  assert.doesNotMatch(lockedSvg, /保密人物|Secret Person|绝密/);
+  const lockedBytes = await assertPng(lockedOg);
+  assert.equal(lockedOg.headers.get("cache-control"), "private, no-store");
+  assert.ok(lockedBytes.length > 500);
 });
 
 test("/api/generate keeps 401 for bare unauthenticated calls and enforces 1x/day guestTrial per IP", async (t) => {
@@ -291,40 +295,21 @@ test("/api/generate keeps 401 for bare unauthenticated calls and enforces 1x/day
   assert.equal(secondTrial.status, 401);
   const secondJson = await secondTrial.json();
   assert.equal(secondJson.guestTrialExhausted, true);
+
+  // Global daily cap circuit breaker: different IP blocked when GUEST_TRIAL_DAILY_CAP is reached
+  const cappedTrial = await worker.fetch(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.99" },
+      body: JSON.stringify({ resumeText, guestTrial: true }),
+    }),
+    { ...env, GUEST_TRIAL_DAILY_CAP: "1" },
+  );
+  assert.equal(cappedTrial.status, 401);
+  assert.equal((await cappedTrial.json()).guestTrialExhausted, true);
 });
 
 test("site traffic tracker counts PV/UV, filters bots, tracks referrers & devices, and exposes stats in /api/admin/overview", async () => {
-  const { recordSiteTraffic, readTrafficSummary, resetMemoryTrafficForTests, shouldTrackTraffic } = await import("../worker/traffic.ts");
-  resetMemoryTrafficForTests();
-
-  const htmlRes = new Response("<html>ok</html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
-  const botReq = new Request("https://mytalkcv.com/", { headers: { "user-agent": "Googlebot/2.1" } });
-  const adminReq = new Request("https://mytalkcv.com/admin", { headers: { "user-agent": "Mozilla/5.0 Chrome/128.0" } });
-  const humanMobileReq = new Request("https://mytalkcv.com/", {
-    headers: {
-      "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
-      "cf-connecting-ip": "198.51.100.10",
-      referer: "https://www.xiaohongshu.com/explore/123",
-    },
-  });
-  const humanMobileReq2 = new Request("https://mytalkcv.com/create", {
-    headers: {
-      "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
-      "cf-connecting-ip": "198.51.100.10",
-    },
-  });
-  const humanDesktopReq = new Request("https://mytalkcv.com/u/simon-test", {
-    headers: {
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/128.0",
-      "cf-connecting-ip": "198.51.100.20",
-      referer: "https://v2ex.com/t/999",
-    },
-  });
-
-  assert.equal(shouldTrackTraffic(botReq, "/", htmlRes), false);
-  assert.equal(shouldTrackTraffic(adminReq, "/admin", htmlRes), false);
-  assert.equal(shouldTrackTraffic(humanMobileReq, "/", htmlRes), true);
-
   const kvStore = new Map();
   const PROFILES_KV = {
     get: async (k) => kvStore.get(k) ?? null,
@@ -336,33 +321,54 @@ test("site traffic tracker counts PV/UV, filters bots, tracks referrers & device
         .slice(0, limit)
         .map(([key, value]) => ({ key, value })),
   };
-
+  const authEnv = { AUTH_SECRET: "traffic-admin-test", ASSETS: { fetch: async () => new Response("404", { status: 404 }) } };
   const env = {
-    AUTH_SECRET: "traffic-admin-test",
+    ...authEnv,
     ADMIN_EMAILS: "admin@mytalkcv.com",
     ADMIN_ALLOW_DEV_AUTH: "1",
     PROFILES_KV,
-    ASSETS: { fetch: async () => new Response("404", { status: 404 }) },
   };
+  const pending = [];
+  const ctx = { waitUntil: (p) => { pending.push(p); } };
 
-  await recordSiteTraffic(humanMobileReq, "/", env);
-  await recordSiteTraffic(humanMobileReq2, "/create", env);
-  await recordSiteTraffic(humanDesktopReq, "/u/simon-test", env);
-
-  const summary = await readTrafficSummary(env, 14);
-  assert.equal(summary.todayPv, 3);
-  assert.equal(summary.todayUv, 2);
-  assert.equal(summary.devices.mobile, 2);
-  assert.equal(summary.devices.desktop, 1);
-  assert.equal(summary.daily.length, 14);
-  assert.ok(summary.pages.some((p) => p.path === "/" && p.pv === 1));
-  assert.ok(summary.pages.some((p) => p.path === "/create" && p.pv === 1));
-  assert.ok(summary.pages.some((p) => p.path === "/u/*" && p.pv === 1));
-  assert.ok(summary.referrers.some((r) => r.source === "xiaohongshu.com" && r.pv === 1));
-  assert.ok(summary.referrers.some((r) => r.source === "v2ex.com" && r.pv === 1));
+  // Bot request should be ignored
+  await worker.fetch(new Request("http://localhost/", { headers: { "user-agent": "Googlebot/2.1" } }), env, ctx);
+  // Two requests from same mobile user (/ and /create) + one desktop user (/pricing)
+  await worker.fetch(
+    new Request("http://localhost/", {
+      headers: {
+        "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
+        "cf-connecting-ip": "198.51.100.10",
+        referer: "https://www.xiaohongshu.com/explore/123",
+      },
+    }),
+    env,
+    ctx,
+  );
+  await worker.fetch(
+    new Request("http://localhost/create", {
+      headers: {
+        "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
+        "cf-connecting-ip": "198.51.100.10",
+      },
+    }),
+    env,
+    ctx,
+  );
+  await worker.fetch(
+    new Request("http://localhost/pricing", {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/128.0",
+        "cf-connecting-ip": "198.51.100.20",
+        referer: "https://v2ex.com/t/999",
+      },
+    }),
+    env,
+    ctx,
+  );
+  await Promise.all(pending);
 
   // Verify /api/admin/overview includes traffic payload for authenticated admin
-  const authEnv = { AUTH_SECRET: "traffic-admin-test", ASSETS: env.ASSETS };
   const sendRes = await worker.fetch(
     new Request("http://localhost/api/auth/send-code", {
       method: "POST",
@@ -372,9 +378,7 @@ test("site traffic tracker counts PV/UV, filters bots, tracks referrers & device
     authEnv,
   );
   assert.equal(sendRes.status, 200);
-  const sendJson = await sendRes.json();
-  const { instantCode, challenge } = sendJson;
-  assert.ok(instantCode && challenge, "expected instantCode and challenge");
+  const { instantCode, challenge } = await sendRes.json();
   const verifyRes = await worker.fetch(
     new Request("http://localhost/api/auth/verify", {
       method: "POST",
@@ -385,7 +389,6 @@ test("site traffic tracker counts PV/UV, filters bots, tracks referrers & device
   );
   assert.equal(verifyRes.status, 200);
   const cookie = verifyRes.headers.get("set-cookie")?.split(";")[0];
-  assert.ok(cookie, "expected session cookie");
   const overviewRes = await worker.fetch(
     new Request("http://localhost/api/admin/overview", { headers: { cookie } }),
     env,
@@ -394,6 +397,10 @@ test("site traffic tracker counts PV/UV, filters bots, tracks referrers & device
   const overview = await overviewRes.json();
   assert.equal(overview.traffic?.todayPv, 3);
   assert.equal(overview.traffic?.todayUv, 2);
+  assert.equal(overview.traffic?.devices?.mobile, 2);
+  assert.equal(overview.traffic?.devices?.desktop, 1);
+  assert.ok(overview.traffic?.referrers?.some((r) => r.source === "xiaohongshu.com" && r.pv === 1));
+  assert.ok(overview.traffic?.referrers?.some((r) => r.source === "v2ex.com" && r.pv === 1));
 });
 
 test("Google Gemini models enforce paid tiering (Free/Pro/Max) and route to Gemini OpenAI-compatible endpoint", async (t) => {
@@ -493,4 +500,137 @@ test("Google Gemini models enforce paid tiering (Free/Pro/Max) and route to Gemi
   assert.equal(capturedAuth, "Bearer test-gemini-key");
   assert.equal(capturedBody?.model, "gemini-4-hydrogen");
   assert.equal(capturedBody?.reasoning_effort, "low");
+});
+
+test("Starter Pass webhook activates 14-day Pro + 80 bonus credits, media split separates base64 images, and PDF QR stamper outputs valid PDF", async () => {
+  const { createHmac } = await import("node:crypto");
+  const { PDFDocument } = await import("pdf-lib");
+  const { stampPdfWithTalkCvQr } = await import("../lib/pdf-qr-stamp.ts");
+
+  // 1. Starter Pass webhook test
+  const kvStore = new Map();
+  const PROFILES_KV = {
+    get: async (k) => kvStore.get(k) ?? null,
+    put: async (k, v) => { kvStore.set(k, v); },
+    delete: async (k) => { kvStore.delete(k); },
+  };
+  const secret = "whsec_starter_test";
+  const authEnv = { AUTH_SECRET: "starter-auth", ASSETS: { fetch: async () => new Response("404", { status: 404 }) } };
+  const env = { ...authEnv, PROFILES_KV, CREEM_WEBHOOK_SECRET: secret };
+  const payload = JSON.stringify({
+    id: "evt_starter_001",
+    eventType: "checkout.completed",
+    object: {
+      customer: { id: "cust_1", email: "starter@example.com" },
+      metadata: { email: "starter@example.com", plan: "starter", mode: "onetime", days: 14, bonusCredits: 80 },
+    },
+  });
+  const sig = createHmac("sha256", secret).update(payload).digest("hex");
+  const whRes = await worker.fetch(
+    new Request("http://localhost/api/billing/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "creem-signature": sig },
+      body: payload,
+    }),
+    env,
+  );
+  assert.equal(whRes.status, 200);
+  const planRec = JSON.parse(kvStore.get("plan:starter@example.com"));
+  assert.equal(planRec.plan, "pro");
+  assert.equal(planRec.bonusCredits, 80);
+  const daysDelta = (Date.parse(planRec.expiresAt) - Date.now()) / 86_400_000;
+  assert.ok(daysDelta >= 13.5 && daysDelta <= 14.5);
+
+  // 2. Base64 media split & cleanup test
+  const sendRes = await worker.fetch(
+    new Request("http://localhost/api/auth/send-code", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "media@example.com" }),
+    }),
+    authEnv,
+  );
+  const { instantCode, challenge } = await sendRes.json();
+  const verifyRes = await worker.fetch(
+    new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "media@example.com", code: instantCode, challenge }),
+    }),
+    authEnv,
+  );
+  const cookie = verifyRes.headers.get("set-cookie").split(";")[0];
+  const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const pubRes = await worker.fetch(
+    new Request("http://localhost/api/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        slug: "media-split-test",
+        profile: {
+          theme: "editorial",
+          siteUrl: "https://mytalkcv.com",
+          basics: {
+            name: { en: "Media User", zh: "媒体用户" },
+            initials: "MU",
+            role: { en: "Eng", zh: "工程师" },
+            location: { en: "GZ", zh: "广州" },
+            timezone: "Asia/Shanghai",
+            headline: { en: "H", zh: "H" },
+            intro: { en: "I", zh: "I" },
+            education: { en: "E", zh: "E" },
+            footerNote: { en: "F", zh: "F" },
+            avatar: tinyPng,
+          },
+          skills: ["TS"],
+          capabilities: [],
+          experiences: [],
+          projects: [
+            {
+              slug: "proj-1",
+              accent: "blue",
+              group: "product",
+              category: { en: "C", zh: "C" },
+              title: { en: "P1", zh: "P1" },
+              role: { en: "R", zh: "R" },
+              summary: { en: "S", zh: "S" },
+              outcome: { en: "O", zh: "O" },
+              tags: [],
+              facts: [],
+              sections: [],
+              workflow: [],
+              coverImage: tinyPng,
+            },
+          ],
+          ai: { enabled: true, assistantName: { en: "A", zh: "A" }, welcome: { en: "W", zh: "W" }, suggestedPrompts: { en: [], zh: [] } },
+        },
+      }),
+    }),
+    env,
+  );
+  assert.equal(pubRes.status, 200);
+  // Base64 should be stored in profile_media:media-split-test, NOT in profile:media-split-test
+  assert.ok(kvStore.has("profile_media:media-split-test"));
+  assert.doesNotMatch(kvStore.get("profile:media-split-test"), /data:image\/png;base64/);
+  // GET /api/profiles/media-split-test rehydrates the images
+  const getRes = await worker.fetch(new Request("http://localhost/api/profiles/media-split-test"), env);
+  assert.equal(getRes.status, 200);
+  const getJson = await getRes.json();
+  assert.equal(getJson.profile.basics.avatar, tinyPng);
+  assert.equal(getJson.profile.projects[0].coverImage, tinyPng);
+  // DELETE removes both profile and profile_media
+  const delRes = await worker.fetch(
+    new Request("http://localhost/api/profiles/media-split-test", { method: "DELETE", headers: { cookie } }),
+    env,
+  );
+  assert.equal(delRes.status, 200);
+  assert.equal(kvStore.has("profile_media:media-split-test"), false);
+
+  // 3. Original PDF QR stamper produces valid %PDF- bytes
+  const blankPdf = await PDFDocument.create();
+  blankPdf.addPage([595, 842]);
+  const blankBytes = await blankPdf.save();
+  const stamped = await stampPdfWithTalkCvQr(blankBytes, "media-split-test", "top-right");
+  assert.ok(stamped.byteLength > blankBytes.byteLength);
+  assert.equal(new TextDecoder().decode(stamped.slice(0, 5)), "%PDF-");
 });

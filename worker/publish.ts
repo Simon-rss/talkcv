@@ -2,6 +2,7 @@ import { deleteSiteTraffic } from "./insights";
 import { deleteLeads } from "./leads";
 import { normalizeContacts } from "../lib/contacts.mjs";
 import { canUseModel } from "../lib/models";
+import { getClientIp, type RequestIpEnv } from "../lib/request-ip";
 import {
   AI_BRIEF_LIMITS,
   normalizeSlug,
@@ -36,7 +37,7 @@ export interface KVNamespaceLike {
   withSiteWrite?<T>(slug: string, email: string, operation: (store: KVNamespaceLike) => Promise<T>): Promise<T>;
 }
 
-export interface PublishEnv {
+export interface PublishEnv extends RequestIpEnv {
   PROFILES_KV?: KVNamespaceLike;
   AUTH_SECRET?: string;
   OPENAI_API_KEY?: string;
@@ -93,7 +94,84 @@ const RESERVED_SLUGS = new Set([
 
 const memoryStore = new Map<string, string>();
 const MAX_PROFILE_BYTES = 2_000_000;
-const payloadTooLarge = () => jsonResponse(413, { error: "Profile payload is too large (max 260KB)." });
+const payloadTooLarge = () => jsonResponse(413, { error: "Profile payload is too large (max 2MB)." });
+
+interface StoredProfileMedia {
+  avatar?: string;
+  projectCovers?: Record<string, string>;
+}
+
+const MEDIA_REF_AVATAR = "__media__:avatar";
+const MEDIA_REF_COVER_PREFIX = "__media__:cover:";
+
+function extractProfileMedia(profile: PortfolioProfile): {
+  lightweightProfile: PortfolioProfile;
+  media: StoredProfileMedia | null;
+} {
+  let avatar: string | undefined;
+  let nextBasics = profile.basics;
+  if (typeof profile.basics?.avatar === "string" && profile.basics.avatar.startsWith("data:image/")) {
+    avatar = profile.basics.avatar;
+    nextBasics = { ...profile.basics, avatar: MEDIA_REF_AVATAR };
+  }
+
+  const projectCovers: Record<string, string> = {};
+  let hasCoverMedia = false;
+  const nextProjects = Array.isArray(profile.projects)
+    ? profile.projects.map((p, idx) => {
+        if (typeof p?.coverImage === "string" && p.coverImage.startsWith("data:image/")) {
+          const refKey = p.slug || String(idx);
+          projectCovers[refKey] = p.coverImage;
+          hasCoverMedia = true;
+          return { ...p, coverImage: `${MEDIA_REF_COVER_PREFIX}${refKey}` };
+        }
+        return p;
+      })
+    : [];
+
+  if (!avatar && !hasCoverMedia) {
+    return { lightweightProfile: profile, media: null };
+  }
+  return {
+    lightweightProfile: { ...profile, basics: nextBasics, projects: nextProjects },
+    media: {
+      ...(avatar ? { avatar } : {}),
+      ...(hasCoverMedia ? { projectCovers } : {}),
+    },
+  };
+}
+
+function hydrateProfileMedia(profile: PortfolioProfile, media: StoredProfileMedia | null, includeMedia: boolean): PortfolioProfile {
+  const basicsAvatar = profile.basics?.avatar;
+  let nextBasics = profile.basics;
+  if (basicsAvatar === MEDIA_REF_AVATAR) {
+    nextBasics = {
+      ...profile.basics,
+      avatar: includeMedia ? media?.avatar : undefined,
+    };
+  } else if (!includeMedia && typeof basicsAvatar === "string" && basicsAvatar.startsWith("data:image/")) {
+    nextBasics = { ...profile.basics, avatar: undefined };
+  }
+
+  const nextProjects = Array.isArray(profile.projects)
+    ? profile.projects.map((p, idx) => {
+        const cov = p?.coverImage;
+        if (typeof cov === "string" && cov.startsWith(MEDIA_REF_COVER_PREFIX)) {
+          const refKey = cov.slice(MEDIA_REF_COVER_PREFIX.length) || p.slug || String(idx);
+          return {
+            ...p,
+            coverImage: includeMedia ? media?.projectCovers?.[refKey] : undefined,
+          };
+        }
+        if (!includeMedia && typeof cov === "string" && cov.startsWith("data:image/")) {
+          return { ...p, coverImage: undefined };
+        }
+        return p;
+      })
+    : [];
+
+  return { ...profile, basics: nextBasics, projects: nextProjects };
+}
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -114,21 +192,46 @@ export function getEncryptionMasterKey(env: PublishEnv): string {
 export async function loadStoredRecord(
   slug: string,
   env: PublishEnv,
+  options: { includeMedia?: boolean } = {},
 ): Promise<StoredProfileRecord | null> {
   const clean = normalizeSlug(slug);
   if (!clean) return null;
+  const includeMedia = options.includeMedia !== false;
   const key = `profile:${clean}`;
+  const mediaKey = `profile_media:${clean}`;
   const raw = env.PROFILES_KV ? await env.PROFILES_KV.get(key) : (memoryStore.get(key) ?? null);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredProfileRecord | PortfolioProfile;
-    if ("profile" in parsed && parsed.profile && typeof parsed.profile === "object") {
-      return parsed as StoredProfileRecord;
+    const record: StoredProfileRecord =
+      "profile" in parsed && parsed.profile && typeof parsed.profile === "object"
+        ? (parsed as StoredProfileRecord)
+        : {
+            profile: parsed as PortfolioProfile,
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + FREE_HOSTING_DAYS * 86400_000).toISOString(),
+          };
+    const needsMedia =
+      includeMedia &&
+      (record.profile.basics?.avatar === MEDIA_REF_AVATAR ||
+        (Array.isArray(record.profile.projects) &&
+          record.profile.projects.some(
+            (p) => typeof p?.coverImage === "string" && p.coverImage.startsWith(MEDIA_REF_COVER_PREFIX),
+          )));
+    let media: StoredProfileMedia | null = null;
+    if (needsMedia) {
+      const rawMedia = env.PROFILES_KV ? await env.PROFILES_KV.get(mediaKey) : (memoryStore.get(mediaKey) ?? null);
+      if (rawMedia) {
+        try {
+          media = JSON.parse(rawMedia) as StoredProfileMedia;
+        } catch {
+          media = null;
+        }
+      }
     }
     return {
-      profile: parsed as PortfolioProfile,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + FREE_HOSTING_DAYS * 86400_000).toISOString(),
+      ...record,
+      profile: hydrateProfileMedia(record.profile, media, includeMedia),
     };
   } catch {
     return null;
@@ -242,10 +345,7 @@ export async function handlePublishRequest(request: Request, env: AuthEnv): Prom
       error: "Please sign in with your email before publishing a TalkCV site.",
     });
   }
-  const clientIp =
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown";
+  const clientIp = getClientIp(request, env);
   const result = await withSiteWrite(slug, user?.email ?? "", env, (lockedEnv) =>
     saveProfile(slug, cleanProfile, body, user, new URL(request.url).origin, lockedEnv));
   if (!result.ok) return result.response;
@@ -399,8 +499,9 @@ async function saveProfile(
   const hostingDays = limits.hostingDays;
   const expiresAt = new Date(now.getTime() + hostingDays * 86400_000).toISOString();
   const ownerRef = user ? await getOrCreateReferralRecord(user.email, env) : null;
+  const { lightweightProfile, media } = extractProfileMedia(finalProfile);
   const record: StoredProfileRecord = {
-    profile: finalProfile,
+    profile: lightweightProfile,
     aiBrief,
     noindex: privacy?.noindex ?? existing?.noindex ?? false,
     passcode,
@@ -412,15 +513,21 @@ async function saveProfile(
   };
 
   const serialized = JSON.stringify(record);
-  if (new TextEncoder().encode(serialized).length > MAX_PROFILE_BYTES) {
+  const serializedMedia = media ? JSON.stringify(media) : "";
+  if (new TextEncoder().encode(serialized).length + new TextEncoder().encode(serializedMedia).length > MAX_PROFILE_BYTES) {
     return { ok: false, response: payloadTooLarge() };
   }
 
   const key = `profile:${slug}`;
+  const mediaKey = `profile_media:${slug}`;
   if (env.PROFILES_KV) {
     await env.PROFILES_KV.put(key, serialized);
+    if (media) await env.PROFILES_KV.put(mediaKey, serializedMedia);
+    else await env.PROFILES_KV.delete(mediaKey);
   } else {
     memoryStore.set(key, serialized);
+    if (media) memoryStore.set(mediaKey, serializedMedia);
+    else memoryStore.delete(mediaKey);
   }
 
   if (user) {
@@ -450,8 +557,13 @@ export async function handleDeleteProfileRequest(request: Request, rawSlug: stri
     const record = await loadStoredRecord(slug, lockedEnv);
     if (!record) return jsonResponse(404, { error: "Published TalkCV profile not found." });
     if (record.ownerEmail !== user.email) return jsonResponse(403, { error: "Only the site owner can delete it." });
-    if (lockedEnv.PROFILES_KV) await lockedEnv.PROFILES_KV.delete(`profile:${slug}`);
-    else memoryStore.delete(`profile:${slug}`);
+    if (lockedEnv.PROFILES_KV) {
+      await lockedEnv.PROFILES_KV.delete(`profile:${slug}`);
+      await lockedEnv.PROFILES_KV.delete(`profile_media:${slug}`);
+    } else {
+      memoryStore.delete(`profile:${slug}`);
+      memoryStore.delete(`profile_media:${slug}`);
+    }
     await deleteSiteTraffic(slug, lockedEnv);
     await deleteLeads(slug, lockedEnv);
     const sites = await updateUserSites(user.email, slug, false, lockedEnv);
@@ -479,13 +591,8 @@ export async function handleGetProfileRequest(
     ? await getUserPlan(record.ownerEmail, env as BillingEnv)
     : { isPro: false, isTrial: false };
   const hasPermanentHosting = ownerPlan.isPro && !ownerPlan.isTrial;
-  if (!editing && !hasPermanentHosting && Number.isFinite(expTs) && Date.now() > expTs) {
-    return jsonResponse(410, {
-      error: "Hosting period expired.",
-      expired: true,
-      expiresAt: record.expiresAt,
-    });
-  }
+  const expired = !hasPermanentHosting && Number.isFinite(expTs) && Date.now() > expTs;
+  const aiDormant = Boolean(expired && record.chatConfig?.mode !== "byok");
   const ownerRefCode =
     record.ownerRefCode ||
     (record.ownerEmail ? (await getOrCreateReferralRecord(record.ownerEmail, env)).code : undefined);
@@ -495,6 +602,7 @@ export async function handleGetProfileRequest(
     profile: publicProfile,
     ...(editing && record.aiBrief ? { aiBrief: record.aiBrief } : {}),
     expiresAt: record.expiresAt,
+    aiDormant,
     ...(ownerRefCode ? { ownerRefCode } : {}),
     chatMeta: chatMetadata(record.chatConfig),
     ...(editing && { privacy: { noindex: Boolean(record.noindex), protected: Boolean(record.passcode) } }),

@@ -86,8 +86,33 @@ export const PM_SAMPLE_PROFILE: PortfolioProfile = {
         { value: "6.8%", label: { en: "Paid Conversion", zh: "免费转付费" } },
         { value: "120K", label: { en: "Monthly Active", zh: "月活跃用户" } },
       ],
-      sections: [],
-      workflow: [],
+      sections: [
+        {
+          eyebrow: { en: "DIAGNOSIS & STRATEGY", zh: "问题诊断与策略" },
+          title: { en: "Replacing Signup Friction with Live Value", zh: "用即时预览替代强制注册墙" },
+          body: {
+            en: "Funnel analysis showed 64% of first-time visitors bounced at the email verification step before seeing any AI output. Introduced a 1-click sample mode and single-run guest preview.",
+            zh: "漏斗分析发现 64% 的新访客在邮箱注册环节流失。通过上线一键示例填充与免登录单次预览，让用户在 20 秒内先看到成品再注册。",
+          },
+          items: [
+            { en: "Cut time-to-first-preview from 4.5 min to 28 sec", zh: "首次生成预览耗时从 4.5 分钟压缩至 28 秒" },
+            { en: "Lifted day-1 core activation rate by +42% across 120K MAU", zh: "覆盖 12 万月活用户，首日核心激活率提升 +42%" },
+            { en: "Drove +28% free-to-paid upgrade lift via contextual paywalls", zh: "结合上下文付费节点，免费转付费转化率提升 +28%" },
+          ],
+        },
+      ],
+      workflow: [
+        {
+          number: "01",
+          title: { en: "Funnel Instrumentation", zh: "漏斗埋点与归因" },
+          text: { en: "Tracked drop-off across 6 onboarding steps and segmented mobile vs desktop.", zh: "拆解 6 步冷启动漏斗，区分手机端与桌面端定位核心流失点。" },
+        },
+        {
+          number: "02",
+          title: { en: "A/B Experimentation", zh: "灰度实验与定价迭代" },
+          text: { en: "Ran 3-week controlled rollout validating +42% activation with zero abuse.", zh: "通过 3 周灰度对照实验验证激活率 +42% 且成本可控。" },
+        },
+      ],
     },
   ],
   ai: {
@@ -183,8 +208,33 @@ export const DESIGNER_SAMPLE_PROFILE: PortfolioProfile = {
         { value: "+36%", label: { en: "Site Conversion", zh: "官网转化提升" } },
         { value: "-50%", label: { en: "Handoff Time", zh: "交付耗时缩短" } },
       ],
-      sections: [],
-      workflow: [],
+      sections: [
+        {
+          eyebrow: { en: "SYSTEM ARCHITECTURE", zh: "设计系统架构" },
+          title: { en: "Semantic Tokens & Swiss Editorial Grid", zh: "语义化 Token 与瑞士排版网格" },
+          body: {
+            en: "Built a 3-layer token hierarchy (primitive, semantic, component) synced directly between Figma Variables and CSS custom properties across Web and iOS.",
+            zh: "建立基础层、语义层、组件层三级 Token 体系，实现 Figma Variables 与 Web/iOS 代码变量双向同步。",
+          },
+          items: [
+            { en: "Standardized 140+ production components with dark & light modes", zh: "沉淀 140+ 生产级双色主题组件与无障碍对比度规范" },
+            { en: "Cut design-to-engineering handoff cycle by 50%", zh: "设计到研发交付周期缩短 50%，样式回归缺陷下降 70%" },
+            { en: "Redesigned flagship marketing site lifting demo bookings by +36%", zh: "重塑品牌官网视觉与信息层级，预约转化率提升 +36%" },
+          ],
+        },
+      ],
+      workflow: [
+        {
+          number: "01",
+          title: { en: "Visual Audit & Typography", zh: "视觉审计与排版基线" },
+          text: { en: "Audited 38 legacy screens and defined a crisp modular scale.", zh: "盘点 38 个历史页面，确立克制的字阶、留白与栅格系统。" },
+        },
+        {
+          number: "02",
+          title: { en: "Token Sync & Launch", zh: "Token 同步与上线验收" },
+          text: { en: "Shipped Figma-to-CSS pipeline and pixel-checked every breakpoint.", zh: "打通 Figma 到 CSS 变量同步，逐断点完成桌面与移动端走查。" },
+        },
+      ],
     },
   ],
   ai: {

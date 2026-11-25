@@ -3,13 +3,13 @@ import { useEffect, useState } from "react";
 import type { Lang } from "../../lib/schema";
 import type { PlanTier } from "../../lib/models";
 import { readSession } from "../../lib/login";
-import { PricingPlans, requestCheckout } from "../create/pricing-modal";
+import { PricingPlans, requestCheckout, type CheckoutTier } from "../create/pricing-modal";
 import { PromoAnnouncementCard } from "../promo-announcement";
 
 export function PublicPlans({ lang }: { lang: Lang }) {
   const [currentPlan, setPlan] = useState<PlanTier>("free");
   const [isTrial, setIsTrial] = useState(false);
-  const [busy, setBusy] = useState<"pro" | "max" | null>(null);
+  const [busy, setBusy] = useState<CheckoutTier | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();

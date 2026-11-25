@@ -449,7 +449,10 @@ test("referral guards block existing users, serialize concurrent friends, deduct
   };
   const legacyRes = await (await call("/api/profiles/legacy-active", { env: kvEnv })).json();
   assert.match(legacyRes.ownerRefCode, /^[A-Z0-9]{6}$/);
-  assert.equal((await call("/api/profiles/legacy-trial", { env: kvEnv })).status, 410);
+  const dormantProfileRes = await call("/api/profiles/legacy-trial", { env: kvEnv });
+  assert.equal(dormantProfileRes.status, 200);
+  const dormantProfileJson = await dormantProfileRes.json();
+  assert.equal(dormantProfileJson.aiDormant, true);
   const expiredChat = await call("/api/chat", {
     method: "POST",
     env: kvEnv,
@@ -587,7 +590,8 @@ test("recruiter leads enforce site access, limit each sender, notify after savin
   const row = JSON.parse(store.get("profile:" + slug));
   store.set("profile:" + slug, JSON.stringify({ ...row, expiresAt: "2020-01-01" }));
   store.delete(`plan:${ownerEmail}`);
-  assert.equal((await post({ cookie: access })).status, 410);
+  // Expired free sites remain online for recruiter leads (201) so candidates never lose interviews
+  assert.equal((await post({ cookie: access, headers: { "cf-connecting-ip": "198.51.100.77" } })).status, 201);
   assert.equal((await call(path, { method: "DELETE", env, cookie: owner })).status, 200);
   assert.equal(store.has("leads:" + slug), false);
   assert.equal((await admin()).summary.totalLeads, 1);

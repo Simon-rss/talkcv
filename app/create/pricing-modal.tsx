@@ -6,31 +6,34 @@ import { PLAN_CREDITS, creationPricing } from "../../lib/credits";
 import type { PlanTier } from "../../lib/models";
 import type { Lang } from "../../lib/schema";
 
+export type CheckoutTier = "starter" | "pro" | "max";
+
 interface PricingModalProps {
   open: boolean;
   onClose: () => void;
   lang: Lang;
   currentPlan: PlanTier;
   isTrial?: boolean;
-  busyTier: "pro" | "max" | null;
+  busyTier: CheckoutTier | null;
   error?: string | null;
-  onSelectPlan: (tier: "pro" | "max", interval: "month" | "year", discountCode?: string) => void;
+  onSelectPlan: (tier: CheckoutTier, interval: "month" | "year", discountCode?: string) => void;
   onOpenRedeem: () => void;
 }
 
 type PlansProps = Pick<PricingModalProps, "lang" | "currentPlan" | "isTrial" | "busyTier" | "error" | "onSelectPlan">;
 
 export async function requestCheckout(
-  tier: "pro" | "max",
+  tier: CheckoutTier,
   interval: "month" | "year",
   mode: "subscription" | "onetime" = "subscription",
   discountCode?: string,
 ) {
   const cleanCode = discountCode?.trim().toUpperCase() || undefined;
+  const effectiveMode = tier === "starter" ? "onetime" : mode;
   const response = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tier, interval, mode, ...(cleanCode ? { discountCode: cleanCode } : {}) }),
+    body: JSON.stringify({ tier, interval, mode: effectiveMode, ...(cleanCode ? { discountCode: cleanCode } : {}) }),
     signal: AbortSignal.timeout(12000),
   });
   if (response.status === 401) return null;
@@ -52,7 +55,11 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
     return () => window.cancelAnimationFrame(raf);
   }, []);
 
-  const [available, setAvailable] = useState<Record<"pro" | "max", Record<"month" | "year", boolean>> | null>(null);
+  const [available, setAvailable] = useState<{
+    starter?: boolean;
+    pro: Record<"month" | "year", boolean>;
+    max: Record<"month" | "year", boolean>;
+  } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/billing/plans", { signal: controller.signal })
@@ -240,6 +247,30 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
           )}
         </div>
       </div>
+      <div className="af-starter-banner">
+        <div className="af-starter-banner-copy">
+          <span className="af-starter-tag">{isZh ? "求职破冰首选" : "JOB-HUNT SPRINT"}</span>
+          <h3>{isZh ? "求职冲刺卡 Starter Pass · $4.9 / 14 天" : "Starter Pass · $4.9 / 14 days"}</h3>
+          <p>
+            {isZh
+              ? "一次买断不续费：立刻激活 14 天 Pro 权限 + 80 创作点，解锁全部 HR 约面线索、AI 实时精修与 Pro 模型梯队。"
+              : "One-time pass, no renewal: 14-day Pro access + 80 bonus credits, unlock all recruiter leads, AI Live Refine & Pro models."}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="af-btn af-btn-primary"
+          disabled={busyTier !== null || !available?.starter}
+          onClick={() => onSelectPlan("starter", "month", discountCode.trim() || undefined)}
+        >
+          {busyTier === "starter"
+            ? isZh ? "正在跳转收银台…" : "Opening checkout…"
+            : !available?.starter
+              ? isZh ? "即将开放" : "Coming soon"
+              : isZh ? "立即开通 $4.9 →" : "Get Starter Pass $4.9 →"}
+        </button>
+      </div>
+
       <div className="af-pricing-grid">
         {tiers.map((t) => {
           const isCurrent = !isTrial && currentPlan === t.id;

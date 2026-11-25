@@ -23,6 +23,7 @@ import {
 import {
   handleAdminCreateCodeRequest,
   handleAdminCreateDiscountRequest,
+  handleAdminExpiryRemindersRequest,
   handleAdminOverviewRequest,
   type AdminEnv,
 } from "./admin";
@@ -88,6 +89,12 @@ const worker = {
     if (url.pathname === "/api/admin/discounts") {
       return handleAdminCreateDiscountRequest(request, env);
     }
+    if (url.pathname === "/api/admin/send-expiry-reminders") {
+      return handleAdminExpiryRemindersRequest(request, env);
+    }
+    if (url.pathname === "/favicon.ico") {
+      return Response.redirect(new URL("/favicon.svg", url.origin).toString(), 302);
+    }
     if (url.pathname === "/api/chat") {
       return handleChatRequest(request, env);
     }
@@ -136,12 +143,12 @@ const worker = {
     }
     if (url.pathname.startsWith("/u/")) {
       const slug = normalizeSlug(decodeURIComponent(url.pathname.slice("/u/".length).split("/")[0] || ""));
-      const record = slug ? await loadStoredRecord(slug, env) : null;
+      const record = slug ? await loadStoredRecord(slug, env, { includeMedia: false }) : null;
       const ownerPlan = record?.ownerEmail ? await getUserPlan(record.ownerEmail, env) : null;
       const hasPermanentHosting = Boolean(ownerPlan?.isPro && !ownerPlan?.isTrial);
       const expired = record && !hasPermanentHosting && Date.now() > Date.parse(record.expiresAt);
       const hidden = Boolean(record?.noindex || record?.passcode);
-      const locked = record && !expired && !await siteUnlocked(request, slug, record.passcode);
+      const locked = record && !await siteUnlocked(request, slug, record.passcode);
 
       const externalOrigin = slug ? resolveExternalOrigin(slug, record, env) : null;
       if (externalOrigin && !expired) {
@@ -160,8 +167,8 @@ const worker = {
       }
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set("x-talkcv-robots", hidden ? "noindex" : "index");
-      requestHeaders.set("x-talkcv-site-state", !record ? "not_found" : expired ? "expired" : locked ? "locked" : "loading");
-      if (record && !expired && !locked && !record.passcode) {
+      requestHeaders.set("x-talkcv-site-state", !record ? "not_found" : locked ? "locked" : "loading");
+      if (record && !locked && !record.passcode) {
         const ogName = record.profile.basics.name.zh || record.profile.basics.name.en || slug;
         const ogRole = record.profile.basics.role.zh || record.profile.basics.role.en || "";
         const ogHeadline = record.profile.basics.headline.zh || record.profile.basics.headline.en || "";
@@ -172,13 +179,13 @@ const worker = {
       const rendered = await handler.fetch(new Request(request, { headers: requestHeaders }));
       const headers = new Headers(rendered.headers);
       headers.set("cache-control", "private, no-store");
-      if (record && !locked && !expired && rendered.ok && request.method === "GET"
+      if (record && !locked && rendered.ok && request.method === "GET"
         && headers.get("content-type")?.includes("text/html") && !request.headers.has("next-router-prefetch")
         && request.headers.get("purpose") !== "prefetch") {
         await recordVisit(slug, record, env);
       }
       if (hidden) headers.set("x-robots-tag", "noindex, nofollow");
-      const finalRes = new Response(rendered.body, { status: !record ? 404 : expired ? 410 : rendered.status, headers });
+      const finalRes = new Response(rendered.body, { status: !record ? 404 : rendered.status, headers });
       if (shouldTrackTraffic(request, url.pathname, finalRes)) {
         const task = recordSiteTraffic(request, url.pathname, env).catch(() => {});
         if (ctx?.waitUntil) ctx.waitUntil(task);

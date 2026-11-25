@@ -9,6 +9,7 @@ import {
   Command,
   FileText,
   Home,
+  Mail,
   Palette,
   Sparkles,
   X,
@@ -48,14 +49,22 @@ import {
   PortfolioAIProvider,
   PortfolioChatWidget,
   prefersReducedMotion,
+  RecruiterLeadForm,
   SelectionAskPopover,
   usePortfolioAI,
 } from "./ai-experience";
+
+type SampleRole = "founder" | "pm" | "designer";
 
 interface AppContextValue {
   profile: PortfolioProfile;
   profileSlug?: string;
   ownerRefCode?: string;
+  aiDormant?: boolean;
+  sampleRole: SampleRole;
+  setSampleRole: (r: SampleRole) => void;
+  leadModalOpen: boolean;
+  setLeadModalOpen: (open: boolean) => void;
   lang: Lang;
   setLang: (l: Lang) => void;
   theme: ThemeId;
@@ -75,16 +84,28 @@ function AppProvider({
   initialLang,
   profileSlug,
   ownerRefCode,
+  aiDormant = false,
   children,
 }: {
   initialProfile?: PortfolioProfile;
   initialLang?: Lang;
   profileSlug?: string;
   ownerRefCode?: string;
+  aiDormant?: boolean;
   children: React.ReactNode;
 }) {
   const [lang, setLangState] = useState<Lang>(initialLang ?? "en");
   const [theme, setThemeState] = useState<ThemeId>(initialProfile.theme || "editorial");
+  const [sampleRole, setSampleRole] = useState<SampleRole>("founder");
+  const [leadModalOpen, setLeadModalOpen] = useState(false);
+
+  const effectiveProfile = !profileSlug
+    ? sampleRole === "pm"
+      ? PM_SAMPLE_PROFILE
+      : sampleRole === "designer"
+        ? DESIGNER_SAMPLE_PROFILE
+        : initialProfile
+    : initialProfile;
 
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
@@ -154,21 +175,52 @@ function AppProvider({
   };
 
   const value = useMemo(
-    () => ({ profile: initialProfile, profileSlug, ownerRefCode, lang, setLang, theme, setTheme }),
-    [initialProfile, profileSlug, ownerRefCode, lang, theme],
+    () => ({
+      profile: effectiveProfile,
+      profileSlug,
+      ownerRefCode,
+      aiDormant,
+      sampleRole,
+      setSampleRole,
+      leadModalOpen,
+      setLeadModalOpen,
+      lang,
+      setLang,
+      theme,
+      setTheme,
+    }),
+    [effectiveProfile, profileSlug, ownerRefCode, aiDormant, sampleRole, leadModalOpen, lang, theme],
   );
 
   return (
     <AppContext.Provider value={value}>
       <PortfolioAIProvider
-        activeProfile={initialProfile}
+        activeProfile={effectiveProfile}
         profileSlug={profileSlug}
+        sampleRole={!profileSlug ? sampleRole : undefined}
+        aiDormant={aiDormant}
         lang={lang}
         setLang={setLang}
         theme={theme}
         setTheme={setTheme}
       >
         {children}
+        {leadModalOpen && profileSlug && profileSlug !== "__draft__" && (
+          <div className="af-case-modal-backdrop" role="dialog" aria-modal="true" aria-label={lang === "zh" ? "一键约面留资" : "Leave interview invite"} onClick={() => setLeadModalOpen(false)}>
+            <div className="af-lead-modal" onClick={(e) => e.stopPropagation()}>
+              <header className="af-lead-modal-head">
+                <div>
+                  <p className="af-eyebrow">INTERVIEW INVITE</p>
+                  <h3>{lang === "zh" ? `联系 ${localize(effectiveProfile.basics.name, lang)}` : `Invite ${localize(effectiveProfile.basics.name, lang)}`}</h3>
+                </div>
+                <button type="button" className="af-icon-pill" onClick={() => setLeadModalOpen(false)} aria-label="Close">
+                  <X size={15} />
+                </button>
+              </header>
+              <RecruiterLeadForm slug={profileSlug} lang={lang} />
+            </div>
+          </div>
+        )}
         <SelectionAskPopover lang={lang} />
         <CommandPalette lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} />
         <PortfolioChatWidget lang={lang} />
@@ -295,7 +347,7 @@ function SiteHeader({ casePage = false }: { casePage?: boolean }) {
 
         <button
           type="button"
-          className="af-icon-pill"
+          className="af-icon-pill af-cmd-trigger"
           onClick={() => setCmdOpen(true)}
           aria-label="Command palette"
           title="⌘K"
@@ -372,13 +424,25 @@ function LiveClock({ lang }: { lang: Lang }) {
 }
 
 function ContactBand() {
-  const { profile, lang } = useApp();
+  const { profile, profileSlug, setLeadModalOpen, lang } = useApp();
+  const canLeaveLead = Boolean(profileSlug && profileSlug !== "__draft__");
   return (
     <section className="af-contact" id="contact">
       <div className="af-shell af-contact-grid">
         <div>
           <p className="af-eyebrow">{lang === "en" ? "CONTACT" : "联系交流"}</p>
           <h2>{lang === "en" ? "Let's build something that ships." : "聊聊合作或岗位机会。"}</h2>
+          {canLeaveLead && (
+            <button
+              type="button"
+              className="af-btn af-btn-primary"
+              style={{ marginTop: 14 }}
+              onClick={() => setLeadModalOpen(true)}
+            >
+              <Mail size={15} />
+              <span>{lang === "en" ? "Leave interview invite" : "一键约面 / 留联系方式"}</span>
+            </button>
+          )}
         </div>
         <div className="af-contact-copy">
           <LiveClock lang={lang} />
@@ -428,18 +492,11 @@ function SiteFooter() {
 }
 
 function HomeContent({ exportSlug }: { exportSlug?: string }) {
-  const { profile: baseProfile, profileSlug, lang, theme } = useApp();
-  const { setChatOpen, askPrompt, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
+  const { profile, profileSlug, sampleRole, setSampleRole, setLeadModalOpen, lang, theme } = useApp();
+  const { setChatOpen, openChatPanel, askPrompt, modalProjectSlug, setModalProjectSlug } = usePortfolioAI();
   const [filter, setFilter] = useState<"all" | "platform" | "enterprise" | "product">("all");
-  const [sampleRole, setSampleRole] = useState<"founder" | "pm" | "designer">("founder");
   const isPersonalHosted = Boolean(profileSlug);
-  const profile = !isPersonalHosted
-    ? sampleRole === "pm"
-      ? PM_SAMPLE_PROFILE
-      : sampleRole === "designer"
-        ? DESIGNER_SAMPLE_PROFILE
-        : baseProfile
-    : baseProfile;
+  const useInPageProjectModal = isPersonalHosted || sampleRole !== "founder";
   const modalProject = modalProjectSlug
     ? profile.projects.find((p) => p.slug === modalProjectSlug) ?? null
     : null;
@@ -505,6 +562,12 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
           </div>
         )}
         <div className="af-custom-float-bar">
+          {profileSlug && profileSlug !== "__draft__" && (
+            <button type="button" className="af-btn af-btn-secondary" onClick={() => setLeadModalOpen(true)}>
+              <Mail size={15} />
+              <span>{lang === "en" ? "Leave interview invite" : "一键约面 / 留联系方式"}</span>
+            </button>
+          )}
           {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
           {profile.ai.enabled && (
             <button type="button" className="af-btn af-btn-primary" onClick={() => setChatOpen(true)}>
@@ -573,6 +636,12 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
             <button type="button" className="af-btn af-btn-secondary" onClick={() => setChatOpen(true)}>
               <Sparkles size={16} />
               <span>{lang === "en" ? "Ask AI / Match JD" : "问 AI / 测 JD 匹配"}</span>
+            </button>
+          )}
+          {profileSlug && profileSlug !== "__draft__" && (
+            <button type="button" className="af-btn af-btn-secondary" onClick={() => setLeadModalOpen(true)}>
+              <Mail size={15} />
+              <span>{lang === "en" ? "Leave interview invite" : "一键约面 / 留联系方式"}</span>
             </button>
           )}
           {profileSlug && profileSlug !== "__draft__" && <SharePoster profile={profile} slug={profileSlug} lang={lang} />}
@@ -656,7 +725,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
               </div>
             </div>
             <h3>
-              {isPersonalHosted ? (
+              {useInPageProjectModal ? (
                 <button
                   type="button"
                   className="af-card-title-btn"
@@ -681,7 +750,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
                 </div>
               ))}
             </div>
-            {isPersonalHosted ? (
+            {useInPageProjectModal ? (
               <button
                 type="button"
                 className="af-card-cta af-card-cta-btn"
@@ -797,7 +866,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
                 <button
                   type="button"
                   className="af-btn af-btn-secondary"
-                  onClick={() => setChatOpen(true)}
+                  onClick={() => openChatPanel("jd")}
                 >
                   <span>{lang === "zh" ? "拿 JD 考考下方作者 AI ↓" : "Test author's AI with a JD ↓"}</span>
                 </button>
@@ -1152,12 +1221,14 @@ export function PortfolioHome({
   ownerRefCode,
   draftHandle,
   initialLang,
+  aiDormant,
 }: {
   initialProfile?: PortfolioProfile;
   profileSlug?: string;
   ownerRefCode?: string;
   draftHandle?: string;
   initialLang?: Lang;
+  aiDormant?: boolean;
 } = {}) {
   return (
     <AppProvider
@@ -1165,6 +1236,7 @@ export function PortfolioHome({
       profileSlug={profileSlug}
       ownerRefCode={ownerRefCode}
       initialLang={initialLang}
+      aiDormant={aiDormant}
     >
       <HomeContent exportSlug={profileSlug === "__draft__" ? draftHandle : profileSlug} />
     </AppProvider>

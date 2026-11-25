@@ -1,4 +1,4 @@
-import { canUseModel, getHostedModel, isReasoningOrNextGenOpenAI } from "../lib/models";
+import { canUseModel, getHostedModel, isGeminiThinkingModel, isReasoningOrNextGenOpenAI } from "../lib/models";
 import { profile as defaultProfile } from "../lib/profile";
 import { buildSystemPrompt } from "../lib/prompt-builder";
 import type { AuthEnv } from "./auth";
@@ -14,6 +14,8 @@ export interface ChatEnv extends AuthEnv {
   OPENAI_MODEL?: string;
   OPENAI_BASE_URL?: string;
   DEEPSEEK_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_BASE_URL?: string;
 }
 
 interface IncomingMessage {
@@ -99,6 +101,7 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
 
   const openaiKey = env.OPENAI_API_KEY?.trim() || "";
   const deepseekKey = env.DEEPSEEK_API_KEY?.trim() || "";
+  const geminiKey = env.GEMINI_API_KEY?.trim() || "";
   const ip =
     request.headers.get("cf-connecting-ip") ??
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -168,10 +171,10 @@ export async function handleChatRequest(request: Request, env: ChatEnv): Promise
     : { plan: "free" as const, isPro: false, isMax: false, isTrial: false, limits: PLAN_LIMITS.free, record: null };
   const hasPermanentHosting = ownerPlan.isPro && !ownerPlan.isTrial;
   if (storedRecord && !hasPermanentHosting && Date.now() > Date.parse(storedRecord.expiresAt)) return jsonError(410, "Hosting period expired.");
-  if (!byokCreds && !openaiKey && !deepseekKey) {
+  if (!byokCreds && !openaiKey && !deepseekKey && !geminiKey) {
     return jsonError(
       503,
-      "AI chat is not configured yet. Add OPENAI_API_KEY or DEEPSEEK_API_KEY to enable it.",
+      "AI chat is not configured yet. Add OPENAI_API_KEY, DEEPSEEK_API_KEY, or GEMINI_API_KEY to enable it.",
     );
   }
 
@@ -218,6 +221,7 @@ Candidate data: ${JSON.stringify(storedRecord.aiBrief)}`
     edgeColo === "MFM";
 
   const openaiBase = (env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const geminiBase = (env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, "");
   const openaiModel = env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
   const startedAt = Date.now();
 
@@ -233,7 +237,9 @@ Candidate data: ${JSON.stringify(storedRecord.aiBrief)}`
         stream: true,
         ...(isReasoningOrNextGenOpenAI(mdl)
           ? { max_completion_tokens: 1600 }
-          : { temperature: 0.4, max_tokens: 900 }),
+          : isGeminiThinkingModel(mdl)
+            ? { reasoning_effort: "low", max_tokens: 2048 }
+            : { temperature: 0.4, max_tokens: 900 }),
         messages: [{ role: "system", content: systemContent }, ...sanitized],
       }),
     });
@@ -250,7 +256,18 @@ Candidate data: ${JSON.stringify(storedRecord.aiBrief)}`
         : "auto";
     const chosen = getHostedModel(requestedModelId);
 
-    if (chosen.provider === "deepseek" && deepseekKey) {
+    if (chosen.provider === "gemini" && geminiKey) {
+      candidates.push({
+        baseUrl: geminiBase,
+        key: geminiKey,
+        model: chosen.apiModel || "gemini-3.5-flash-lite",
+      });
+      if (chosen.apiModel !== "gemini-3.5-flash-lite") {
+        candidates.push({ baseUrl: geminiBase, key: geminiKey, model: "gemini-3.5-flash-lite" });
+      }
+      if (deepseekKey) candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
+      if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+    } else if (chosen.provider === "deepseek" && deepseekKey) {
       candidates.push({
         baseUrl: "https://api.deepseek.com/v1",
         key: deepseekKey,
@@ -266,8 +283,10 @@ Candidate data: ${JSON.stringify(storedRecord.aiBrief)}`
     } else if (isChinaRegion && deepseekKey) {
       candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
       if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+      if (geminiKey) candidates.push({ baseUrl: geminiBase, key: geminiKey, model: "gemini-3.5-flash-lite" });
     } else {
       if (openaiKey) candidates.push({ baseUrl: openaiBase, key: openaiKey, model: openaiModel });
+      if (geminiKey) candidates.push({ baseUrl: geminiBase, key: geminiKey, model: "gemini-3.5-flash-lite" });
       if (deepseekKey) candidates.push({ baseUrl: "https://api.deepseek.com/v1", key: deepseekKey, model: "deepseek-chat" });
     }
   }

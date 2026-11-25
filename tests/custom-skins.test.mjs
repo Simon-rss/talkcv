@@ -395,3 +395,102 @@ test("site traffic tracker counts PV/UV, filters bots, tracks referrers & device
   assert.equal(overview.traffic?.todayPv, 3);
   assert.equal(overview.traffic?.todayUv, 2);
 });
+
+test("Google Gemini models enforce paid tiering (Free/Pro/Max) and route to Gemini OpenAI-compatible endpoint", async (t) => {
+  const { canUseModel, getHostedModel, isGeminiThinkingModel } = await import("../lib/models.ts");
+
+  assert.equal(canUseModel("gemini-3.5-flash-lite", "free"), true);
+  assert.equal(canUseModel("gemini-3.8-flash", "free"), false);
+  assert.equal(canUseModel("gemini-3.8-flash", "pro"), true);
+  assert.equal(canUseModel("gemini-4-hydrogen", "free"), false);
+  assert.equal(canUseModel("gemini-4-hydrogen", "pro"), true);
+  assert.equal(canUseModel("gemini-4-carbon", "pro"), false);
+  assert.equal(canUseModel("gemini-4-carbon", "max"), true);
+  assert.equal(canUseModel("gemini-4-neon", "max"), true);
+  assert.equal(canUseModel("gemini-4-argon", "max"), true);
+  assert.equal(getHostedModel("gemini-4-carbon").provider, "gemini");
+  assert.equal(isGeminiThinkingModel("gemini-4-hydrogen"), true);
+
+  // End-to-end check through worker /api/generate
+  const authEnv = { AUTH_SECRET: "gemini-route-test", ASSETS: { fetch: async () => new Response("404", { status: 404 }) } };
+  const sendRes = await worker.fetch(
+    new Request("http://localhost/api/auth/send-code", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "gemini-pro@example.com" }),
+    }),
+    authEnv,
+  );
+  const { instantCode, challenge } = await sendRes.json();
+  const verifyRes = await worker.fetch(
+    new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "gemini-pro@example.com", code: instantCode, challenge }),
+    }),
+    authEnv,
+  );
+  const cookie = verifyRes.headers.get("set-cookie").split(";")[0];
+
+  const kvStore = new Map([
+    ["plan:gemini-pro@example.com", JSON.stringify({ plan: "pro", expiresAt: "2099-01-01T00:00:00.000Z" })],
+  ]);
+  const env = {
+    ...authEnv,
+    GEMINI_API_KEY: "test-gemini-key",
+    PROFILES_KV: {
+      get: async (k) => kvStore.get(k) ?? null,
+      put: async (k, v) => { kvStore.set(k, v); },
+      delete: async (k) => { kvStore.delete(k); },
+    },
+  };
+
+  // Pro user requesting Max-only gemini-4-carbon -> 403
+  const forbidden = await worker.fetch(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        resumeText: "Alex Lin, Staff Engineer with 8 years of distributed systems experience.",
+        hostedModelId: "gemini-4-carbon",
+      }),
+    }),
+    env,
+  );
+  assert.equal(forbidden.status, 403);
+
+  // Pro user requesting Pro-tier gemini-4-hydrogen -> hits Gemini OpenAI-compatible URL with reasoning_effort: low
+  let capturedUrl = "";
+  let capturedAuth = "";
+  let capturedBody = null;
+  const origFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = origFetch; });
+  globalThis.fetch = async (url, init) => {
+    capturedUrl = String(url);
+    capturedAuth = init?.headers?.authorization ?? "";
+    capturedBody = JSON.parse(String(init?.body ?? "{}"));
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ basics: { name: { en: "Alex Lin", zh: "林阳" } }, skills: ["Go"], projects: [], experiences: [], capabilities: [] }) } }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  const okRes = await worker.fetch(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        resumeText: "Alex Lin, Staff Engineer with 8 years of distributed systems experience.",
+        hostedModelId: "gemini-4-hydrogen",
+      }),
+    }),
+    env,
+  );
+  assert.equal(okRes.status, 200);
+  assert.equal(capturedUrl, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+  assert.equal(capturedAuth, "Bearer test-gemini-key");
+  assert.equal(capturedBody?.model, "gemini-4-hydrogen");
+  assert.equal(capturedBody?.reasoning_effort, "low");
+});

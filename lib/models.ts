@@ -2,7 +2,7 @@ export type PlanTier = "free" | "pro" | "max";
 
 export interface HostedModelOption {
   id: string;
-  provider: "auto" | "deepseek" | "openai";
+  provider: "auto" | "deepseek" | "openai" | "gemini";
   label: { en: string; zh: string };
   tier: PlanTier;
   apiModel?: string;
@@ -31,7 +31,28 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     tier: "free",
     apiModel: "gpt-4o-mini",
   },
+  {
+    id: "gemini-3.5-flash-lite",
+    provider: "gemini",
+    label: { en: "Google Gemini 3.5 Flash-Lite (Fast)", zh: "Google Gemini 3.5 Flash-Lite（极速）" },
+    tier: "free",
+    apiModel: "gemini-3.5-flash-lite",
+  },
   // Pro tier models
+  {
+    id: "gemini-3.8-flash",
+    provider: "gemini",
+    label: { en: "Google Gemini 3.8 Flash", zh: "Google Gemini 3.8 Flash（均衡主力）" },
+    tier: "pro",
+    apiModel: "gemini-3.8-flash",
+  },
+  {
+    id: "gemini-4-hydrogen",
+    provider: "gemini",
+    label: { en: "Google Gemini 4 Hydrogen", zh: "Google Gemini 4 Hydrogen（新一代高速）" },
+    tier: "pro",
+    apiModel: "gemini-4-hydrogen",
+  },
   {
     id: "deepseek-v4.1-flash",
     provider: "deepseek",
@@ -61,6 +82,27 @@ export const HOSTED_MODELS: ReadonlyArray<HostedModelOption> = [
     apiModel: "o3-mini",
   },
   // Max tier flagship models
+  {
+    id: "gemini-4-carbon",
+    provider: "gemini",
+    label: { en: "Google Gemini 4 Carbon (Top Reasoning)", zh: "Google Gemini 4 Carbon（谷歌最强旗舰）" },
+    tier: "max",
+    apiModel: "gemini-4-carbon",
+  },
+  {
+    id: "gemini-4-neon",
+    provider: "gemini",
+    label: { en: "Google Gemini 4 Neon (Frontier Fast)", zh: "Google Gemini 4 Neon（前沿极速旗舰）" },
+    tier: "max",
+    apiModel: "gemini-4-neon",
+  },
+  {
+    id: "gemini-4-argon",
+    provider: "gemini",
+    label: { en: "Google Gemini 4 Argon (Efficient Reasoning)", zh: "Google Gemini 4 Argon（高效深度推理）" },
+    tier: "max",
+    apiModel: "gemini-4-argon",
+  },
   {
     id: "gpt-6.2-astra",
     provider: "openai",
@@ -115,4 +157,8 @@ export function getHostedModel(id: string | undefined): HostedModelOption {
 export function isReasoningOrNextGenOpenAI(model: string): boolean {
   const m = model.trim().toLowerCase();
   return /^(o[1-9]|gpt-[5-9])/.test(m);
+}
+
+export function isGeminiThinkingModel(model: string): boolean {
+  return /^gemini-[34]/i.test(model.trim());
 }

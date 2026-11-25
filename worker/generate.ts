@@ -1,5 +1,5 @@
 import { normalizeContacts } from "../lib/contacts.mjs";
-import { canUseModel, getHostedModel, isReasoningOrNextGenOpenAI, type PlanTier } from "../lib/models";
+import { canUseModel, getHostedModel, isGeminiThinkingModel, isReasoningOrNextGenOpenAI, type PlanTier } from "../lib/models";
 import { profile as sampleProfile } from "../lib/profile";
 import {
   isValidTheme,
@@ -247,6 +247,15 @@ export function resolveStudioModel(body: ModelSettings, mode: string, plan: Plan
     return jsonResponse(403, { error: `Model "${requested}" requires TalkCV Pro or Max (or use BYOK with your own API key).` });
   }
   const chosen = getHostedModel(requested === "auto" ? "deepseek-chat" : requested);
+  if (chosen.provider === "gemini") {
+    const apiKey = env.GEMINI_API_KEY?.trim();
+    if (!apiKey) return jsonResponse(503, { error: "Hosted gemini is not configured on this server." });
+    return {
+      apiKey,
+      model: chosen.apiModel || "gemini-3.5-flash-lite",
+      baseUrl: (env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, ""),
+    };
+  }
   const deepseek = chosen.provider === "deepseek";
   const apiKey = (deepseek ? env.DEEPSEEK_API_KEY : env.OPENAI_API_KEY)?.trim();
   if (!apiKey) return jsonResponse(503, { error: `Hosted ${chosen.provider} is not configured on this server.` });
@@ -380,7 +389,11 @@ ${JSON.stringify(sanitizedSample)}`;
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: targetModel,
-        ...(isReasoningOrNextGenOpenAI(targetModel) ? {} : { temperature: 0.1 }),
+        ...(isReasoningOrNextGenOpenAI(targetModel)
+          ? {}
+          : isGeminiThinkingModel(targetModel)
+            ? { reasoning_effort: "low" }
+            : { temperature: 0.1 }),
         response_format: { type: "json_object" },
         messages: [{ role: "system", content: systemPrompt },
           { role: "user", content: `Convert this resume into TalkCV profile.json:\n\n${resumeText.slice(0, 14000)}` }],

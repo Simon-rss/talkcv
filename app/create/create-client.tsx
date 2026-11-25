@@ -311,6 +311,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
   const [pricingOpen, setPricingOpen] = useState(false);
   const [checkoutBusyTier, setCheckoutBusyTier] = useState<CheckoutTier | null>(null);
   const [cloneNotice, setCloneNotice] = useState<string | null>(null);
+  const [externalMountOrigin, setExternalMountOrigin] = useState<string | null>(null);
   const handleInputRef = useRef<HTMLInputElement>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [refineOpen, setRefineOpen] = useState(false);
@@ -629,6 +630,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
       const res = await fetch(`/api/profiles/${encodeURIComponent(slug)}?edit=1`);
       const data = (await res.json()) as {
         profile?: PortfolioProfile;
+        externalOrigin?: string;
         expiresAt?: string;
         privacy?: { noindex: boolean; protected: boolean };
         aiBrief?: AiBrief;
@@ -636,6 +638,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         error?: string;
       };
       if (!res.ok || !data.profile) throw new Error(data.error || "Could not load site.");
+      setExternalMountOrigin(data.externalOrigin || null);
       setGenerated(data.profile);
       setHasGenerated(true);
       setTheme(data.profile.theme || "editorial");
@@ -679,6 +682,7 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
         setBriefDraft(undefined);
         setPublishedUrl(null);
         setPublishedExpires(null);
+        setExternalMountOrigin(null);
       }
     } catch {
       setSiteActionError(lang === "zh" ? "未能下线站点，请刷新后重试。" : "Could not remove the site. Refresh and try again.");
@@ -1381,6 +1385,7 @@ ${jd.slice(0, 3000)}`;
                     candidate = `${orig}-v${ver}`;
                   }
                   setSiteActionError("");
+                  setExternalMountOrigin(null);
                   setHandle(candidate);
                   setPublishedUrl(null);
                   setProtectedSite(false);
@@ -1419,6 +1424,79 @@ ${jd.slice(0, 3000)}`;
       </div>
 
       <div className="af-shell af-create-grid">
+        {externalMountOrigin ? (
+          <section className="af-create-panel" aria-label={lang === "zh" ? "外部独立站代托管模式" : "External standalone site mode"}>
+            <div className="af-panel-top">
+              <p className="af-eyebrow">EXTERNAL MOUNT · PROXY HOSTING</p>
+              <button
+                type="button"
+                className="af-reset-link"
+                onClick={() => {
+                  setExternalMountOrigin(null);
+                  setPublishedUrl(null);
+                  setHandle(DEFAULT_HANDLE);
+                }}
+              >
+                <RotateCcw size={12} /> {lang === "zh" ? "新建普通站点" : "New TalkCV site"}
+              </button>
+            </div>
+            <h1>{lang === "zh" ? "外部独立站代托管模式" : "External Standalone Site Mount"}</h1>
+            <p style={{ fontSize: 13.5, lineHeight: 1.65, color: "var(--muted)", margin: "0 0 14px" }}>
+              {lang === "zh"
+                ? `当前站点 /u/${handle} 已通过代理挂载到你的独立部署作品集，右侧实时展示线上原版页面。无需在左侧选皮肤或重新生成，避免误覆盖原版独立站。`
+                : `Your site /u/${handle} proxies your standalone portfolio directly. The right pane shows the real live site so you won't accidentally overwrite it with a template.`}
+            </p>
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "var(--surface-alt)",
+                border: "1px solid var(--line)",
+                fontSize: 12.5,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <strong>{lang === "zh" ? "对外访问链接：" : "Public URL:"}</strong>{" "}
+                <code>/u/{handle}</code>
+              </div>
+              <div>
+                <strong>{lang === "zh" ? "挂载源站地址：" : "Upstream origin:"}</strong>{" "}
+                <code>{externalMountOrigin}</code>
+              </div>
+            </div>
+            <p style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--muted)", margin: "0 0 16px" }}>
+              {lang === "zh"
+                ? "✅ 你仍可在顶部与右侧正常使用：访客洞察、约面线索、访问口令锁、禁止搜索引擎收录、分享海报与给原版 PDF 盖 AI 二维码。"
+                : "✅ Visitor insights, recruiter leads, passcode lock, noindex, share poster, and PDF QR stamper all continue to work normally."}
+            </p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <a
+                href={`/u/${encodeURIComponent(handle)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="af-btn af-btn-primary"
+              >
+                <ExternalLink size={14} />
+                <span>{lang === "zh" ? "新窗口打开原版站" : "Open live site"}</span>
+              </a>
+              <button
+                type="button"
+                className="af-btn af-btn-secondary"
+                onClick={() => {
+                  setExternalMountOrigin(null);
+                  setPublishedUrl(null);
+                  setHandle(DEFAULT_HANDLE);
+                }}
+              >
+                <span>{lang === "zh" ? "切回创建新简历站" : "Create another site"}</span>
+              </button>
+            </div>
+          </section>
+        ) : (
         <form className="af-create-panel" onSubmit={(e) => { e.preventDefault(); startDraftAction("generate"); }}>
           <div className="af-panel-top">
             <p className="af-eyebrow">STEP 1 · GENERATE</p>
@@ -1712,6 +1790,7 @@ ${jd.slice(0, 3000)}`;
             </span>
           </button>
         </form>
+        )}
 
         <section className="af-preview-panel">
           <div className="af-preview-bar">
@@ -1979,6 +2058,45 @@ ${jd.slice(0, 3000)}`;
             )}
           </div>
 
+          {externalMountOrigin ? (
+            <div style={{ marginTop: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                  🌐 {lang === "zh" ? `实时原版预览：/u/${handle}` : `Live standalone preview: /u/${handle}`}
+                </span>
+                <a
+                  href={`/u/${encodeURIComponent(handle)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="af-icon-pill"
+                >
+                  <ExternalLink size={12} />
+                  <span>{lang === "zh" ? "新窗口打开" : "Open in new tab"}</span>
+                </a>
+              </div>
+              <iframe
+                src={`/u/${encodeURIComponent(handle)}`}
+                title={`/u/${handle}`}
+                style={{
+                  width: "100%",
+                  height: 760,
+                  border: "1px solid var(--line)",
+                  borderRadius: 16,
+                  background: "#ffffff",
+                }}
+              />
+            </div>
+          ) : (
+          <>
           <div className="af-edit-toolbar" data-tour="preview">
             <span className="af-inline-edit-hint">
               ✏️ {lang === "zh" ? "所见即所得：点击下方任意文字或指标即可直接编辑" : "WYSIWYG: Click any text or metric below to edit inline"}
@@ -2855,6 +2973,8 @@ ${jd.slice(0, 3000)}`;
               </button>
             </div>
           </div>
+          </>
+          )}
           </>
           )}
         </section>

@@ -22,6 +22,7 @@ import {
   type AuthEnv,
 } from "./auth";
 import { getUserPlan, type BillingEnv } from "./billing";
+import { resolveExternalOrigin, type ExternalMountEnv } from "./external-mount";
 import { getOrCreateReferralRecord, qualifyReferralOnPublish } from "./referral";
 import { hashPasscode, siteUnlocked, validPasscode, type PasscodeHash } from "./site-access";
 import { encryptSecret, maskApiKey } from "./crypto";
@@ -598,9 +599,11 @@ export async function handleGetProfileRequest(
     (record.ownerEmail ? (await getOrCreateReferralRecord(record.ownerEmail, env)).code : undefined);
   const publicProfile = { ...record.profile };
   if ("aiBrief" in publicProfile) delete publicProfile.aiBrief;
+  const externalOrigin = resolveExternalOrigin(normalizeSlug(slug), record, env as ExternalMountEnv);
   return jsonResponse(200, {
     profile: publicProfile,
     ...(editing && record.aiBrief ? { aiBrief: record.aiBrief } : {}),
+    ...(externalOrigin ? { externalOrigin } : {}),
     expiresAt: record.expiresAt,
     aiDormant,
     ...(ownerRefCode ? { ownerRefCode } : {}),

@@ -405,6 +405,7 @@ async function saveProfile(
     noindex: privacy?.noindex ?? existing?.noindex ?? false,
     passcode,
     ...(user ? { ownerEmail: user.email, ownerRefCode: ownerRef?.code } : {}),
+    ...(existing?.externalOrigin ? { externalOrigin: existing.externalOrigin } : {}),
     createdAt: existing?.createdAt ?? now.toISOString(),
     expiresAt,
     chatConfig,

@@ -73,6 +73,8 @@ function extractChatQuestion(bodyText: string): string | undefined {
   return undefined;
 }
 
+const STATIC_ASSET_EXT_RE = /\.(?:js|mjs|css|png|jpe?g|webp|gif|svg|ico|woff2?|ttf|map|avif)$/i;
+
 export async function proxyExternalMountedSite(
   request: Request,
   slug: string,
@@ -83,7 +85,13 @@ export async function proxyExternalMountedSite(
 ): Promise<Response> {
   const url = new URL(request.url);
   const subPath = url.pathname.slice(`/u/${slug}`.length) || "/";
-  const upstreamUrl = new URL(`${url.pathname}${url.search}`, externalOrigin);
+  // Static assets built into Cloudflare Workers ASSETS live at the origin root (e.g. /assets/*, /projects/*.png)
+  const isStaticAsset =
+    (request.method === "GET" || request.method === "HEAD") &&
+    !subPath.startsWith("/api/") &&
+    (subPath.startsWith("/assets/") || STATIC_ASSET_EXT_RE.test(subPath));
+  const upstreamPath = isStaticAsset ? subPath : url.pathname;
+  const upstreamUrl = new URL(`${upstreamPath}${url.search}`, externalOrigin);
 
   const forwardHeaders = new Headers();
   for (const name of [

@@ -247,6 +247,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
           )}
         </div>
       </div>
+      {(currentPlan === "free" || isTrial) && (
       <div className="af-starter-banner">
         <div className="af-starter-banner-copy">
           <span className="af-starter-tag">{isZh ? "求职破冰首选" : "JOB-HUNT SPRINT"}</span>
@@ -270,6 +271,7 @@ export function PricingPlans({ lang, currentPlan, isTrial = false, busyTier, err
               : isZh ? "立即开通 $4.9 →" : "Get Starter Pass $4.9 →"}
         </button>
       </div>
+      )}
 
       <div className="af-pricing-grid">
         {tiers.map((t) => {

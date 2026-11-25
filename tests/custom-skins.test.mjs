@@ -541,6 +541,60 @@ test("Starter Pass webhook activates 14-day Pro + 80 bonus credits, media split 
   const daysDelta = (Date.parse(planRec.expiresAt) - Date.now()) / 86_400_000;
   assert.ok(daysDelta >= 13.5 && daysDelta <= 14.5);
 
+  // 1b. Active Max user cannot checkout Starter Pass (409) and delayed Starter webhook must NOT downgrade Max or shorten expiry
+  const maxExpiry = new Date(Date.now() + 90 * 86_400_000).toISOString();
+  kvStore.set("plan:maxuser@example.com", JSON.stringify({ plan: "max", status: "active", expiresAt: maxExpiry, updatedAt: new Date().toISOString() }));
+  const maxSend = await worker.fetch(
+    new Request("http://localhost/api/auth/send-code", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "maxuser@example.com" }),
+    }),
+    authEnv,
+  );
+  const { instantCode: maxCode, challenge: maxChallenge } = await maxSend.json();
+  const maxVerify = await worker.fetch(
+    new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "maxuser@example.com", code: maxCode, challenge: maxChallenge }),
+    }),
+    authEnv,
+  );
+  const maxCookie = maxVerify.headers.get("set-cookie").split(";")[0];
+  const blockedCheckout = await worker.fetch(
+    new Request("http://localhost/api/billing/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: maxCookie },
+      body: JSON.stringify({ tier: "starter", interval: "month", mode: "onetime" }),
+    }),
+    { ...env, CREEM_API_KEY: "creem_test_key", CREEM_STARTER_ONETIME_PRODUCT_ID: "prod_starter" },
+  );
+  assert.equal(blockedCheckout.status, 409);
+
+  const delayedPayload = JSON.stringify({
+    id: "evt_starter_delayed_max",
+    eventType: "checkout.completed",
+    object: {
+      customer: { id: "cust_max", email: "maxuser@example.com" },
+      metadata: { email: "maxuser@example.com", plan: "starter", mode: "onetime", days: 14, bonusCredits: 80 },
+    },
+  });
+  const delayedSig = createHmac("sha256", secret).update(delayedPayload).digest("hex");
+  const delayedRes = await worker.fetch(
+    new Request("http://localhost/api/billing/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "creem-signature": delayedSig },
+      body: delayedPayload,
+    }),
+    env,
+  );
+  assert.equal(delayedRes.status, 200);
+  const maxAfter = JSON.parse(kvStore.get("plan:maxuser@example.com"));
+  assert.equal(maxAfter.plan, "max");
+  assert.ok(Date.parse(maxAfter.expiresAt) >= Date.parse(maxExpiry));
+  assert.equal(maxAfter.bonusCredits, 80);
+
   // 2. Base64 media split & cleanup test
   const sendRes = await worker.fetch(
     new Request("http://localhost/api/auth/send-code", {

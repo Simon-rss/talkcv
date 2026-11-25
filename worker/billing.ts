@@ -277,6 +277,12 @@ export async function handleBillingCheckoutRequest(request: Request, env: Billin
   }
   const tier: "starter" | "pro" | "max" =
     body.tier === "starter" ? "starter" : body.tier === "max" ? "max" : "pro";
+  if (tier === "starter") {
+    const current = await getUserPlan(user.email, env);
+    if (current.isPro && !current.isTrial) {
+      return jsonResponse(409, { error: "Starter Pass is only available for Free accounts." });
+    }
+  }
   const interval: "month" | "year" = body.interval === "year" ? "year" : "month";
   const mode: "subscription" | "onetime" =
     tier === "starter" ? "onetime" : body.mode === "onetime" ? "onetime" : "subscription";
@@ -474,6 +480,11 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
 
   if (GRANT_EVENTS.has(eventType)) {
     const prev = await getUserPlan(email, env);
+    const effectiveTier: PlanTier = prev.isMax ? "max" : grantedTier;
+    const prevExpiryMs =
+      prev.record?.expiresAt && Number.isFinite(Date.parse(prev.record.expiresAt))
+        ? Date.parse(prev.record.expiresAt)
+        : 0;
     const metaMode = obj?.metadata?.mode;
     const metaDays = Number(obj?.metadata?.days);
     let expiresAt = periodEnd;
@@ -486,19 +497,20 @@ export async function handleCreemWebhookRequest(request: Request, env: BillingEn
             : obj?.metadata?.interval === "year"
               ? 365
               : 30;
-      const prevExpiry =
-        prev.record?.plan === grantedTier && prev.record.expiresAt && Number.isFinite(Date.parse(prev.record.expiresAt))
-          ? Date.parse(prev.record.expiresAt)
-          : 0;
-      const baseMs = Math.max(Date.now(), prevExpiry);
-      expiresAt = new Date(baseMs + days * 86_400_000).toISOString();
+      const sameTierPrevExpiry = prev.record?.plan === effectiveTier ? prevExpiryMs : 0;
+      const baseMs = Math.max(Date.now(), sameTierPrevExpiry);
+      const computedMs = baseMs + days * 86_400_000;
+      // Never shorten an active higher/existing paid plan's expiration date
+      expiresAt = new Date(Math.max(computedMs, prevExpiryMs)).toISOString();
+    } else if (expiresAt && prevExpiryMs > Date.parse(expiresAt)) {
+      expiresAt = new Date(prevExpiryMs).toISOString();
     }
     const addedBonus = isStarter ? Math.max(0, Number(obj?.metadata?.bonusCredits) || 80) : 0;
     const totalBonusCredits = (Number(prev.record?.bonusCredits) || 0) + addedBonus;
     await setUserPlan(
       email,
       {
-        plan: grantedTier,
+        plan: effectiveTier,
         status: "active",
         customerId: customerId || prev.record?.customerId,
         subscriptionId: subscriptionId || prev.record?.subscriptionId,

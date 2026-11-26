@@ -164,7 +164,7 @@ function normalizeGeneratedProfile(
   });
 
   const cleanStylePrompt = stylePrompt?.trim().slice(0, 400) || undefined;
-  const designTokens = sanitizeDesignTokens(raw.designTokens);
+  const designTokens = sanitizeDesignTokens(raw.designTokens, theme);
   const layoutPlan = sanitizeLayoutPlan(raw.layoutPlan);
 
   return {

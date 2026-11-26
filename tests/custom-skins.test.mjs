@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  designTokensToCssVars,
   sanitizeCoverImage,
   sanitizeCustomHtml,
   sanitizeDesignTokens,
@@ -43,6 +44,40 @@ test("sanitizeDesignTokens keeps valid deep skin properties and drops invalid va
     radius: "999px",
   });
   assert.equal(rejected, undefined);
+});
+
+test("sanitizeDesignTokens & designTokensToCssVars prevent dark-on-dark surface/ink contrast mismatches", () => {
+  // Light canvas + dark surface + dark muted text (the unreadable chip bug)
+  const fixedLight = sanitizeDesignTokens(
+    {
+      bg: "#f8fafc",
+      surface: "#0f172a",
+      ink: "#e2e8f0",
+      muted: "#cbd5e1",
+    },
+    "editorial",
+  );
+  assert.equal(fixedLight?.surface, "#ffffff");
+  assert.equal(fixedLight?.ink, "#111827");
+  assert.equal(fixedLight?.muted, "#475569");
+
+  // Dark preset applied on editorial theme maps --ink-soft alongside --muted
+  const darkVars = designTokensToCssVars(
+    {
+      bg: "#070d19",
+      surface: "#0f172a",
+      ink: "#f1f5f9",
+      muted: "#94a3b8",
+    },
+    "editorial",
+  );
+  assert.equal(darkVars["--ink-soft"], "#94a3b8");
+  assert.equal(darkVars["--muted"], "#94a3b8");
+
+  // Conflicting dark surface alone without bg on light theme is dropped
+  const droppedSurface = sanitizeDesignTokens({ surface: "#111822", accent: "#10b981" }, "editorial");
+  assert.equal(droppedSurface?.surface, undefined);
+  assert.equal(droppedSurface?.accent, "#10b981");
 });
 
 test("sanitizeLayoutPlan normalizes sectionOrder and validates all layout dimensions", () => {

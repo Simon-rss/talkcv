@@ -32,6 +32,7 @@ import { captureReferral, readSession, type AuthUser } from "../../lib/login";
 import { profile as defaultProfile } from "../../lib/profile";
 import {
   AI_BRIEF_LIMITS,
+  designTokensToCssVars,
   FONT_PAIR_OPTIONS,
   HERO_STYLE_OPTIONS,
   localize,
@@ -1190,15 +1191,7 @@ ${jd.slice(0, 3000)}`;
     }
   };
 
-  const previewStyleVars: React.CSSProperties = {
-    ...(generated.designTokens?.accent ? ({ "--accent": generated.designTokens.accent } as React.CSSProperties) : {}),
-    ...(generated.designTokens?.accent2 ? ({ "--accent2": generated.designTokens.accent2 } as React.CSSProperties) : {}),
-    ...(generated.designTokens?.bg ? ({ "--bg": generated.designTokens.bg } as React.CSSProperties) : {}),
-    ...(generated.designTokens?.surface ? ({ "--surface": generated.designTokens.surface } as React.CSSProperties) : {}),
-    ...(generated.designTokens?.ink ? ({ "--ink": generated.designTokens.ink } as React.CSSProperties) : {}),
-    ...(generated.designTokens?.muted ? ({ "--muted": generated.designTokens.muted } as React.CSSProperties) : {}),
-    ...(generated.designTokens?.radius ? ({ "--radius": generated.designTokens.radius } as React.CSSProperties) : {}),
-  };
+  const previewStyleVars = designTokensToCssVars(generated.designTokens, theme) as React.CSSProperties;
 
   return (
     <main className="af-create-page">

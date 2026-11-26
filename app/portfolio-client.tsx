@@ -33,6 +33,7 @@ import { getSiteUrl, profile as defaultProfile } from "../lib/profile";
 import { DESIGNER_SAMPLE_PROFILE, PM_SAMPLE_PROFILE } from "../lib/sample-profiles";
 import {
   DEFAULT_SECTION_ORDER,
+  designTokensToCssVars,
   isValidTheme,
   localize,
   THEMES,
@@ -129,12 +130,10 @@ function AppProvider({
     document.documentElement.dataset.theme = theme;
     const tokens = initialProfile.designTokens;
     const root = document.documentElement.style;
-    const keys = ["--accent", "--bg", "--surface", "--radius"] as const;
+    const keys = ["--accent", "--accent2", "--bg", "--surface", "--surface-alt", "--ink", "--ink-soft", "--muted", "--radius"] as const;
     for (const k of keys) root.removeProperty(k);
-    if (tokens?.accent) root.setProperty("--accent", tokens.accent);
-    if (tokens?.bg) root.setProperty("--bg", tokens.bg);
-    if (tokens?.surface) root.setProperty("--surface", tokens.surface);
-    if (tokens?.radius) root.setProperty("--radius", tokens.radius);
+    const cssVars = designTokensToCssVars(tokens, theme);
+    for (const [k, v] of Object.entries(cssVars)) root.setProperty(k, v);
 
     // Dynamic tab title & favicon for personal sites / preview
     if (profileSlug) {
@@ -538,15 +537,7 @@ function HomeContent({ exportSlug }: { exportSlug?: string }) {
     ? (profile.layoutPlan?.sectionOrder ?? DEFAULT_SECTION_ORDER)
     : DEFAULT_SECTION_ORDER;
 
-  const tokenStyle: React.CSSProperties = {
-    ...(profile.designTokens?.accent ? ({ "--accent": profile.designTokens.accent } as React.CSSProperties) : {}),
-    ...(profile.designTokens?.accent2 ? ({ "--accent2": profile.designTokens.accent2 } as React.CSSProperties) : {}),
-    ...(profile.designTokens?.bg ? ({ "--bg": profile.designTokens.bg } as React.CSSProperties) : {}),
-    ...(profile.designTokens?.surface ? ({ "--surface": profile.designTokens.surface } as React.CSSProperties) : {}),
-    ...(profile.designTokens?.ink ? ({ "--ink": profile.designTokens.ink } as React.CSSProperties) : {}),
-    ...(profile.designTokens?.muted ? ({ "--muted": profile.designTokens.muted } as React.CSSProperties) : {}),
-    ...(profile.designTokens?.radius ? ({ "--radius": profile.designTokens.radius } as React.CSSProperties) : {}),
-  };
+  const tokenStyle = designTokensToCssVars(profile.designTokens, theme) as React.CSSProperties;
   const bgPattern = isPersonalHosted ? (profile.designTokens?.bgPattern ?? "none") : "none";
   const cardStyle = isPersonalHosted ? (profile.designTokens?.cardStyle ?? "elevated") : "elevated";
   const buttonStyle = isPersonalHosted ? (profile.designTokens?.buttonStyle ?? "pill") : "pill";

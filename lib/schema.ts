@@ -139,7 +139,21 @@ const VALID_BG_PATTERNS = new Set<BgPattern>(["none", "grid", "dots", "glow"]);
 const VALID_CARD_STYLES = new Set<CardStyle>(["elevated", "glass", "brutalist", "minimal", "neon"]);
 const VALID_BUTTON_STYLES = new Set<ButtonStyle>(["pill", "sharp", "solid"]);
 
-export function sanitizeDesignTokens(raw: unknown): DesignTokens | undefined {
+function hexLuminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function contrastRatio(hexA: string, hexB: string): number {
+  const l1 = hexLuminance(hexA);
+  const l2 = hexLuminance(hexB);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+export function sanitizeDesignTokens(raw: unknown, fallbackTheme?: ThemeId): DesignTokens | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const obj = raw as Record<string, unknown>;
   const hexRe = /^#[0-9a-fA-F]{6}$/;
@@ -161,7 +175,55 @@ export function sanitizeDesignTokens(raw: unknown): DesignTokens | undefined {
   if (typeof obj.buttonStyle === "string" && VALID_BUTTON_STYLES.has(obj.buttonStyle as ButtonStyle)) {
     out.buttonStyle = obj.buttonStyle as ButtonStyle;
   }
+  if (Object.keys(out).length === 0) return undefined;
+
+  // Enforce surface/background polarity agreement & WCAG readability contrast
+  const effectiveBg = out.bg ?? (fallbackTheme === "terminal" ? "#0b0f14" : "#f5f5f7");
+  const bgIsDark = hexLuminance(effectiveBg) < 0.25;
+  if (out.surface && (hexLuminance(out.surface) < 0.25) !== bgIsDark) {
+    if (out.bg) {
+      out.surface = bgIsDark ? "#161f2c" : "#ffffff";
+    } else {
+      delete out.surface;
+    }
+  }
+  const effectiveSurface = out.surface ?? (bgIsDark ? "#111822" : "#ffffff");
+  if (out.ink && (contrastRatio(out.ink, effectiveBg) < 4.5 || contrastRatio(out.ink, effectiveSurface) < 4.5)) {
+    out.ink = bgIsDark ? "#f1f5f9" : "#111827";
+  }
+  if (out.muted && (contrastRatio(out.muted, effectiveBg) < 4.2 || contrastRatio(out.muted, effectiveSurface) < 4.2)) {
+    out.muted = bgIsDark ? "#a1b0c4" : "#475569";
+  }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function designTokensToCssVars(tokens?: DesignTokens, theme: ThemeId = "editorial"): Record<string, string> {
+  const safe = sanitizeDesignTokens(tokens, theme);
+  if (!safe) return {};
+  const themeIsDark = theme === "terminal";
+  const effectiveBg = safe.bg ?? (themeIsDark ? "#0b0f14" : "#f5f5f7");
+  const bgIsDark = hexLuminance(effectiveBg) < 0.25;
+  const polarityFlipped = bgIsDark !== themeIsDark;
+
+  const vars: Record<string, string> = {};
+  if (safe.accent) vars["--accent"] = safe.accent;
+  if (safe.accent2) vars["--accent2"] = safe.accent2;
+  if (safe.bg) vars["--bg"] = safe.bg;
+  if (safe.surface) {
+    vars["--surface"] = safe.surface;
+    vars["--surface-alt"] = bgIsDark
+      ? "color-mix(in srgb, var(--surface) 88%, #ffffff)"
+      : "color-mix(in srgb, var(--surface) 94%, #0f172a)";
+  }
+  const ink = safe.ink ?? (polarityFlipped ? (bgIsDark ? "#f1f5f9" : "#111827") : undefined);
+  if (ink) vars["--ink"] = ink;
+  const softInk = safe.muted ?? (polarityFlipped ? (bgIsDark ? "#a1b0c4" : "#475569") : undefined);
+  if (softInk) {
+    vars["--muted"] = softInk;
+    vars["--ink-soft"] = softInk;
+  }
+  if (safe.radius) vars["--radius"] = safe.radius;
+  return vars;
 }
 
 export function sanitizeCoverImage(raw: unknown): string | undefined {

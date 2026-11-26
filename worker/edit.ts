@@ -29,6 +29,7 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
     instruction?: unknown;
     history?: unknown;
     theme?: unknown;
+    lang?: unknown;
     hostedModelId?: unknown;
     providerMode?: unknown;
     apiKey?: unknown;
@@ -61,6 +62,13 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
   const { baseUrl, model, apiKey } = provider;
 
   const theme: ThemeId = isValidTheme(body.theme) ? body.theme : currentProfile.theme || "editorial";
+  const outputLang = body.lang === "zh" || body.lang === "en" ? body.lang : null;
+  const summaryLangRule =
+    outputLang === "zh"
+      ? "in Simplified Chinese (简体中文)"
+      : outputLang === "en"
+        ? "in English"
+        : "in the same language as the user's instruction";
   const textProfile = {
     ...currentProfile,
     basics: { ...currentProfile.basics },
@@ -89,7 +97,7 @@ export async function handleAiEditRequest(request: Request, env: ChatEnv & Billi
 Given the current TalkCV profile JSON and the owner's edit instruction, apply ONLY the requested changes cleanly while preserving all unaffected fields, structure, and verified facts/metrics.
 Output ONLY a raw JSON object with this exact shape (no markdown fences):
 {
-  "summary": "Brief 1-sentence summary of what you changed (in the same language as the user's instruction)",
+  "summary": "Brief 1-sentence summary of what you changed (${summaryLangRule})",
   "profile": { ...the complete updated PortfolioProfile JSON... }
 }
 Rules:
@@ -136,7 +144,7 @@ Rules:
       throw new Error("Missing profile");
     }
 
-    const updatedTokens = sanitizeDesignTokens(parsed.profile.designTokens);
+    const updatedTokens = sanitizeDesignTokens(parsed.profile.designTokens, theme);
     const updatedLayout = sanitizeLayoutPlan(parsed.profile.layoutPlan);
     const coverBySlug = new Map(currentProfile.projects.map((p) => [p.slug, p.coverImage]));
     const restoredProjects = Array.isArray(parsed.profile.projects)
@@ -155,6 +163,7 @@ Rules:
       ...(updatedLayout ? { layoutPlan: updatedLayout } : {}),
       ...(currentProfile.customHtml ? { customHtml: currentProfile.customHtml } : {}),
     };
-    return { ok: true, summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "Updated portfolio.", profile: mergedProfile };
+    const defaultSummary = outputLang === "zh" ? "已更新简历站点。" : "Updated portfolio.";
+    return { ok: true, summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : defaultSummary, profile: mergedProfile };
   });
 }

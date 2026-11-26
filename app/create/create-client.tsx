@@ -1093,7 +1093,17 @@ export function CreateStudioClient({ initialLang = "zh", checkout }: { initialLa
     setJdTailorError(null);
     setJdTailorNote(null);
     try {
-      const instruction = `Tailor this portfolio specifically for the target JD below:
+      const instruction =
+        lang === "zh"
+          ? `请针对下方目标岗位 JD 定制这份个人简历站点：
+1) 重排 projects[]，把与目标 JD 最相关的项目放到最前面。
+2) 把与 JD 匹配的技能移到 skills[] 前排。
+3) 优化 basics.headline、basics.intro 和项目摘要，突出与目标岗位的真实契合点。
+4) 严格保持事实真实：绝不编造简历中不存在的技能、公司、项目或指标，并同步保持中英文双语字段一致。
+
+目标岗位 JD：
+${jd.slice(0, 3000)}`
+          : `Tailor this portfolio specifically for the target JD below:
 1) Reorder projects[] so the most relevant project for this JD is first.
 2) Move matching skills to the front of skills[].
 3) Sharpen basics.headline, basics.intro, and project summaries to emphasize genuine alignment with the JD.
@@ -1107,6 +1117,7 @@ ${jd.slice(0, 3000)}`;
         body: JSON.stringify({
           profile: generated,
           theme,
+          lang,
           instruction,
           providerMode: genMode,
           hostedModelId: genModelId,

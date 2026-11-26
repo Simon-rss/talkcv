@@ -85,6 +85,7 @@ export function AiRefinePanel({
           instruction,
           history: turns.slice(-6),
           theme,
+          lang,
           hostedModelId,
           providerMode,
           ...(providerMode === "byok" && apiKey ? { apiKey, baseUrl, model: byokModel } : {}),

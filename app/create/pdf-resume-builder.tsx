@@ -2,6 +2,7 @@
 
 import { Download, FileText, Printer, RotateCcw, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CREDIT_COST, creditCostLabel, type CreditBalance } from "../../lib/credits";
 import {
   profileToDefaultResumePdfPlan,
@@ -55,7 +56,27 @@ export function PdfResumeBuilder({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfErr, setPdfErr] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [previewScale, setPreviewScale] = useState(0.76);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const previewPaneRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const updateScale = () => {
+      const paneW = previewPaneRef.current?.clientWidth ?? 680;
+      const a4Px = 794; // 210mm at 96dpi
+      const next = Math.min(0.95, Math.max(0.42, (paneW - 36) / a4Px));
+      setPreviewScale(next);
+    };
+    updateScale();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateScale) : null;
+    if (ro && previewPaneRef.current) ro.observe(previewPaneRef.current);
+    window.addEventListener("resize", updateScale);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", updateScale);
+    };
+  }, [open]);
 
   // Sync default plan when modal opens freshly (preserve AI-tailored plan while open)
   const openModal = () => {
@@ -210,11 +231,14 @@ export function PdfResumeBuilder({
     }
   };
 
+  const a4HeightPx = plan.targetPages === 2 ? 2245 : 1123;
+
   return (
     <>
       <button
         type="button"
         className={triggerClassName || "af-icon-pill af-login-pill"}
+        style={{ whiteSpace: "nowrap", flexShrink: 0 }}
         onClick={openModal}
         title={
           zh
@@ -226,20 +250,42 @@ export function PdfResumeBuilder({
         <span>{triggerLabel || (zh ? "AI 重排 PDF 简历" : "AI PDF Résumé")}</span>
       </button>
 
-      {open && (
-        <div className="af-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setOpen(false)}>
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            className="af-modal-card"
-            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setOpen(false)}
             style={{
-              width: "min(1160px, 96vw)",
-              maxHeight: "92vh",
-              padding: 0,
-              overflow: "hidden",
+              position: "fixed",
+              inset: 0,
+              zIndex: 1200,
+              background: "rgba(15, 23, 42, 0.58)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
               display: "flex",
-              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 16,
             }}
           >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(1180px, 96vw)",
+                height: "min(90vh, 880px)",
+                background: "var(--surface)",
+                color: "var(--ink)",
+                border: "1px solid var(--line)",
+                borderRadius: 16,
+                boxShadow: "0 24px 64px rgba(15, 23, 42, 0.32)",
+                padding: 0,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
             <div
               style={{
                 display: "flex",
@@ -563,10 +609,12 @@ export function PdfResumeBuilder({
 
               {/* Right live A4 preview */}
               <div
+                ref={previewPaneRef}
                 style={{
                   background: "#e2e8f0",
                   padding: 18,
                   overflowY: "auto",
+                  overflowX: "hidden",
                   display: "flex",
                   justifyContent: "center",
                   alignItems: "flex-start",
@@ -574,32 +622,43 @@ export function PdfResumeBuilder({
               >
                 <div
                   style={{
-                    width: "210mm",
-                    minHeight: "297mm",
-                    background: "#ffffff",
-                    boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
-                    borderRadius: 4,
-                    overflow: "hidden",
-                    transformOrigin: "top center",
+                    width: Math.round(794 * previewScale),
+                    height: Math.round(a4HeightPx * previewScale),
+                    flexShrink: 0,
+                    position: "relative",
                   }}
                 >
-                  <iframe
-                    ref={iframeRef}
-                    title="A4 PDF Resume Preview"
-                    srcDoc={previewHtml}
+                  <div
                     style={{
-                      width: "210mm",
-                      height: plan.targetPages === 2 ? "594mm" : "297mm",
-                      border: "none",
-                      display: "block",
+                      width: 794,
+                      height: a4HeightPx,
                       background: "#ffffff",
+                      boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
+                      borderRadius: 4,
+                      overflow: "hidden",
+                      transform: `scale(${previewScale})`,
+                      transformOrigin: "top left",
                     }}
-                  />
+                  >
+                    <iframe
+                      ref={iframeRef}
+                      title="A4 PDF Resume Preview"
+                      srcDoc={previewHtml}
+                      style={{
+                        width: 794,
+                        height: a4HeightPx,
+                        border: "none",
+                        display: "block",
+                        background: "#ffffff",
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

@@ -59,6 +59,7 @@ import { ContactLinks } from "../contact-links";
 import { SiteLinks } from "../public-navigation";
 import { PricingModal, requestCheckout, type CheckoutTier } from "./pricing-modal";
 import { PdfQrStamper } from "./pdf-qr-stamper";
+import { PdfResumeBuilder } from "./pdf-resume-builder";
 
 function buildPresetAvatarSvg(initials: string, c1: string, c2: string): string {
   const clean = (initials || "TC").slice(0, 2).replace(/[<>&"']/g, "");
@@ -1824,6 +1825,21 @@ ${jd.slice(0, 3000)}`;
                 <Download size={13} />
                 <span>{lang === "zh" ? "下载" : "Download"}</span>
               </button>
+              <PdfResumeBuilder
+                profile={generated}
+                slug={publishedUrl ? new URL(publishedUrl).pathname.split("/").pop() : undefined}
+                lang={lang}
+                providerMode={genMode}
+                hostedModelId={genModelId}
+                apiKey={genApiKey}
+                baseUrl={genBaseUrl}
+                byokModel={genModel}
+                isSignedIn={Boolean(user)}
+                onRequireAuth={() => setAuthModalOpen(true)}
+                onRequirePricing={() => setPricingOpen(true)}
+                onCredits={(c) => updateCredits(user?.email, c)}
+                triggerLabel={lang === "zh" ? "AI 重排 PDF" : "AI PDF"}
+              />
             </div>
           </div>
 
@@ -2053,15 +2069,21 @@ ${jd.slice(0, 3000)}`;
                 </button>
                 {publishedProfile && <SharePoster profile={publishedProfile} slug={new URL(publishedUrl).pathname.split("/").pop()!} lang={lang} />}
                 <PdfQrStamper slug={new URL(publishedUrl).pathname.split("/").pop()!} lang={lang} />
-                <button
-                  type="button"
-                  className="af-icon-pill af-login-pill"
-                  title={lang === "zh" ? "投递 BOSS 直聘 / 邮件时直接发带二维码的 A4 PDF，HR 零戒心" : "Export a QR-coded A4 PDF résumé for job portals & email"}
-                  onClick={openFullscreenPreview}
-                >
-                  <Download size={12} />
-                  <span>{lang === "zh" ? "导出带码 A4 PDF" : "Export QR A4 PDF"}</span>
-                </button>
+                <PdfResumeBuilder
+                  profile={publishedProfile ?? generated}
+                  slug={new URL(publishedUrl).pathname.split("/").pop()!}
+                  lang={lang}
+                  providerMode={genMode}
+                  hostedModelId={genModelId}
+                  apiKey={genApiKey}
+                  baseUrl={genBaseUrl}
+                  byokModel={genModel}
+                  isSignedIn={Boolean(user)}
+                  onRequireAuth={() => setAuthModalOpen(true)}
+                  onRequirePricing={() => setPricingOpen(true)}
+                  onCredits={(c) => updateCredits(user?.email, c)}
+                  triggerLabel={lang === "zh" ? "AI 重排 A4 PDF" : "AI A4 PDF Résumé"}
+                />
               </div>
             )}
           </div>

@@ -33,6 +33,7 @@ import { handleAiEditRequest } from "./edit";
 import { proxyExternalMountedSite, resolveExternalOrigin, type ExternalMountEnv } from "./external-mount";
 import { handleOgImageRequest } from "./og";
 import { handleParseResumeImageRequest } from "./parse-image";
+import { handlePdfResumeAiPlanRequest } from "./pdf-resume";
 import { recordSiteTraffic, shouldTrackTraffic } from "./traffic";
 import { handleGenerateRequest } from "./generate";
 import { handleDeleteProfileRequest, handleGetProfileRequest, handlePublishRequest, loadStoredRecord } from "./publish";
@@ -112,6 +113,9 @@ const worker = {
     }
     if (url.pathname === "/api/edit") {
       return handleAiEditRequest(request, env);
+    }
+    if (url.pathname === "/api/pdf-resume/ai-plan") {
+      return handlePdfResumeAiPlanRequest(request, env);
     }
     if (url.pathname === "/api/outreach") return handleOutreach(request, env);
     if (url.pathname === "/api/publish") {

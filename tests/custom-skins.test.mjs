@@ -8,6 +8,12 @@ import {
   sanitizeLayoutPlan,
   STYLE_PRESETS,
 } from "../lib/schema.ts";
+import {
+  profileToDefaultResumePdfPlan,
+  renderResumePdfHtml,
+  RESUME_PDF_TEMPLATES,
+  sanitizeResumePdfPlan,
+} from "../lib/pdf-resume-templates.mjs";
 import worker from "../dist/server/index.js";
 
 test("sanitizeDesignTokens keeps valid deep skin properties and drops invalid values", () => {
@@ -78,6 +84,60 @@ test("sanitizeDesignTokens & designTokensToCssVars prevent dark-on-dark surface/
   const droppedSurface = sanitizeDesignTokens({ surface: "#111822", accent: "#10b981" }, "editorial");
   assert.equal(droppedSurface?.surface, undefined);
   assert.equal(droppedSurface?.accent, "#10b981");
+});
+
+test("PDF resume templates sanitize plans, escape HTML, and render all 4 A4 layouts", () => {
+  const sample = {
+    basics: {
+      name: { zh: "测试<script>alert(1)</script>候选人", en: "Test Candidate" },
+      role: { zh: "AI 平台工程师", en: "AI Platform Engineer" },
+      location: { zh: "广州", en: "Guangzhou" },
+      email: "test@example.com",
+      headline: { zh: "专注可落地的企业级 Agent 系统", en: "Production Agent Systems" },
+      intro: { zh: "4 年全栈与 AI 工程经验", en: "4 years full-stack & AI" },
+      education: { zh: "本科 · 软件工程", en: "B.S. Software Engineering" },
+    },
+    skills: ["TypeScript", "Python", "FastAPI"],
+    experiences: [
+      {
+        company: { zh: "示例科技", en: "Demo Tech" },
+        role: { zh: "高级工程师", en: "Senior Engineer" },
+        period: "2023 - 2026",
+        summary: { zh: "主导 Agent 工作流引擎研发；将长任务成功率提升至 99.4%", en: "Led Agent workflow engine." },
+      },
+    ],
+    projects: [
+      {
+        slug: "demo-agent",
+        title: { zh: "多模态工作流引擎", en: "Multimodal Workflow Engine" },
+        role: { zh: "负责人", en: "Tech Lead" },
+        summary: { zh: "端到端流式编排", en: "Streaming orchestration" },
+        outcome: { zh: "首字延迟降低 46%", en: "Reduced TTFT by 46%" },
+        facts: [{ value: "46%", label: { zh: "延迟下降", en: "TTFT drop" } }],
+        sections: [{ items: [{ zh: "实现异步状态恢复", en: "Async recovery" }] }],
+      },
+    ],
+  };
+
+  const basePlan = profileToDefaultResumePdfPlan(sample, "zh", { targetPages: 1 });
+  assert.equal(basePlan.targetPages, 1);
+  assert.equal(basePlan.density, "compact");
+  assert.equal(basePlan.experiences.length, 1);
+  assert.equal(basePlan.projects.length, 1);
+
+  for (const tpl of RESUME_PDF_TEMPLATES) {
+    const clean = sanitizeResumePdfPlan({ ...basePlan, template: tpl.id, accentColor: "bad-color" }, basePlan);
+    assert.equal(clean.template, tpl.id);
+    assert.equal(clean.accentColor, basePlan.accentColor);
+    const html = renderResumePdfHtml(clean, {
+      qrDataUrl: "data:image/png;base64,iVBORw0KGgo=",
+      siteUrl: "https://mytalkcv.com/u/demo",
+    });
+    assert.ok(html.includes("@page { size: A4; margin: 0; }"));
+    assert.ok(html.includes(`tpl-${tpl.id}`));
+    assert.ok(!html.includes("<script>alert(1)</script>"));
+    assert.ok(html.includes("mytalkcv.com/u/demo"));
+  }
 });
 
 test("sanitizeLayoutPlan normalizes sectionOrder and validates all layout dimensions", () => {

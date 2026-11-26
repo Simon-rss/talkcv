@@ -9,11 +9,13 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3100
-RUN apk add --no-cache font-noto-cjk font-noto
+RUN apk add --no-cache font-noto-cjk font-noto chromium
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/data ./data
 EXPOSE 3100
 CMD ["node", "server/node-entry.mjs"]

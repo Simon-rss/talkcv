@@ -1827,8 +1827,9 @@ ${jd.slice(0, 3000)}`;
               </button>
               <PdfResumeBuilder
                 profile={generated}
-                slug={publishedUrl ? new URL(publishedUrl).pathname.split("/").pop() : undefined}
+                slug={(publishedUrl ? new URL(publishedUrl).pathname.split("/").pop() : undefined) || normalizeSlug(handle) || undefined}
                 lang={lang}
+                currentPlan={currentPlan}
                 providerMode={genMode}
                 hostedModelId={genModelId}
                 apiKey={genApiKey}
@@ -2073,6 +2074,7 @@ ${jd.slice(0, 3000)}`;
                   profile={publishedProfile ?? generated}
                   slug={new URL(publishedUrl).pathname.split("/").pop()!}
                   lang={lang}
+                  currentPlan={currentPlan}
                   providerMode={genMode}
                   hostedModelId={genModelId}
                   apiKey={genApiKey}

@@ -80,8 +80,8 @@ export async function handlePdfResumeAiPlanRequest(request: Request, env: ChatEn
         ? "STRICT 1-PAGE A4 BUDGET: Keep summary <= 75 Chinese chars, top 3-4 experiences (<= 2-3 tight STAR bullets each, <= 45 chars per bullet), top 2-3 strongest projects (<= 2-3 bullets each). Trim fluff so it fits cleanly on ONE A4 page."
         : "STRICT 1-PAGE A4 BUDGET: Keep summary <= 45 words, top 3-4 experiences (2-3 tight STAR bullets each), top 2-3 strongest projects (2-3 bullets each) so it fits cleanly on ONE A4 page."
       : lang === "zh"
-        ? "2-PAGE A4 BUDGET: Include rich, quantified project architecture & impact bullets across experiences and up to 4-5 featured projects, balanced cleanly for TWO A4 pages."
-        : "2-PAGE A4 BUDGET: Include rich, quantified project architecture & impact bullets across experiences and up to 4-5 featured projects, balanced cleanly for TWO A4 pages.";
+        ? "2-PAGE A4 BUDGET: Only use 2 pages when the candidate has rich content that fills at least 75% of page 2; NEVER leave page 2 mostly empty with just 1-2 orphan lines! If content is moderate, pack cleanly for 1 full page (density: 'compact')."
+        : "2-PAGE A4 BUDGET: Only span 2 pages when content fills at least 75% of page 2; NEVER leave page 2 mostly blank with 1-2 orphan lines! If content is moderate, set density to 'compact' for 1 crisp page.";
 
   const systemPrompt = `You are an elite executive résumé writer and A4 typographic layout director for TalkCV.
 Transform the candidate's PortfolioProfile JSON into a publication-grade A4 PDF résumé plan JSON (output ONLY raw JSON, no markdown fences).

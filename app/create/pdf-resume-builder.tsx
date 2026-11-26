@@ -4,19 +4,21 @@ import { Download, FileText, Printer, RotateCcw, Sparkles, X } from "lucide-reac
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CREDIT_COST, creditCostLabel, type CreditBalance } from "../../lib/credits";
+import { canUseModel, HOSTED_MODELS, isPromoUnlockedModel, type PlanTier } from "../../lib/models";
 import {
   profileToDefaultResumePdfPlan,
   renderResumePdfHtml,
   RESUME_PDF_ACCENTS,
   RESUME_PDF_TEMPLATES,
 } from "../../lib/pdf-resume-templates.mjs";
-import type { Lang, PortfolioProfile } from "../../lib/schema";
+import { localize, type Lang, type PortfolioProfile } from "../../lib/schema";
 import { publishedSiteUrl, siteQrDataUrl } from "../../lib/site-qr.mjs";
 
 interface PdfResumeBuilderProps {
   profile: PortfolioProfile;
   slug?: string;
   lang: Lang;
+  currentPlan: PlanTier;
   providerMode: "hosted" | "byok";
   hostedModelId: string;
   apiKey: string;
@@ -34,6 +36,7 @@ export function PdfResumeBuilder({
   profile,
   slug,
   lang,
+  currentPlan,
   providerMode,
   hostedModelId,
   apiKey,
@@ -49,6 +52,9 @@ export function PdfResumeBuilder({
   const zh = lang === "zh";
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState(() => profileToDefaultResumePdfPlan(profile, lang));
+  const [selectedModelId, setSelectedModelId] = useState(hostedModelId);
+  const [autoFit, setAutoFit] = useState(true);
+  const [renderedPages, setRenderedPages] = useState(1);
   const [targetRole, setTargetRole] = useState("");
   const [targetJd, setTargetJd] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
@@ -59,6 +65,10 @@ export function PdfResumeBuilder({
   const [previewScale, setPreviewScale] = useState(0.76);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewPaneRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSelectedModelId(hostedModelId);
+  }, [hostedModelId]);
 
   useEffect(() => {
     if (!open) return;
@@ -148,7 +158,7 @@ export function PdfResumeBuilder({
           targetRole: targetRole.trim(),
           targetJd: targetJd.trim(),
           providerMode,
-          hostedModelId,
+          hostedModelId: selectedModelId,
           ...(providerMode === "byok" ? { apiKey, baseUrl, model: byokModel } : {}),
         }),
       });
@@ -231,7 +241,36 @@ export function PdfResumeBuilder({
     }
   };
 
-  const a4HeightPx = plan.targetPages === 2 ? 2245 : 1123;
+  const handlePreviewLoad = () => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    const pageEl = doc.querySelector<HTMLElement>(".page");
+    if (!pageEl) return;
+    // Measure natural content height without min-height inflation
+    const prevMinH = pageEl.style.minHeight;
+    pageEl.style.minHeight = "0px";
+    const contentH = Math.ceil(pageEl.scrollHeight);
+    pageEl.style.minHeight = prevMinH;
+
+    const A4_H = 1122; // 297mm at 96dpi
+    const currentScale = typeof plan.fitScale === "number" ? plan.fitScale : 1;
+
+    // Auto-tighten when content slightly spills onto a sparse trailing page (e.g. 1.01x–1.45x or 2.01x–2.45x)
+    const targetFullPages = Math.floor((contentH - 4) / A4_H);
+    const overflowPx = contentH - targetFullPages * A4_H;
+    if (autoFit && targetFullPages >= 1 && overflowPx > 4 && overflowPx <= A4_H * 0.45 && currentScale > 0.74) {
+      const targetH = targetFullPages * A4_H - 12;
+      const targetScale = Math.max(0.74, Number((currentScale * (targetH / contentH)).toFixed(3)));
+      if (targetScale < currentScale - 0.01) {
+        setPlan((prev) => ({ ...prev, fitScale: targetScale }));
+        return;
+      }
+    }
+    const pages = Math.max(1, Math.ceil((contentH - 6) / A4_H));
+    setRenderedPages(pages);
+  };
+
+  const a4HeightPx = renderedPages * 1123;
 
   return (
     <>
@@ -349,6 +388,7 @@ export function PdfResumeBuilder({
                               ...prev,
                               template: tpl.id,
                               accentColor: tpl.defaultAccent,
+                              fitScale: 1,
                             }))
                           }
                           style={{
@@ -388,6 +428,7 @@ export function PdfResumeBuilder({
                               ...prev,
                               targetPages: n,
                               density: n === 1 ? "compact" : "balanced",
+                              fitScale: 1,
                             }))
                           }
                         >
@@ -413,7 +454,7 @@ export function PdfResumeBuilder({
                           type="button"
                           className={`af-icon-pill ${plan.density === id ? "af-login-pill" : ""}`}
                           style={{ flex: 1, justifyContent: "center", paddingInline: 6 }}
-                          onClick={() => setPlan((prev) => ({ ...prev, density: id }))}
+                          onClick={() => setPlan((prev) => ({ ...prev, density: id, fitScale: 1 }))}
                         >
                           {label}
                         </button>
@@ -458,6 +499,32 @@ export function PdfResumeBuilder({
                 >
                   <input
                     type="checkbox"
+                    checked={autoFit}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setAutoFit(next);
+                      setPlan((prev) => ({ ...prev, fitScale: 1 }));
+                    }}
+                  />
+                  <span>
+                    {zh
+                      ? "智能防孤行留白（末尾略微超页时自动收紧为一整页）"
+                      : "Smart anti-orphan fit (auto-tighten slight page overflow)"}
+                  </span>
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 12.5,
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
                     checked={plan.showQr}
                     disabled={!slug}
                     onChange={(e) => setPlan((prev) => ({ ...prev, showQr: e.target.checked }))}
@@ -465,11 +532,11 @@ export function PdfResumeBuilder({
                   <span>
                     {slug
                       ? zh
-                        ? "附带 AI 交互分身二维码（HR 扫码直连你的个人站）"
-                        : "Include AI Twin QR code linking to your live site"
+                        ? `附带个人站链接与 AI 二维码（/u/${slug}）`
+                        : `Include live site URL & AI QR (/u/${slug})`
                       : zh
-                        ? "发布专属链接后自动附带 AI 分身二维码"
-                        : "Publish your site handle to attach an AI Twin QR"}
+                        ? "在工作台填写专属网址后自动附带链接与二维码"
+                        : "Set a site handle in Studio to attach URL & QR"}
                   </span>
                 </label>
 
@@ -488,6 +555,41 @@ export function PdfResumeBuilder({
                     <Sparkles size={14} />
                     {zh ? "2. AI 智能重排与 STAR 精炼（可选）" : "2. AI Reflow & STAR Polish (Optional)"}
                   </div>
+                  {providerMode === "hosted" ? (
+                    <select
+                      value={selectedModelId}
+                      onChange={(e) => setSelectedModelId(e.target.value)}
+                      aria-label={zh ? "选择 AI 模型" : "Select AI model"}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px",
+                        borderRadius: 8,
+                        border: "1px solid var(--line)",
+                        background: "var(--bg)",
+                        color: "var(--ink)",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      {HOSTED_MODELS.map((m) => (
+                        <option key={m.id} value={m.id} disabled={!canUseModel(m.id, currentPlan)}>
+                          {localize(m.label, lang)}{" "}
+                          {m.tier === "free"
+                            ? "· Free"
+                            : isPromoUnlockedModel(m)
+                              ? zh
+                                ? "· 限时免费"
+                                : "· Free Promo"
+                              : canUseModel(m.id, currentPlan)
+                                ? `★ ${m.tier.toUpperCase()}`
+                                : `🔒 ${m.tier.toUpperCase()}`}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>
+                      BYOK · {byokModel || "Custom model"}
+                    </div>
+                  )}
                   <input
                     type="text"
                     value={targetRole}
@@ -612,14 +714,37 @@ export function PdfResumeBuilder({
                 ref={previewPaneRef}
                 style={{
                   background: "#e2e8f0",
-                  padding: 18,
+                  padding: "14px 18px 24px",
                   overflowY: "auto",
                   overflowX: "hidden",
                   display: "flex",
-                  justifyContent: "center",
-                  alignItems: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 10,
                 }}
               >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 12,
+                    color: "#334155",
+                    background: "rgba(255,255,255,0.85)",
+                    padding: "4px 12px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(15,23,42,0.08)",
+                  }}
+                >
+                  <span>
+                    {zh ? `实际排版：${renderedPages} 页 A4` : `Actual layout: ${renderedPages} A4 page${renderedPages > 1 ? "s" : ""}`}
+                  </span>
+                  {typeof plan.fitScale === "number" && plan.fitScale < 0.99 && (
+                    <span style={{ color: "var(--accent)", fontWeight: 600 }}>
+                      · {zh ? `已智能收紧 ${Math.round(plan.fitScale * 100)}% 消除孤行` : `Auto-fitted ${Math.round(plan.fitScale * 100)}%`}
+                    </span>
+                  )}
+                </div>
                 <div
                   style={{
                     width: Math.round(794 * previewScale),
@@ -644,6 +769,7 @@ export function PdfResumeBuilder({
                       ref={iframeRef}
                       title="A4 PDF Resume Preview"
                       srcDoc={previewHtml}
+                      onLoad={handlePreviewLoad}
                       style={{
                         width: 794,
                         height: a4HeightPx,
